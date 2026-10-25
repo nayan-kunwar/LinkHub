@@ -1,0 +1,11 @@
+{
+  "name": "linkhub",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "pnpm --filter @linkhub/web dev",
+    "build": "pnpm --filter @linkhub/web build",
+    "start": "pnpm --filter @linkhub/web start",
+    "typecheck": "pnpm --filter @linkhub/web typecheck"
+  }
+}

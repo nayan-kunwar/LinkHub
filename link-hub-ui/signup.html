@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create account · Link Hub</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script><style>body{font-family:Inter,system-ui,sans-serif}
+.input{width:100%;border:1px solid #d4d4d8;border-radius:.6rem;padding:.65rem .9rem .65rem 2.4rem;font-size:.9rem;color:#18181b;background:#fff}
+.input::placeholder{color:#71717a}
+.input[aria-invalid=true]{border-color:#b91c1c}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #7c3aed;outline-offset:2px}
+.btn{width:100%;background:#6d28d9;color:#fff;font-weight:600;border-radius:.6rem;padding:.7rem;font-size:.92rem}
+.btn:hover{background:#5b21b6}.btn:disabled{background:#a1a1aa;cursor:not-allowed}
+.btn2{width:100%;border:1px solid #c4b5fd;color:#5b21b6;font-weight:600;border-radius:.6rem;padding:.65rem;font-size:.9rem;background:#fff}
+.lnk{color:#5b21b6;font-weight:600}.lnk:hover{text-decoration:underline}
+.err{color:#b91c1c;font-size:.8rem;margin-top:.3rem}
+.badge{display:inline-block;background:#ede9fe;color:#5b21b6;font-size:.7rem;font-weight:700;letter-spacing:.08em;border-radius:999px;padding:.3rem .8rem}
+.spin{animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
+.err:empty{display:none}.compact .mb-4{margin-bottom:.55rem}.compact label{margin-bottom:.2rem}.compact .input{padding-top:.5rem;padding-bottom:.5rem}.compact .err{margin-top:.15rem}
+.ico{position:absolute;left:.8rem;top:50%;transform:translateY(-50%);width:1rem;height:1rem;color:#71717a}
+</style></head>
+<body class="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-violet-200 text-zinc-900">
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 bg-white px-3 py-2 rounded lnk">Skip to content</a>
+<header class="max-w-6xl mx-auto flex items-center justify-between px-5 pt-5 pb-3">
+<a href="index.html" class="flex items-center gap-2 font-extrabold text-lg text-zinc-900"><svg aria-hidden="true" class="w-6 h-6 text-violet-700" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>Link Hub</a>
+<nav aria-label="Main"><ul class="flex gap-5 text-sm font-medium text-zinc-700"><li><a href="#" class="hover:text-violet-800">Home</a></li><li><a href="#" class="hover:text-violet-800">Features</a></li><li><a href="#" class="hover:text-violet-800">Contact</a></li></ul></nav></header>
+<main id="main" class="max-w-6xl mx-auto px-5 pb-8">
+<div class="grid md:grid-cols-[minmax(0,440px)_1fr] gap-0 rounded-3xl overflow-hidden shadow-xl shadow-violet-200/60 bg-white/40 min-h-[620px]">
+<section class="bg-white p-8 sm:p-10 flex flex-col justify-center"><div data-state="form" class="compact"><h1 class="text-2xl font-extrabold">Create your account</h1><p class="text-sm text-zinc-600 mt-0.5 mb-3">Join Link Hub and start building your profile.</p>
+<form id="f" novalidate><div class="mb-4"><label for="name" class="block text-sm font-semibold text-zinc-800 mb-1.5">Full name</label>
+<div class="relative"><svg aria-hidden="true" class="ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><input id="name" name="name" type="text" placeholder="Nayan Kunwar" class="input" aria-describedby="name-err" autocomplete="name" required></div>
+<p id="name-err" class="err" aria-live="polite"></p></div>
+<div class="mb-4"><label for="username" class="block text-sm font-semibold text-zinc-800 mb-1.5">Username</label>
+<div class="relative"><svg aria-hidden="true" class="ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg><input id="username" name="username" type="text" placeholder="nayankunwar" class="input" aria-describedby="username-err username-hint" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="30" required></div><p id="username-hint" class="text-xs text-zinc-600 mt-1.5"><span aria-live="polite">link.nayankunwar.com/<strong id="un-path" class="text-zinc-900">username</strong> <span id="un-state"></span></span><br>3–30 characters: lowercase letters, numbers and hyphens</p>
+<p id="username-err" class="err" aria-live="polite"></p></div>
+<div class="mb-4"><label for="email" class="block text-sm font-semibold text-zinc-800 mb-1.5">Email</label>
+<div class="relative"><svg aria-hidden="true" class="ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><input id="email" name="email" type="email" placeholder="you@example.com" class="input" aria-describedby="email-err" autocomplete="email" required></div>
+<p id="email-err" class="err" aria-live="polite"></p></div>
+<div class="grid md:grid-cols-2 md:gap-3"><div class="mb-4"><label for="password" class="block text-sm font-semibold text-zinc-800 mb-1.5">Password</label>
+<div class="relative"><svg aria-hidden="true" class="ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><input id="password" name="password" type="password" placeholder="10+ characters" class="input pr-10" aria-describedby="password-err" autocomplete="new-password" required><button type="button" class="pw-toggle absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-zinc-600 hover:text-violet-800" aria-label="Show password" aria-pressed="false" aria-controls="password"><svg aria-hidden="true" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+<p id="password-err" class="err" aria-live="polite"></p></div>
+<div class="mb-4"><label for="confirm" class="block text-sm font-semibold text-zinc-800 mb-1.5">Confirm password</label>
+<div class="relative"><svg aria-hidden="true" class="ico" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><input id="confirm" name="confirm" type="password" placeholder="Confirm password" class="input pr-10" aria-describedby="confirm-err" autocomplete="new-password" required><button type="button" class="pw-toggle absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-zinc-600 hover:text-violet-800" aria-label="Show password" aria-pressed="false" aria-controls="confirm"><svg aria-hidden="true" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+<p id="confirm-err" class="err" aria-live="polite"></p></div></div>
+<ul id="pw-checklist" class="text-sm flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs" aria-live="polite" aria-label="Password requirements">
+<li data-rule="len" class="flex items-center gap-2 text-zinc-600"><span class="dot w-4 h-4 rounded-full border-2 border-zinc-400 inline-flex items-center justify-center text-[10px]"></span><span>10+ characters</span></li>
+<li data-rule="common" class="flex items-center gap-2 text-zinc-600"><span class="dot w-4 h-4 rounded-full border-2 border-zinc-400 inline-flex items-center justify-center text-[10px]"></span><span>Not a common password</span></li>
+<li data-rule="match" class="flex items-center gap-2 text-zinc-600"><span class="dot w-4 h-4 rounded-full border-2 border-zinc-400 inline-flex items-center justify-center text-[10px]"></span><span>Matches confirm password</span></li></ul><button class="btn" type="submit" id="submit">Create account</button></form>
+<p class="text-sm text-zinc-700 text-center mt-3">Already have an account? <a href="login.html" class="lnk">Sign in</a></p></div>
+<div data-state="closed" hidden class="text-center"><div class="mx-auto w-14 h-14 rounded-full bg-violet-100 text-violet-800 flex items-center justify-center text-2xl" aria-hidden="true">⏳</div><h1 class="text-3xl font-extrabold mt-4">Sign-ups are opening soon</h1><p class="text-zinc-700 mt-2 mb-6">Link Hub is invite-only for now. We're polishing things and will open registrations shortly.</p><a href="login.html" class="btn inline-block text-center">Back to sign in</a></div></section>
+<aside class="hidden md:block relative overflow-hidden bg-gradient-to-b from-violet-50 via-violet-100 to-violet-200 p-10 pb-8" aria-hidden="false"><div class="relative z-10"><span class="badge">GET STARTED</span><h2 class="text-4xl font-extrabold leading-tight mt-4 text-zinc-900">Your digital<br>home on the web</h2><p class="text-zinc-700 mt-3 max-w-sm">Share your projects, social profiles and important links with the world.</p><ul class="mt-8 space-y-4"><li class="flex items-center gap-3 text-sm text-zinc-800"><span class="w-8 h-8 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center font-bold" aria-hidden="true">✓</span>Beautiful and customizable profiles</li><li class="flex items-center gap-3 text-sm text-zinc-800"><span class="w-8 h-8 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center font-bold" aria-hidden="true">✓</span>Built-in analytics</li><li class="flex items-center gap-3 text-sm text-zinc-800"><span class="w-8 h-8 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center font-bold" aria-hidden="true">✓</span>Organize with categories</li><li class="flex items-center gap-3 text-sm text-zinc-800"><span class="w-8 h-8 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center font-bold" aria-hidden="true">✓</span>Privacy-friendly analytics</li><li class="flex items-center gap-3 text-sm text-zinc-800"><span class="w-8 h-8 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center font-bold" aria-hidden="true">✓</span>Free to get started</li></ul></div><svg aria-hidden="true" class="absolute bottom-0 left-0 w-full h-56" viewBox="0 0 600 220" preserveAspectRatio="none">
+<path d="M0 120 C120 60 220 140 340 90 S520 60 600 100 V220 H0Z" fill="#ddd6fe" opacity=".7"/>
+<path d="M0 160 C140 110 260 180 400 140 S540 120 600 150 V220 H0Z" fill="#c4b5fd" opacity=".75"/>
+<path d="M0 195 C160 165 300 210 460 185 S560 175 600 190 V220 H0Z" fill="#a78bfa" opacity=".55"/>
+<g fill="#7c3aed" opacity=".55"><path d="M40 170 l18 -55 l18 55z"/><path d="M70 178 l14 -42 l14 42z"/><path d="M520 160 l20 -60 l20 60z"/><path d="M555 170 l14 -45 l14 45z"/></g>
+<g fill="#6d28d9" opacity=".35"><rect x="56" y="170" width="4" height="10"/><rect x="538" y="160" width="4" height="10"/></g></svg></aside>
+</div></main><script>
+const ALLOW_SIGNUP = true; // set false to close sign-ups
+const qs=new URLSearchParams(location.search);
+document.querySelectorAll('.pw-toggle').forEach(b=>b.addEventListener('click',()=>{const i=document.getElementById(b.getAttribute('aria-controls'));const on=i.type==='password';i.type=on?'text':'password';b.setAttribute('aria-pressed',on);b.setAttribute('aria-label',on?'Hide password':'Show password');}));
+function setErr(id,msg){const i=document.getElementById(id),e=document.getElementById(id+'-err');e.textContent=msg||'';i.setAttribute('aria-invalid',msg?'true':'false');}
+function show(id){document.querySelectorAll('[data-state]').forEach(s=>s.hidden=s.dataset.state!==id);const h=document.querySelector('[data-state="'+id+'"] h1');if(h&&document.readyState==='complete'){h.setAttribute('tabindex','-1');h.focus();}}
+const COMMON=['password','password1','password123','1234567890','12345678910','qwertyuiop','iloveyou123','letmein123','welcome123','qwerty1234','abc1234567','passw0rd123','admin12345','football123','monkey12345'];
+function pwRules(p,c){return{len:p.length>=10,common:p.length>0&&!COMMON.includes(p.toLowerCase()),match:p.length>0&&p===c};}
+function paintChecklist(r){for(const k in r){const li=document.querySelector('[data-rule='+k+']');const d=li.querySelector('.dot');li.className='flex items-center gap-2 '+(r[k]?'text-green-800':'text-zinc-600');d.className='dot w-4 h-4 rounded-full border-2 inline-flex items-center justify-center text-[10px] '+(r[k]?'bg-green-700 border-green-700 text-white':'border-zinc-400');d.textContent=r[k]?'✓':'';li.setAttribute('aria-label',li.innerText.trim()+(r[k]?' – met':' – not met'));}}
+function cooldown(btn,secs,label){let t=secs;btn.disabled=true;const tick=()=>{btn.textContent=label+' in '+t+'s';if(t--<=0){clearInterval(iv);btn.disabled=false;btn.textContent=label;}};const iv=setInterval(tick,1000);tick();}
+</script><script>const RESERVED=['api','dashboard','login','logout','signup','register','admin','settings','health','internal','static','assets','auth','account','help','support','about','www','root','app','status','verify','reset','forgot-password','reset-password','check-inbox','null','undefined'];
+const TAKEN=['nayan','nayankunwar','john','test','demo'];
+const RE=/^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;let unOk=false,tmr;
+const un=document.getElementById('username'),st=document.getElementById('un-state');
+function paint(kind,msg){const c={checking:'text-zinc-700',available:'text-green-800',taken:'text-red-700',reserved:'text-red-700',invalid:'text-red-700'}[kind]||'';st.className='font-semibold '+c;st.textContent=msg.split(':')[0];unOk=kind==='available';setErr('username',['taken','reserved','invalid'].includes(kind)?msg.split(': ')[1]:'');}
+function checkUn(){const v=un.value;document.getElementById('un-path').textContent=v||'username';clearTimeout(tmr);if(!v){st.textContent='';unOk=false;setErr('username','');return;}
+if(!RE.test(v)||v.includes('--')){paint('invalid','✕ Invalid: Use 3–30 lowercase letters, numbers or hyphens; no hyphen at start/end');return;}
+if(RESERVED.includes(v)){paint('reserved','✕ Reserved: That name is reserved. Try another.');return;}
+paint('checking','… Checking availability');tmr=setTimeout(()=>TAKEN.includes(v)?paint('taken','✕ Taken: That username is already in use'):paint('available','✓ Available'),600);}
+un.addEventListener('input',()=>{const p=un.selectionStart;un.value=un.value.toLowerCase().replace(/\s/g,'');un.setSelectionRange(p,p);checkUn();});
+const upd=()=>paintChecklist(pwRules(password.value,document.getElementById('confirm').value));password.addEventListener('input',upd);document.getElementById('confirm').addEventListener('input',upd);upd();
+document.getElementById('f').addEventListener('submit',e=>{e.preventDefault();const r=pwRules(password.value,document.getElementById('confirm').value);
+setErr('name',document.getElementById('name').value.trim()?'':'Enter your name.');if(!unOk&&!document.getElementById('username-err').textContent)setErr('username',un.value?'Wait for the availability check.':'Choose a username.');
+setErr('email',/^\S+@\S+\.\S+$/.test(email.value)?'':'Enter a valid email address.');
+setErr('password',!r.len?'Use at least 10 characters.':!r.common?'That password is too common. Try a longer phrase.':'');setErr('confirm',r.match?'':'Passwords do not match.');
+const bad=document.querySelector('[aria-invalid=true]');if(bad){bad.focus();return;}
+location.href='check-inbox.html?email='+encodeURIComponent(email.value.trim());});
+if(!ALLOW_SIGNUP||qs.get('signup')==='closed')show('closed');
+const demo=qs.get('demo');if(demo){document.getElementById('name').value='Nayan Kunwar';un.value=demo;email.value='nayan@example.com';password.value='correct horse battery';document.getElementById('confirm').value='correct horse battery';upd();checkUn();}</script></body></html>
