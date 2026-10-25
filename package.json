@@ -6,6 +6,23 @@
     "dev": "pnpm --filter @linkhub/web dev",
     "build": "pnpm --filter @linkhub/web build",
     "start": "pnpm --filter @linkhub/web start",
-    "typecheck": "pnpm --filter @linkhub/web typecheck"
+    "typecheck": "pnpm --filter @linkhub/web typecheck",
+    "api:dev": "pnpm --filter @linkhub/api dev",
+    "api:build": "pnpm --filter @linkhub/api build",
+    "api:start": "pnpm --filter @linkhub/api start",
+    "api:test": "pnpm --filter @linkhub/api test",
+    "typecheck:all": "pnpm -r typecheck",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "job:analytics": "tsx apps/api/src/jobs/analytics-nightly.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0"
+  },
+  "devDependencies": {
+    "prisma": "6.19.0",
+    "tsx": "4.20.6"
   }
 }
