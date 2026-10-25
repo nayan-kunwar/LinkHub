@@ -1,6 +1,6 @@
 # Link Hub — Architecture & Implementation Specification
 
-**Version:** 2.3
+**Version:** 2.4
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
 **Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `api.nayankunwar.com` (reached by browsers only through the same-origin `/api/*` rewrite)
 **Status:** Owner-first, multi-tenant by design
@@ -8,6 +8,19 @@
 ---
 
 ## Changelog
+
+**v2.4 prototype parity, account lifecycle & breakdowns**
+
+- **Profile & appearance:** profile gains `headline` (80 chars) and a validated `socials` JSON object (`website`, `github`, `linkedin`, `x`, `medium`, `email` as `mailto:`); `theme` JSON stores the full appearance settings (theme preset, primary color, background, card and button styles, avatar/bio/social/description visibility).
+- **Categories & links:** categories gain `description` (80), `color` (six-digit hex), `icon` (fixed icon set) and `is_visible`; links gain an optional `icon` (fixed icon set). Category visibility hides its links from the public profile without deleting them.
+- **Account lifecycle:** self-serve `DELETE /account` schedules deletion with a 30-day grace period (`users.deletion_scheduled_for`), unpublishes the profile immediately and revokes other sessions. Signing in or opening the emailed `/restore-account?token=…` link clears the schedule; restoring does **not** republish. A purge job hard-deletes after the grace period.
+- **Email change:** `PATCH /account/email` stores `users.pending_email` and issues a 24-hour `email_change` token to the new address; the email changes only after verification. Password change revokes all other sessions; sessions are listed and revocable individually or all at once.
+- **Analytics:** `click_events.country_code` (two-letter ISO code, never an IP) is added. A new `click_daily_breakdowns` rollup stores daily `country`, `device` and `referrer` dimensions. The nightly job order is now totals → breakdowns → clear hashes → purge raw → prune.
+- **Country trust:** the API trusts `x-vercel-ip-country` only when the request carries a valid `WEB_PROXY_SECRET` header added by the web tier; otherwise `country_code` is null. No IP is ever stored or logged.
+- **Export v2:** JSON uses `schemaVersion: 2`; CSV export is a zip of five files — `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv`, `daily_breakdowns.csv`. Cells beginning with `= + - @`, tab or CR are prefixed with `'`.
+- **Limits & auth copy:** 50 links, 20 categories, password 12–128 chars, 7-day sessions, 1-hour reset tokens, 24-hour verification/email-change tokens, 30-day deletion grace. Analytics days are UTC and the UI says so.
+- **Routes & UI:** added `/check-inbox`, `/settings`, `/restore-account`, `/preview` (demo-only), `/terms`, `/privacy`, root `not-found`, and the public `/[username]` page. `/dashboard/**` and `/settings/**` are guarded by Next.js 16 `proxy.ts`. `check-inbox` and `restore-account` are reserved usernames.
+- **UI-first milestone:** the production Next.js UI is built against typed mocks and covers every approved prototype screen; the Express API, Prisma schema and real session wiring are the next phase. Mock auth accepts any password except `wrong`, and `/preview` is disabled outside demo mode.
 
 **v2.3 correctness, security & operations fixes**
 
@@ -98,16 +111,19 @@ It is built and used by the owner first, but the schema, authorization model and
 | Public profile SEO (metadata, canonical, OG, sitemap, robots) | Public launch | Published profiles only; unpublished/unknown profiles return 404 (noindex) |
 | Accessibility baseline (keyboard, focus, contrast) | Public launch | Public pages + dashboard |
 | Unique username + reserved-route validation | MVP | Availability check endpoint |
-| Link CRUD, activate/deactivate | MVP | |
+| Link CRUD, activate/deactivate, optional icon | MVP | Fixed icon set |
 | Drag-and-drop ordering | MVP | Transactional reorder |
-| Categories (CRUD, ordering) | MVP | |
-| Profile customization (name, bio, avatar URL, theme) | MVP | |
-| Click analytics (beacon, bot filter, dedupe) | MVP | |
-| Analytics dashboard (overview, per-link, timeseries) | MVP | Own links only |
+| Categories (CRUD, ordering, description, color, icon, visibility) | MVP | Hidden category links stay off the public page |
+| Profile customization (name, headline, bio, avatar URL, socials, appearance) | MVP | URL-only avatar; validated `socials` JSON |
+| Click analytics (beacon, bot filter, dedupe, country code) | MVP | Country from trusted proxy header only |
+| Analytics dashboard (overview, per-link, timeseries, breakdowns) | MVP | Own links only; countries/devices/referrers |
 | Search / filter links | MVP | |
-| Export own data (JSON/CSV) | MVP | |
+| Export own data (JSON + five-CSV zip) | MVP | `schemaVersion: 2` |
 | Responsive UI | MVP | |
 | Login / logout, Postgres sessions | MVP | |
+| Account email change (pending verification) | MVP | `pending_email` + `email_change` token |
+| Password change & session management | MVP | Other sessions revoked on password change |
+| Self-serve account deletion + restore | MVP | 30-day grace, `deletion_scheduled_for`, purge job |
 | Owner seed script | MVP | |
 | Centralized entitlements (`free` plan) | MVP | |
 | Account-status check on login + every request | MVP | Enforced even in private phase |
@@ -116,7 +132,6 @@ It is built and used by the owner first, but the schema, authorization model and
 | Password reset | Public launch | `verification_tokens` |
 | ToS / Privacy pages, basic abuse report (email/form) | Public launch | |
 | Landing page | Public launch | |
-| Self-serve account deletion | Later | Status `deleted` + purge job |
 | Billing / paid plans | Later | Entitlements seam exists |
 | OAuth (Google/GitHub) | Later | `accounts` table exists |
 | Custom domains | Later | `custom_domains` table not migrated |
@@ -181,9 +196,12 @@ flowchart LR
 |---|---|---|---|
 | `/` | Static/ISR | `ROOT_MODE=profile` → renders `DEFAULT_USERNAME` profile; `landing` → marketing page | MVP / Public launch |
 | `/:username` | Dynamic `[username]` ISR | `revalidate=300` + tag `profile:<username>` | MVP |
-| `/login`, `/signup`, `/verify-email`, `/reset-password`, `/forgot-password` | Static | default | MVP (signup/verify/reset UI: Public launch) |
-| `/dashboard/**`, `/settings/**` | Dynamic | `no-store`, `dynamic = 'force-dynamic'` | MVP |
+| `/login`, `/signup`, `/verify-email`, `/reset-password`, `/forgot-password`, `/check-inbox` | Static | default | MVP (signup/verify/reset UI: Public launch) |
+| `/restore-account` | Static | default; reads `?token=` client-side | MVP |
+| `/dashboard/**`, `/settings/**` | Dynamic | `no-store`, `dynamic = 'force-dynamic'`; `proxy.ts` redirects when `lh.sid` is absent | MVP |
+| `/preview` | Route handler | `no-store`; sets a demo `lh.sid` cookie and redirects to `/dashboard` | Demo only (disabled unless `ALLOW_DEMO_PREVIEW=true`) |
 | `/terms`, `/privacy` | Static | default | Public launch |
+| `not-found` | Static | default | MVP |
 | `/api/*` | **Rewrite** → Express | per route (public profile cacheable; auth/dashboard `no-store`) | MVP |
 | `/internal/revalidate` | Next.js route handler (POST) | none | MVP |
 | `/robots.txt`, `/sitemap.xml` | Generated metadata routes (`robots.ts`, `sitemap.ts`) | `revalidate=3600` | Public launch |
@@ -191,14 +209,17 @@ flowchart LR
 - **Cache headers are per route.** Public profile API responses are cacheable (`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`) so Next.js tagged fetches work; authenticated/dashboard API responses are `no-store`. A global `no-store` on the API would make ISR tag revalidation ineffective.
 - **`ROOT_MODE` on `/`:** a static root page reads `ROOT_MODE` at build time, so changing it requires a redeploy. If runtime switching is desired, make the root dynamic or add a small runtime config route; do not assume an env change alone updates a static page.
 - **SEO:** `generateMetadata` supplies title, description, canonical URL and Open Graph data for published profiles; unpublished/unknown profiles return 404 (noindex). `sitemap.xml` lists published profiles only; `robots.txt` disallows `/dashboard`, `/settings` and `/api` and points to the sitemap.
+- **`/preview` is not a production route.** It exists for the UI-first mock milestone and must return 404 unless `ALLOW_DEMO_PREVIEW=true`; production deployments leave it false and use the real login flow. It must never be linked from marketing pages in production.
+- **Token pages:** `/restore-account` (and the verification/reset pages) set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` because the token is in the URL.
 
 ### 5.2 Reserved Usernames
 
-Maintained in `packages/shared/src/reserved.ts` and used by both the username validator and route-conflict tests:
+Maintained in `packages/shared/src/constants.ts` and used by both the username validator and route-conflict tests:
 
 ```
 api, admin, dashboard, login, logout, signup, register, verify-email,
-reset-password, forgot-password, settings, account, internal, health,
+reset-password, forgot-password, check-inbox, restore-account,
+settings, account, internal, health,
 _next, static, public, assets, favicon.ico, robots.txt, sitemap.xml,
 terms, privacy, about, help, support, docs, blog, pricing, www, mail,
 root, owner, null, undefined, me, new, edit,
@@ -217,8 +238,8 @@ Reserve **planned** top-level routes and Next.js metadata route names now, not o
 
 - Next.js resolves **static segments before dynamic ones**, so `app/dashboard`, `app/login`, etc. always beat `app/[username]`. The reserved list guarantees no user can claim a name that would be shadowed.
 - `next.config.ts` rewrites **only** `/api/:path*` → `${API_BASE_URL}/api/:path*`. `/internal/*` is **not** rewritten and is served by Next.js.
-- Next.js 16 uses `proxy.ts` (Next.js 15 uses `middleware.ts`); the matcher excludes `_next`, `api`, `internal`, static files and only redirects unauthenticated `/dashboard` and `/settings` requests to `/login` (cookie presence check; real auth is the API).
-- `[username]/page.tsx` calls `notFound()` for reserved, unknown or unpublished profiles.
+- Next.js 16 uses `proxy.ts` (Next.js 15 uses `middleware.ts`); the matcher covers `/dashboard/:path*` and `/settings/:path*`, excludes `_next`, `api`, `internal` and static files, and redirects unauthenticated requests to `/login?next=…`. The proxy only checks that the `lh.sid` cookie is present; the API remains the identity authority. During the UI-first milestone the cookie is a client-readable demo value; the API milestone replaces it with an httpOnly server session.
+- `[username]/page.tsx` calls `notFound()` for reserved, unknown or unpublished profiles. In the UI-first milestone the public page renders from the mock store and shows the same unavailable state for unknown and unpublished profiles.
 
 **Express middleware order:**
 
@@ -250,17 +271,21 @@ link-hub/
 │   │   │   ├── page.tsx                 # root (ROOT_MODE)
 │   │   │   ├── [username]/page.tsx      # public profile (ISR)
 │   │   │   ├── dashboard/…              # no-store
-│   │   │   ├── login/ signup/ verify-email/ reset-password/ forgot-password/
+│   │   │   ├── settings/…               # no-store
+│   │   │   ├── login/ signup/ verify-email/ reset-password/ forgot-password/ check-inbox/
+│   │   │   ├── restore-account/         # emailed deletion-restore link
+│   │   │   ├── preview/route.ts         # demo-only cookie + redirect
+│   │   │   ├── terms/ privacy/ not-found.tsx
 │   │   │   ├── robots.ts
 │   │   │   ├── sitemap.ts
 │   │   │   └── internal/revalidate/route.ts
 │   │   ├── proxy.ts                     # Next.js 16 (middleware.ts on 15)
 │   │   └── next.config.ts               # /api/* rewrite
 │   └── api/src/
-│       ├── modules/{auth,profile,links,categories,analytics,export}/
+│       ├── modules/{auth,account,profile,links,categories,analytics,export}/
 │       ├── lib/{db,tenant,entitlements,mailer,revalidate,tokens,errors,logger}.ts
 │       ├── middleware/{session,loadUser,csrf,rateLimit,requestId,requireAuth}.ts
-│       ├── jobs/analytics-nightly.ts   # rollup → clear hashes → purge → prune (§11.3)
+│       ├── jobs/analytics-nightly.ts   # totals → breakdowns → clear hashes → purge → prune (§11.3)
 │       └── app.ts
 ├── packages/shared/                     # Zod schemas, DTOs, reserved list, constants
 ├── prisma/{schema.prisma,migrations/,seed.ts}
@@ -277,7 +302,7 @@ Module files: `*.routes.ts`, `*.controller.ts`, `*.service.ts`, `*.repository.ts
 
 ### 7.1 Ownership
 
-Owned resources (all carry `user_id`): `profiles`, `categories`, `links`, `click_events`, `click_daily_stats`, `verification_tokens`, `accounts`. Sessions reference the user via `sess.userId`.
+Owned resources (all carry `user_id`): `profiles`, `categories`, `links`, `click_events`, `click_daily_stats`, `click_daily_breakdowns`, `verification_tokens`, `accounts`. Sessions reference the user via `sess.userId` and store display metadata (`userAgent`, `createdAt`, `lastSeenAt`) in the JSON payload; they never store IP addresses.
 
 ### 7.2 Tenant-Scoped Repositories
 
@@ -307,10 +332,13 @@ export const scoped = (userId: string) => ({
 |---|---|---|---|
 | `pending_verification` | Allowed → only `/auth/me`, `/auth/resend-verification`, `/auth/logout` | `403 EMAIL_NOT_VERIFIED` for everything else | Hidden |
 | `active` | Allowed | Allowed | Visible if published |
+| `active` with `deletion_scheduled_for` | Allowed; a successful login clears the schedule (restore) | Allowed so the owner can export or restore | Hidden (profile unpublished) |
 | `suspended` | `403 ACCOUNT_SUSPENDED` | Session destroyed, `403 ACCOUNT_SUSPENDED` | Hidden (404) |
 | `deleted` | `401 INVALID_CREDENTIALS` | Session destroyed, `401` | Hidden (404) |
 
 `loadUser` reads the user row **on every authenticated request** (one indexed PK lookup), so status changes take effect immediately. Status changes also delete that user's sessions (`DELETE FROM sessions WHERE sess->>'userId' = $1`) and revalidate their profile tag. The expression index `sessions((sess->>'userId'))` is **required**, not optional: this query runs on every suspension, deletion and password reset. The user purge also deletes any remaining sessions, because `sessions` has no FK to `users`.
+
+**Deletion grace:** scheduling deletion sets `users.deletion_scheduled_for = now() + interval '30 days'`, sets `profiles.is_published = false`, and revokes every session except the current one. The account remains `active` during the grace period so the owner can sign in, export and restore; the public page is hidden because the profile is unpublished. `DELETE /account` is idempotent. The nightly prune hard-deletes users whose `deletion_scheduled_for` has passed (cascading profiles, links, categories, analytics and tokens, plus the session cleanup above); it marks `status=deleted` immediately before the hard delete for audit clarity. The `/restore-account?token=…` route and a successful login both clear `deletion_scheduled_for`; neither republishes the profile.
 
 ### 7.4 Entitlements
 
@@ -332,7 +360,7 @@ export async function assertWithinLimit(userId: string, plan: PlanId, kind: 'lin
 
 All plan checks (limits, raw/history retention used by jobs and analytics ranges, export) call this module only. New plans = new keys; billing is **Later**.
 
-`assertWithinLimit` counts only `deleted_at IS NULL` rows and is atomic: run the count and insert in one transaction after `SELECT id FROM users WHERE id = $1 FOR UPDATE` (or a per-user advisory lock). A plain count-then-insert can exceed the limit under concurrent requests. `rawEventRetentionDays` bounds `click_events`; `analyticsHistoryDays` bounds dashboard ranges. `click_daily_stats` themselves are kept for the life of the link.
+`assertWithinLimit` counts only `deleted_at IS NULL` rows and is atomic: run the count and insert in one transaction after `SELECT id FROM users WHERE id = $1 FOR UPDATE` (or a per-user advisory lock). A plain count-then-insert can exceed the limit under concurrent requests. `rawEventRetentionDays` bounds `click_events`; `analyticsHistoryDays` bounds dashboard ranges. `click_daily_stats` and `click_daily_breakdowns` themselves are kept for the life of the link.
 
 ---
 
@@ -354,15 +382,18 @@ erDiagram
     categories ||--o{ links : groups
     links ||--o{ click_events : receives
     links ||--o{ click_daily_stats : "rolled up"
+    links ||--o{ click_daily_breakdowns : "rolled up"
 
     users {
         uuid id PK
         citext email UK
+        citext pending_email
         text password_hash
         text role "owner|admin|user"
         text status "pending_verification|active|suspended|deleted"
         text plan "free"
         timestamptz email_verified_at
+        timestamptz deletion_scheduled_for
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at
@@ -381,7 +412,7 @@ erDiagram
     verification_tokens {
         uuid id PK
         uuid user_id FK
-        text type "email_verification|password_reset"
+        text type "email_verification|password_reset|email_change|account_restore"
         text token_hash UK
         timestamptz expires_at
         timestamptz used_at
@@ -392,15 +423,21 @@ erDiagram
         uuid user_id FK,UK
         citext username UK
         text display_name
+        text headline
         text bio
         text avatar_url
-        json theme
+        json socials
+        json theme "appearance settings"
         boolean is_published
     }
     categories {
         uuid id PK
         uuid user_id FK
         text name
+        text description
+        text color
+        text icon
+        boolean is_visible
         int sort_order
         timestamptz deleted_at
     }
@@ -410,6 +447,8 @@ erDiagram
         uuid category_id FK
         text title
         text url
+        text description
+        text icon
         boolean is_active
         int sort_order
         timestamptz deleted_at
@@ -421,11 +460,20 @@ erDiagram
         timestamptz clicked_at
         text referrer_host
         text device_type
+        varchar country_code
         text visitor_hash
     }
     click_daily_stats {
         uuid link_id PK,FK
         date day PK
+        uuid user_id FK
+        int count
+    }
+    click_daily_breakdowns {
+        uuid link_id PK,FK
+        date day PK
+        text dimension PK
+        text value PK
         uuid user_id FK
         int count
     }
@@ -439,7 +487,7 @@ erDiagram
 
 ### 8.2 Indexes
 
-`links(user_id, sort_order)`, `links(user_id, category_id)`, `links(user_id, deleted_at)`, `categories(user_id, sort_order)`, `categories(user_id, deleted_at)`, `click_events(link_id, clicked_at)`, `click_events(user_id, clicked_at)`, `click_events(clicked_at)` (nightly rollup and hash clearing), partial `click_events(clicked_at) WHERE visitor_hash IS NOT NULL` (hash clearing), `click_daily_stats(user_id, day)`, unique `profiles(username)` (citext), unique `profiles(user_id)`, unique `users(email)`, unique `accounts(provider, provider_account_id)`, unique `verification_tokens(token_hash)`, `verification_tokens(user_id, type)`, `verification_tokens(expires_at)` (prune), `sessions(expire)`, and the required expression index `sessions((sess->>'userId'))` via raw SQL migration for "log out everywhere". Add partial indexes for soft-delete scans (`links`, `categories`, `users` `WHERE deleted_at IS NULL`) in the same raw SQL migration; Prisma does not express partial indexes.
+`links(user_id, sort_order)`, `links(user_id, category_id)`, `links(user_id, deleted_at)`, `categories(user_id, sort_order)`, `categories(user_id, deleted_at)`, `click_events(link_id, clicked_at)`, `click_events(user_id, clicked_at)`, `click_events(clicked_at)` (nightly rollup and hash clearing), partial `click_events(clicked_at) WHERE visitor_hash IS NOT NULL` (hash clearing), `click_daily_stats(user_id, day)`, `click_daily_breakdowns(user_id, day)`, unique `profiles(username)` (citext), unique `profiles(user_id)`, unique `users(email)`, unique `accounts(provider, provider_account_id)`, unique `verification_tokens(token_hash)`, `verification_tokens(user_id, type)`, `verification_tokens(expires_at)` (prune), `sessions(expire)`, partial `users(deletion_scheduled_for) WHERE deletion_scheduled_for IS NOT NULL` (purge scan), and the required expression index `sessions((sess->>'userId'))` via raw SQL migration for "log out everywhere". Add partial indexes for soft-delete scans (`links`, `categories`, `users` `WHERE deleted_at IS NULL`) in the same raw SQL migration; Prisma does not express partial indexes. A unique partial index on `users(pending_email) WHERE pending_email IS NOT NULL` prevents two accounts claiming the same pending address; the service still returns a generic conflict to avoid enumeration.
 
 ### 8.3 Prisma Schema (core)
 
@@ -473,16 +521,20 @@ enum Plan {
 enum TokenType {
   email_verification
   password_reset
+  email_change
+  account_restore
 }
 
 model User {
   id              String     @id @default(uuid()) @db.Uuid
   email           String     @unique @db.Citext
+  pendingEmail    String?    @map("pending_email") @db.Citext
   passwordHash    String?    @map("password_hash")
   role            Role       @default(user)
   status          UserStatus @default(pending_verification)
   plan            Plan       @default(free)
   emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz
+  deletionScheduledFor DateTime? @map("deletion_scheduled_for") @db.Timestamptz
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz
@@ -493,6 +545,7 @@ model User {
   links           Link[]
   clickEvents     ClickEvent[]
   clickDailyStats ClickDailyStat[]
+  clickDailyBreakdowns ClickDailyBreakdown[]
   @@map("users")
 }
 
@@ -533,9 +586,11 @@ model Profile {
   userId      String   @unique @map("user_id") @db.Uuid
   username    String   @unique @db.Citext
   displayName String   @map("display_name")
+  headline    String?
   bio         String?
   avatarUrl   String?  @map("avatar_url")
-  theme       Json     @default("{}")
+  socials     Json     @default("{}")
+  theme       Json     @default("{}")   // appearance: theme, color, background, card, button, visibility
   isPublished Boolean  @default(false) @map("is_published")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -544,15 +599,19 @@ model Profile {
 }
 
 model Category {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  name      String
-  sortOrder Int       @default(0) @map("sort_order")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  links     Link[]
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  name        String
+  description String?
+  color       String    @default("#7c3aed")
+  icon        String    @default("folder")
+  isVisible   Boolean   @default(true) @map("is_visible")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links       Link[]
   @@unique([id, userId])          // target of composite FK from links
   @@index([userId, sortOrder])
   @@index([userId, deletedAt])
@@ -566,6 +625,7 @@ model Link {
   title       String
   url         String
   description String?
+  icon        String           @default("auto")
   isActive    Boolean          @default(true) @map("is_active")
   sortOrder   Int              @default(0) @map("sort_order")
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
@@ -577,6 +637,7 @@ model Link {
   category    Category?        @relation(fields: [categoryId, userId], references: [id, userId], onDelete: NoAction, onUpdate: NoAction)
   clicks      ClickEvent[]
   dailyStats  ClickDailyStat[]
+  dailyBreakdowns ClickDailyBreakdown[]
   @@unique([id, userId])          // target of composite FKs from click_events/click_daily_stats
   @@index([userId, sortOrder])
   @@index([userId, categoryId])
@@ -591,6 +652,7 @@ model ClickEvent {
   clickedAt    DateTime @default(now()) @map("clicked_at") @db.Timestamptz
   referrerHost String?  @map("referrer_host")
   deviceType   String?  @map("device_type")
+  countryCode  String?  @map("country_code") @db.VarChar(2)
   visitorHash  String?  @map("visitor_hash")
   // Composite FK keeps link_id and user_id in the same tenant.
   link         Link     @relation(fields: [linkId, userId], references: [id, userId], onDelete: Cascade)
@@ -620,15 +682,32 @@ model ClickDailyStat {
   @@index([userId, day])
   @@map("click_daily_stats")
 }
+
+model ClickDailyBreakdown {
+  linkId    String   @map("link_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  day       DateTime @db.Date
+  dimension String   // country | device | referrer
+  value     String   // ISO country code, device class or referrer host
+  count     Int      @default(0)
+  // Composite FK keeps link_id and user_id in the same tenant.
+  link      Link     @relation(fields: [linkId, userId], references: [id, userId], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([linkId, day, dimension, value])
+  @@index([userId, day, dimension])
+  @@map("click_daily_breakdowns")
+}
 ```
 
 **Category FK choice:** Prisma can express the optional composite relation (nullable `categoryId` + shared non-null `userId`), but `onDelete: SetNull` would emit `SET NULL` for both columns and fail on `user_id NOT NULL`. PG15 `ON DELETE SET NULL (category_id)` would work but requires hand-edited SQL that Prisma would treat as drift. Chosen: `NoAction`, and since categories are soft-deleted, the category service sets `category_id = NULL` on that user's links and soft-deletes the category in one transaction; the purge job does the same before hard-deleting. `scoped(userId).categories.get()` must filter `deletedAt: null`, so the service does not assign a link to a soft-deleted category.
 
-**Analytics FKs:** `click_events` and `click_daily_stats` carry both `link_id` and `user_id`, and each has a composite FK `(link_id, user_id) → links(id, user_id)` in addition to the user FK. This makes a cross-tenant analytics row impossible even if a service bug or manual insert supplies mismatched IDs; `links` therefore has `@@unique([id, user_id])`. Both values are derived server-side on ingest.
+**Analytics FKs:** `click_events`, `click_daily_stats` and `click_daily_breakdowns` carry both `link_id` and `user_id`, and each has a composite FK `(link_id, user_id) → links(id, user_id)` in addition to the user FK. This makes a cross-tenant analytics row impossible even if a service bug or manual insert supplies mismatched IDs; `links` therefore has `@@unique([id, user_id])`. Both values are derived server-side on ingest.
 
-**Username and session constraints:** `profiles.username` is `citext` for case-insensitive uniqueness; a raw SQL CHECK enforces the lowercase regex. The `sessions` table is created by the Prisma migration with the exact `connect-pg-simple` types (`sid varchar(255)`, `sess json`, `expire timestamp(6)`), and the store is configured with `createTableIfMissing: false`. The expression index `sessions((sess->>'userId'))` is added in a raw SQL migration. If the library already created the table in an existing environment, baseline it before switching.
+**Profile and presentation fields:** `headline` is capped at 80 characters; `socials` is validated by the shared `socialsSchema` (HTTPS URLs plus a `mailto:` email link, each ≤ 2048 chars). `theme` is the validated appearance object (theme id, six-digit color, background/card/button enums, four visibility booleans); it never contains arbitrary CSS. Category `color` is a six-digit hex, category/link `icon` values come from the shared fixed icon lists, and category `description` is capped at 80 characters. Category visibility is presentation state: hidden categories and their links are excluded from the public DTO and public page, but remain in the dashboard.
 
-**Retention:** `rawEventRetentionDays` (free: 90) bounds `click_events`; `analyticsHistoryDays` (free: 365) bounds dashboard ranges. `click_daily_stats` are kept for the life of the link. Unique-visitor counts are not stored in MVP (see §21).
+**Username and session constraints:** `profiles.username` is `citext` for case-insensitive uniqueness; a raw SQL CHECK enforces the lowercase regex. The `sessions` table is created by the Prisma migration with the exact `connect-pg-simple` types (`sid varchar(255)`, `sess json`, `expire timestamp(6)`), and the store is configured with `createTableIfMissing: false`. The expression index `sessions((sess->>'userId'))` is added in a raw SQL migration. Session JSON stores `userId`, `userAgent`, `createdAt` and `lastSeenAt` so Settings can list and revoke devices; it never stores an IP. If the library already created the table in an existing environment, baseline it before switching.
+
+**Retention:** `rawEventRetentionDays` (free: 90) bounds `click_events`; `analyticsHistoryDays` (free: 365) bounds dashboard ranges. `click_daily_stats` and `click_daily_breakdowns` are kept for the life of the link. Unique-visitor counts are not stored in MVP (see §21).
 
 `citext` is declared via `extensions = [citext]` and created by the first migration. Neon: `DATABASE_URL` = pooled connection string (`-pooler` host, `pgbouncer=true`) for runtime; `DIRECT_URL` = non-pooled for `prisma migrate`. `custom_domains` is documented only (**Later**). Soft-deleted links are hard-purged after 30 days by the prune job; cascades remove their analytics.
 
@@ -640,14 +719,18 @@ model ClickDailyStat {
 |---|---|---|
 | Password hashing | argon2id (m=19 MiB, t=2, p=1); password length 12–128 chars, capped before hashing to avoid DoS | MVP |
 | Login timing | Unknown email still performs a dummy argon2 verify so response timing does not reveal account existence | MVP |
-| Sessions | `express-session` + `connect-pg-simple`; cookie `lh.sid` (or `__Host-lh.sid` in production) httpOnly, Secure (prod), SameSite=Lax, no `Domain` attribute (host-only on `link.nayankunwar.com` via the rewrite), 7-day rolling; store table `sessions`, `createTableIfMissing: false`, table created by the Prisma migration matching `sid varchar(255)`, `sess json`, `expire timestamp(6)`, with the `sess->>'userId'` expression index added by raw SQL; regenerate on login; destroy on logout | MVP |
+| Sessions | `express-session` + `connect-pg-simple`; cookie `lh.sid` (or `__Host-lh.sid` in production) httpOnly, Secure (prod), SameSite=Lax, no `Domain` attribute (host-only on `link.nayankunwar.com` via the rewrite), 7-day rolling; store table `sessions`, `createTableIfMissing: false`, table created by the Prisma migration matching `sid varchar(255)`, `sess json`, `expire timestamp(6)`, with the `sess->>'userId'` expression index added by raw SQL; session JSON also stores `userAgent`, `createdAt` and `lastSeenAt` (never IP); regenerate on login; destroy on logout | MVP |
 | Owner bootstrap | `pnpm db:seed` → `role=owner`, `status=active`, `email_verified_at=now()`, profile `DEFAULT_USERNAME` | MVP |
 | Status check | Login + `loadUser` on every authenticated request (§7.3) | MVP |
 | Registration | `POST /auth/register` — `403 SIGNUP_DISABLED` unless `ALLOW_SIGNUP=true`. Creates user (`pending_verification`), profile (unpublished, chosen username), verification token, sends email. Generic response to avoid email enumeration | Built MVP, enabled Public launch |
 | Email verification | 32-byte random token, emailed as link `APP_URL/verify-email?token=…`; only `sha256(token)` stored; single-use (`used_at`) consumed atomically (`UPDATE ... WHERE used_at IS NULL RETURNING`); 24 h expiry; success → `status=active` | Public launch |
 | Resend verification | Invalidates prior unused tokens; rate-limited (3/h per user) | Public launch |
 | Password reset | Same token scheme, type `password_reset`, 1 h expiry; always `200` on request; token consumed atomically; on reset: update hash, delete **all** user sessions | Public launch |
-| Email transport | Resend in prod (`EMAIL_PROVIDER=resend`), console logger in dev/test; outbound timeout + retry/log; verification/reset pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
+| Email change | `PATCH /account/email` requires the current password, validates the new address, stores `users.pending_email`, and issues a 32-byte token of type `email_change` to the **new** address (24 h expiry). `POST /auth/verify-email-change` consumes it atomically and swaps `email`/`pending_email`, sets `email_verified_at`, and invalidates the old address. The current email stays active until verification; `DELETE /account/email` cancels a pending change. Never reveals whether the target address is already registered. | MVP |
+| Password change | `PATCH /account/password` requires the current password and the 12–128 policy; updates the hash and deletes **all other** sessions, keeping the current one. | MVP |
+| Session management | `GET /account/sessions` lists the current user's sessions from `sess` metadata; `DELETE /account/sessions/:sid` revokes one (non-current) session; `DELETE /account/sessions` revokes all others. Non-owned/non-existent SIDs → 404. | MVP |
+| Account deletion & restore | `DELETE /account` requires the current password and the exact username, sets `deletion_scheduled_for = now() + 30 days`, unpublishes the profile, revokes all other sessions and emails a restore link (`account_restore` token, 30-day window). `POST /account/restore` consumes the token and clears the schedule; a successful login also clears it. Restoring does not republish. The nightly prune hard-deletes expired accounts. | MVP |
+| Email transport | Resend in prod (`EMAIL_PROVIDER=resend`), console logger in dev/test; outbound timeout + retry/log; verification/reset/restore pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
 | OAuth | `accounts` table reserved | Later |
 
 ---
@@ -668,11 +751,28 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 | GET | `/auth/me` | session | MVP |
 | POST | `/auth/register` | – (flag) | MVP (flag-off) / Public launch |
 | POST | `/auth/verify-email` `{ token }` | – | Public launch |
+| POST | `/auth/verify-email-change` `{ token }` | – | MVP |
 | POST | `/auth/resend-verification` | session (pending) | Public launch |
 | POST | `/auth/forgot-password` `{ email }` | – | Public launch |
 | POST | `/auth/reset-password` `{ token, password }` | – | Public launch |
 
 `GET /auth/csrf` sets (or rotates) the readable `lh.csrf` cookie and returns `{ csrfToken }` with `Cache-Control: no-store`; clients echo it in `X-CSRF-Token`. The cookie is `SameSite=Lax`, `Secure` in production, `Path=/`, and is not httpOnly because the client must read it.
+
+**Account (own)**
+
+| Method | Path | Tier |
+|---|---|---|
+| GET | `/account` → email, `pendingEmail`, `emailVerified`, plan, createdAt, `deletionScheduledFor` | MVP |
+| PATCH | `/account/email` `{ email, currentPassword }` | MVP |
+| DELETE | `/account/email` (cancel pending change) | MVP |
+| PATCH | `/account/password` `{ currentPassword, newPassword }` | MVP |
+| GET | `/account/sessions` | MVP |
+| DELETE | `/account/sessions/:sid` | MVP |
+| DELETE | `/account/sessions` (all others) | MVP |
+| DELETE | `/account` `{ password, confirmUsername }` | MVP |
+| POST | `/account/restore` `{ token }` | MVP |
+
+All account routes are authenticated except `POST /account/restore` (token is the credential). `DELETE /account` is idempotent: a second call while already scheduled returns the same `deletionScheduledFor`. `PATCH /account/email` returns a generic success response whether or not the target address is already in use, and sends the verification link only to the new address.
 
 **Public**
 
@@ -681,19 +781,19 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 | GET | `/public/profiles/:username` | MVP |
 | GET | `/usernames/:username/availability` → `{ available, reason? }` (`reserved`/`taken`/`invalid`) | MVP |
 
-`/public/profiles/:username` returns an **explicit DTO** (profile display fields, theme, published active links, category names/order) and never `email`, `status`, `plan`, `user_id`, session data or internal IDs. It is cacheable (`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`) so Next.js tagged fetches work. It is rate-limited 120/min/IP for browsers, but requests carrying a valid `X-Internal-Token` equal to `INTERNAL_FETCH_TOKEN` are exempt so Vercel ISR/build traffic does not consume the bucket. The public profile endpoint must not set cookies (`saveUninitialized: false`), or a cached `Set-Cookie` could leak a session. The availability endpoint is rate-limited 30/min/IP and returns only `available`/`reason`.
+`/public/profiles/:username` returns an **explicit DTO** (profile display fields incl. `headline`, `avatarUrl` and validated `socials`, appearance, published active links with their icon, visible categories with name/description/color/icon/order) and never `email`, `pending_email`, `status`, `plan`, `deletion_scheduled_for`, `user_id`, session data or internal IDs. Hidden categories and their links are omitted. It is cacheable (`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`) so Next.js tagged fetches work. It is rate-limited 120/min/IP for browsers, but requests carrying a valid `X-Internal-Token` equal to `INTERNAL_FETCH_TOKEN` are exempt so Vercel ISR/build traffic does not consume the bucket. The public profile endpoint must not set cookies (`saveUninitialized: false`), or a cached `Set-Cookie` could leak a session. The availability endpoint is rate-limited 30/min/IP and returns only `available`/`reason`.
 
 **Profile (own)**
 
 | Method | Path | Tier |
 |---|---|---|
 | GET | `/profile` | MVP |
-| PATCH | `/profile` (incl. username change) | MVP |
+| PATCH | `/profile` (display name, headline, bio, avatar URL, socials, username change) | MVP |
 | POST | `/profile/publish` · `/profile/unpublish` | MVP |
 
-**Links (own)**: `GET /links?search=&categoryId=&status=`, `POST /links`, `GET/PATCH/DELETE /links/:id`, `PATCH /links/:id/status`, `PUT /links/reorder` — MVP
+**Links (own)**: `GET /links?search=&categoryId=&status=`, `POST /links`, `GET/PATCH/DELETE /links/:id`, `PATCH /links/:id/status`, `PUT /links/reorder` — MVP. Payloads include `title`, `url`, `description`, `categoryId`, `icon`, `isActive`; reorder is a full ordered set.
 
-**Categories (own)**: `GET/POST /categories`, `PATCH/DELETE /categories/:id`, `PUT /categories/reorder` — MVP
+**Categories (own)**: `GET/POST /categories`, `PATCH/DELETE /categories/:id`, `PUT /categories/reorder` — MVP. Payloads include `name`, `description`, `color`, `icon`, `isVisible`; delete detaches links in the same transaction.
 
 **Analytics**
 
@@ -703,10 +803,11 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 | GET | `/analytics/overview?range=` | session | MVP |
 | GET | `/analytics/links/:id` | session | MVP |
 | GET | `/analytics/timeseries?range=&linkId=` | session | MVP |
+| GET | `/analytics/breakdowns?range=&linkId=&dimension=country\|device\|referrer` | session | MVP |
 
-`range` is a closed enum (`7d`, `30d`, `90d`, `365d`) capped by `analyticsHistoryDays`; `linkId` is resolved through the scoped repository, so another user's link is `404`. Days are UTC and the dashboard labels that explicitly.
+`range` is a closed enum (`7d`, `30d`, `90d`, `365d`) capped by `analyticsHistoryDays`; `linkId` is resolved through the scoped repository, so another user's link is `404`. Breakdowns combine `click_daily_breakdowns` for rolled-up days with raw `click_events` for days after the watermark. Days are UTC and the dashboard labels that explicitly.
 
-**Export (own)**: `GET /export?format=json|csv` — MVP (CSV as zip of `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv`; rate-limited 5/h; cells escaped per §14)
+**Export (own)**: `GET /export?format=json|csv` — MVP. JSON is `schemaVersion: 2`. CSV is a zip of `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv` and `daily_breakdowns.csv`; rate-limited 5/h; cells escaped per §14.
 
 **Ops**: `GET /api/v1/health` — MVP (readiness, includes DB) · `GET /api/v1/health/live` — liveness only, no DB check · `GET /debug/ip` — owner-only, disabled unless `DEBUG_IP_ENDPOINT=true` (deployment verification only)
 
@@ -758,10 +859,11 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 3. API mounts `express.text({ type: 'text/plain', limit: '1kb' })` **only on this route**, then `ClickSchema.parse(JSON.parse(body))` (`{ linkId: uuid, referrer?: string }`) inside try/catch. `referrer` is parsed as a host only, capped at 255 chars, and never trusted for authorization.
 4. Origin/Referer must match `APP_URL` (no CSRF token — anonymous endpoint). Use `Origin` first; `Referer` is only a fallback. The request `Referer` is **not** stored as `referrer_host`.
 5. Server derives `user_id` from the link; link must be active, not deleted, owner `active`, profile published.
-6. Bot UA filtering (`isbot`), missing UA dropped; dedupe 30 s via `visitor_hash = HMAC-SHA256(dailyKey, ip + "|" + ua + "|" + linkId)` where `dailyKey = HMAC-SHA256(ANALYTICS_HASH_SECRET, "YYYY-MM-DD" in UTC)`. The daily key is derived in memory and never stored; the hash cannot be linked across days or links. `visitor_hash` is nulled (UPDATE, never DELETE) by the nightly job once past the dedupe window (kept ≤ 24 h, §11.3). Rotating `ANALYTICS_HASH_SECRET` only affects dedupe across the rotation instant (acceptable); rotate on suspected leak. IP never stored; only `referrer_host` (from `document.referrer`) and `device_type` kept.
-7. Rate limit 60/min/IP. **Always `204`**, even on invalid input, bad Origin, oversized/malformed body, or rate-limit rejection. The click route has route-specific middleware/handlers: the rate limiter's `handler` returns `204`, and a route-level error handler converts `express.text` parser errors (`entity.too.large`, `entity.parse.failed`) to `204`. Global middleware must not return `403`/`413`/`429` for this path.
-8. Anchors are plain `<a href="{url}" target="_blank" rel="noopener noreferrer">`; navigation never waits on tracking.
-9. Retention and rollup: see §11.3.
+6. **Country:** the web tier adds `X-Web-Proxy-Secret: $WEB_PROXY_SECRET` to the `/api/*` rewrite and forwards the platform's `x-vercel-ip-country` header. The API trusts the country header **only** when the secret matches (constant-time compare) and the value matches `^[A-Z]{2}$`; otherwise `country_code` is null. The browser cannot set the secret, so direct API requests cannot spoof a country. No IP address is stored or logged.
+7. Bot UA filtering (`isbot`), missing UA dropped; dedupe 30 s via `visitor_hash = HMAC-SHA256(dailyKey, ip + "|" + ua + "|" + linkId)` where `dailyKey = HMAC-SHA256(ANALYTICS_HASH_SECRET, "YYYY-MM-DD" in UTC)`. The daily key is derived in memory and never stored; the hash cannot be linked across days or links. `visitor_hash` is nulled (UPDATE, never DELETE) by the nightly job once past the dedupe window (kept ≤ 24 h, §11.3). Rotating `ANALYTICS_HASH_SECRET` only affects dedupe across the rotation instant (acceptable); rotate on suspected leak. IP never stored; only `referrer_host` (from `document.referrer`), `device_type` and `country_code` kept.
+8. Rate limit 60/min/IP. **Always `204`**, even on invalid input, bad Origin, oversized/malformed body, or rate-limit rejection. The click route has route-specific middleware/handlers: the rate limiter's `handler` returns `204`, and a route-level error handler converts `express.text` parser errors (`entity.too.large`, `entity.parse.failed`) to `204`. Global middleware must not return `403`/`413`/`429` for this path.
+9. Anchors are plain `<a href="{url}" target="_blank" rel="noopener noreferrer">`; navigation never waits on tracking.
+10. Retention and rollup: see §11.3.
 
 ### 11.2 Secure ISR Revalidation
 
@@ -791,7 +893,7 @@ One job (`jobs/analytics-nightly.ts`), scheduled ~00:30 UTC. Every step is idemp
 
 Order:
 
-1. **Roll up (a).** For every complete UTC day `d` from `watermark − 2` (re-cover a small window for late inserts) to `yesterday`: recompute from raw events and upsert
+1. **Roll up totals (a).** For every complete UTC day `d` from `watermark − 2` (re-cover a small window for late inserts) to `yesterday`: recompute from raw events and upsert
    ```sql
    INSERT INTO click_daily_stats (link_id, user_id, day, count)
    SELECT link_id, user_id, $d, count(*) FROM click_events
@@ -800,13 +902,25 @@ Order:
    GROUP BY link_id, user_id
    ON CONFLICT (link_id, day) DO UPDATE SET count = EXCLUDED.count;
    ```
-   then advance `watermark` to `yesterday` in the same transaction once every day in the window is upserted (on a first run, only after the batched backfill finishes). Because the recompute window is only `watermark − 2`, the free plan's 90-day retention makes it safe; before adding a shorter retention plan, enforce `rawEventRetentionDays >= lookback + 1` or compute a per-user lower bound so a purged day is never re-rolled. Counting does not use `visitor_hash`, so step 2 cannot affect it.
-2. **Clear hashes (b).** `UPDATE click_events SET visitor_hash = NULL WHERE visitor_hash IS NOT NULL AND clicked_at < now() - interval '24 hours'`. UPDATE only; row counts unchanged. Use the partial index from §8.2.
-3. **Purge raw events (c).** Per user, `DELETE FROM click_events WHERE user_id = $u AND clicked_at < LEAST(now() - make_interval(days => $1), ((watermark + 1)::timestamp AT TIME ZONE 'UTC'))` where `$1 = rawEventRetentionDays`. Retention comes from `entitlementsFor(user.plan).rawEventRetentionDays`, and the `watermark + 1` bound guarantees only rolled-up days are deleted. Batch with `ctid IN (SELECT ctid FROM click_events WHERE ... LIMIT 5000)`; repeat until no rows.
-4. **Daily stats (d).** `click_daily_stats` follow their own policy: kept for the life of the link (removed by cascade on link hard-purge). `analyticsHistoryDays` bounds dashboard ranges, not storage. Unique-visitor counts are **not** stored in MVP; adding them later requires a `unique_count` column computed during rollup before step 2 clears hashes.
-5. Then the existing prune tasks: expired `verification_tokens`, expired `sessions`, soft-deleted rows past 30 days. The user purge also deletes sessions by `sess->>'userId'` because there is no FK from `sessions` to `users`.
+   then advance `watermark` to `yesterday` in the same transaction once every day in the window is upserted (on a first run, only after the batched backfill finishes). Because the recompute window is only `watermark − 2`, the free plan's 90-day retention makes it safe; before adding a shorter retention plan, enforce `rawEventRetentionDays >= lookback + 1` or compute a per-user lower bound so a purged day is never re-rolled. Counting does not use `visitor_hash`, so step 3 cannot affect it.
+2. **Roll up breakdowns (b).** In the same transaction/window, recompute the `country`, `device` and `referrer` dimensions:
+   ```sql
+   INSERT INTO click_daily_breakdowns (link_id, user_id, day, dimension, value, count)
+   SELECT link_id, user_id, $d, 'country', country_code, count(*)
+   FROM click_events
+   WHERE clicked_at >= ($d::timestamp AT TIME ZONE 'UTC')
+     AND clicked_at <  (($d + 1)::timestamp AT TIME ZONE 'UTC')
+     AND country_code IS NOT NULL
+   GROUP BY link_id, user_id, country_code
+   ON CONFLICT (link_id, day, dimension, value) DO UPDATE SET count = EXCLUDED.count;
+   ```
+   Repeat for `device` (`device_type`) and `referrer` (`referrer_host`). Null values are omitted rather than stored as an empty bucket. Delete rows for the day/dimension that no longer exist in the recompute window so a corrected rollup cannot leave stale values. Breakdowns must be written **before** raw events are purged; clearing hashes does not affect them.
+3. **Clear hashes (c).** `UPDATE click_events SET visitor_hash = NULL WHERE visitor_hash IS NOT NULL AND clicked_at < now() - interval '24 hours'`. UPDATE only; row counts unchanged. Use the partial index from §8.2.
+4. **Purge raw events (d).** Per user, `DELETE FROM click_events WHERE user_id = $u AND clicked_at < LEAST(now() - make_interval(days => $1), ((watermark + 1)::timestamp AT TIME ZONE 'UTC'))` where `$1 = rawEventRetentionDays`. Retention comes from `entitlementsFor(user.plan).rawEventRetentionDays`, and the `watermark + 1` bound guarantees only rolled-up days are deleted. Batch with `ctid IN (SELECT ctid FROM click_events WHERE ... LIMIT 5000)`; repeat until no rows.
+5. **Daily stats and breakdowns (e).** `click_daily_stats` and `click_daily_breakdowns` follow their own policy: kept for the life of the link (removed by cascade on link hard-purge). `analyticsHistoryDays` bounds dashboard ranges, not storage. Unique-visitor counts are **not** stored in MVP; adding them later requires a `unique_count` column computed during rollup before step 3 clears hashes.
+6. Then the existing prune tasks: expired `verification_tokens`, expired `sessions`, soft-deleted rows past 30 days, and users whose `deletion_scheduled_for` has passed (hard delete, with the same session cleanup). The user purge also deletes sessions by `sess->>'userId'` because there is no FK from `sessions` to `users`.
 
-**Dashboard reads:** totals = `SUM(click_daily_stats.count)` for days `≤ watermark` **+** `COUNT(click_events)` for days `> watermark` (today and any not-yet-rolled-up days). Because raw events are only purged for days `≤ watermark`, totals are identical before and after a purge, and before and after hash clearing. Dashboard ranges are capped by `analyticsHistoryDays`; days are UTC and the UI labels that explicitly.
+**Dashboard reads:** totals = `SUM(click_daily_stats.count)` for days `≤ watermark` **+** `COUNT(click_events)` for days `> watermark` (today and any not-yet-rolled-up days). Breakdowns use `click_daily_breakdowns` for days `≤ watermark` **+** raw `click_events` grouped by the dimension for days `> watermark`. Because raw events are only purged for days `≤ watermark`, totals and breakdowns are identical before and after a purge, and before and after hash clearing. Dashboard ranges are capped by `analyticsHistoryDays`; days are UTC and the UI labels that explicitly.
 
 ---
 
@@ -816,13 +930,16 @@ Order:
 - CSRF: signed/bound double-submit token (`lh.csrf` cookie + `X-CSRF-Token` header) **and** Origin check on **all non-GET requests**, including login/register/forgot/reset; the anonymous click route uses Origin only and always returns `204`. Bind the token to the session (or HMAC it) so a sibling-subdomain cookie cannot satisfy the check; login performs session regeneration.
 - Account-status enforcement on every authenticated request (§7.3).
 - Tenant isolation in repositories; 404 for non-owned; cross-tenant tests mandatory.
-- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
+- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
 - Tokens: random 32 bytes, stored hashed, single-use consumed atomically, expiring; never logged. Password length 12–128 chars before argon2; unknown-email logins perform a dummy hash.
 - Revalidation: HMAC + timestamp window; secret server-only; optional nonce cache for replay; `INTERNAL_FETCH_TOKEN` for server-to-server public profile fetches.
-- No email enumeration on register/forgot-password.
-- Zod on all inputs; URL scheme allowlist `http`/`https`, max 2048 chars; username rules + reserved list. Add field length caps (display name, bio, title, description, category, theme), HTTPS-only avatar URLs with the same private-host denylist, and a private/localhost host denylist for link URLs (IPv4/IPv6 private, loopback, link-local, and cloud metadata addresses). Validate `theme` against a fixed schema (colors/fonts only, no arbitrary CSS).
+- No email enumeration on register/forgot-password; email change returns a generic success and never reveals whether the target address is registered.
+- **Country trust:** `x-vercel-ip-country` is accepted only when `X-Web-Proxy-Secret` matches `WEB_PROXY_SECRET` (constant-time compare); the value must be two uppercase letters. Direct API requests without the secret get `country_code = null`. Never derive country from an IP lookup, and never store/log the IP.
+- **Account lifecycle:** email-change tokens are 32 random bytes, stored hashed, single-use, 24 h expiry; password change deletes all other sessions; deletion requires password + exact username, is idempotent, and schedules a 30-day purge. Restore tokens are single-use and do not republish the profile. The nightly prune is the only path that hard-deletes a user.
+- **Demo route:** `/preview` is disabled unless `ALLOW_DEMO_PREVIEW=true`, is never linked in production, and must not be deployed as an auth bypass. The real session cookie is httpOnly and server-issued.
+- Zod on all inputs; URL scheme allowlist `http`/`https`, max 2048 chars; username rules + reserved list. Add field length caps (display name, headline, bio, title, description, category, theme), HTTPS-only avatar URLs with the same private-host denylist, and a private/localhost host denylist for link URLs (IPv4/IPv6 private, loopback, link-local, and cloud metadata addresses). Validate `theme` against a fixed schema (colors/fonts only, no arbitrary CSS).
 - `helmet`, CSP on web; CORS restricted to `APP_URL`; `Referrer-Policy: no-referrer` on token pages; SPF/DKIM/DMARC for email.
-- Privacy: no raw IPs; visitor hashes are HMACs under an in-memory daily key (from `ANALYTICS_HASH_SECRET`), short-lived; `referrer_host` comes from `document.referrer` host only; retention via entitlements.
+- Privacy: no raw IPs; visitor hashes are HMACs under an in-memory daily key (from `ANALYTICS_HASH_SECRET`), short-lived; `referrer_host` comes from `document.referrer` host only; `country_code` comes from a trusted proxy header and is never joined to an IP; retention via entitlements.
 - Cross-resource ownership: any referenced ID (`categoryId`, reorder IDs, future `page_id`) is resolved through the scoped repository → 404 if not owned; composite FKs enforce it in the DB, including analytics rows.
 - Public responses use explicit DTOs; no email, status, plan, `user_id` or internal IDs.
 - CSV export escapes formula-leading cells (§14); startup env validation rejects default/short/equal secrets; no secrets or tokens in logs.
@@ -853,8 +970,37 @@ Order:
 
 ## 14. Data Export & Account Deletion
 
-- **MVP:** `GET /api/v1/export` — the user's own profile, links, categories, daily stats; JSON or CSV; tenant-scoped; never includes password hashes, tokens, sessions or other users' data. JSON includes a `schemaVersion`; the zip is streamed. CSV cells beginning with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` to prevent spreadsheet formula injection. Export filenames are sanitized.
-- **Later:** self-serve deletion → `status=deleted`, sessions removed, profile hidden, purge job hard-deletes after 30 days. Until then, deletion requests are handled manually through the abuse/contact address; document the response window in the Privacy page.
+**Export (MVP).** `GET /api/v1/export?format=json|csv` returns the signed-in user's own data, tenant-scoped, and never includes the account email, password hash, sessions, tokens, `user_id` or other users' data. The profile's optional public `socials.email` is exported because it is profile content, not the account address. Exports are rate-limited 5/h/user and filenames are sanitized.
+
+- **JSON** (`format=json`) uses `schemaVersion: 2`:
+  ```json
+  {
+    "schemaVersion": 2,
+    "exportedAt": "2026-10-25T00:00:00.000Z",
+    "profile": { "username": "…", "displayName": "…", "headline": "…", "bio": "…", "avatarUrl": "…", "socials": {}, "isPublished": true, "url": "/…" },
+    "appearance": { "theme": "default", "color": "#7c3aed", "background": "gradient", "card": "rounded", "button": "solid", "showAvatar": true, "showBio": true, "showSocial": true, "showDescription": true },
+    "links": [{ "position": 1, "title": "…", "url": "…", "description": "…", "category": "…", "icon": "auto", "isActive": true, "createdAt": "…", "clicksLast365Days": 0 }],
+    "categories": [{ "position": 1, "name": "…", "description": "…", "color": "#7c3aed", "icon": "folder", "isVisible": true }],
+    "analytics": { "historyDays": 365, "totalClicks": 0, "daily": [{ "date": "2026-10-24", "clicks": 0 }] }
+  }
+  ```
+  Sections can be omitted by the UI include toggles; the profile-only variant includes profile, appearance and links.
+- **CSV** (`format=csv`) is a zip containing five files, each with a header row and UTF-8 content:
+  - `profile.csv` — `name,username,headline,bio,avatar_url,url,published,website,github,linkedin,x,medium,email`
+  - `links.csv` — `position,title,url,description,category,icon,active,created_at[,clicks_last_365_days]`
+  - `categories.csv` — `position,name,description,color,icon,visible`
+  - `daily_stats.csv` — `date,link_id,link_title,clicks`
+  - `daily_breakdowns.csv` — `date,link_id,dimension,value,clicks`
+  `daily_stats.csv` and `daily_breakdowns.csv` are included only when analytics is selected. Breakdown rows cover `country`, `device` and `referrer`; daily totals remain the source of truth if a breakdown allocation is rounded.
+- **Formula injection:** every CSV cell beginning with `=`, `+`, `-`, `@`, tab or CR is prefixed with `'` before quoting; cells containing `"`, comma, LF or CR are quoted with doubled quotes. JSON is not executable and is emitted as-is. The zip is streamed and built in memory only for the free-plan size.
+
+**Account deletion & restore (MVP).**
+
+1. `DELETE /account` requires the current password and the exact username. It sets `deletion_scheduled_for = now() + 30 days`, sets `is_published = false`, revokes all sessions except the current one, and sends a restore link to the account email. The response returns `deletionScheduledFor`; repeated calls are idempotent.
+2. The public profile is hidden immediately (unpublished). The owner can still sign in, export, change settings or restore during the grace period.
+3. `POST /account/restore` consumes the single-use `account_restore` token (valid for the 30-day grace window, hashed at rest) and clears `deletion_scheduled_for`. A successful login also clears it. Restoring never republishes the profile; the owner must publish again.
+4. The nightly prune hard-deletes users whose `deletion_scheduled_for` has passed, cascading profiles, categories, links, `click_events`, `click_daily_stats`, `click_daily_breakdowns` and tokens, and deleting sessions by `sess->>'userId'`. It sets `status=deleted` immediately before the hard delete for audit clarity.
+5. Audit-log scheduling, restore and purge. Deletion requests are not accepted by email once the self-serve flow ships; the contact address remains for abuse/privacy questions.
 
 ---
 
@@ -864,7 +1010,7 @@ Order:
 - pino JSON logs (`LOG_LEVEL`); redact passwords, tokens, cookies, signatures, and request bodies on auth routes.
 - `X-Request-Id` on every request/log/error; accept an inbound ID only if it matches a safe pattern, otherwise generate one.
 - Error tracking (e.g. Sentry free tier) for API and web; nightly-job failures and repeated revalidation failures alert the owner.
-- Audit log for account status changes, username changes, and owner/admin actions; manual SQL changes are recorded in the runbook.
+- Audit log for account status changes, email changes (pending and confirmed), password changes, session revocations, deletion scheduled/restored/purged, username changes, and owner/admin actions; manual SQL changes are recorded in the runbook.
 - Uptime monitor on `https://api.nayankunwar.com/api/v1/health` (and optionally `https://link.nayankunwar.com/api/v1/health` to cover the rewrite) (free tier, e.g. UptimeRobot) — Public launch.
 
 ---
@@ -879,24 +1025,26 @@ Order:
 | Registration | Supertest | `ALLOW_SIGNUP=false` → 403; true → user `pending_verification`, unpublished profile, token row, mail sent (mock); duplicate email generic response; taken/reserved username 409 |
 | Verification | Supertest | valid → `active`; reused → 400; expired → 400; tampered → 400; resend invalidates old; two concurrent consumes → exactly one succeeds |
 | Password reset | Supertest | token flow, expiry, single-use, two concurrent consumes, all sessions revoked |
+| Account lifecycle | Supertest | email change sets `pending_email` and sends only to the new address; old email remains valid until verification; reused/expired/tampered email-change tokens → 400; concurrent consumes → exactly one succeeds; password change revokes every other session but keeps the current one; session list/revoke is tenant-scoped; `DELETE /account` is idempotent, unpublishes immediately, revokes other sessions; login and restore token both clear `deletion_scheduled_for`; restore does not republish; purge hard-deletes after the grace period and leaves earlier accounts untouched |
 | Account status | Supertest | pending blocked from links API (403); suspended cannot log in; suspending an active user kills the live session on next request; suspended profile 404 |
 | Tenant isolation | Supertest | user B cannot read/update/delete/reorder A's links/categories, read A's profile settings, analytics or export → 404 |
 | Cross-tenant references | Supertest | B creates a link with A's `categoryId` → 404, no row; B updates own link to A's `categoryId` → 404, link unchanged; reorder payload containing A's link/category IDs → 404, no order change; DB-level insert bypassing service violates the category composite FK and the analytics `(link_id, user_id)` composite FKs; deleting a category detaches its links (user_id intact) |
-| Analytics job | Vitest + test DB | clearing `visitor_hash` leaves `click_events` row count and dashboard totals unchanged; rollup before vs after hash clearing → identical `click_daily_stats`; rollup rerun is idempotent (same rows/counts, watermark unchanged); first run backfills historical raw days; purge never deletes days `> watermark` (simulate a missed rollup); dashboard totals equal before and after purge; per-user `rawEventRetentionDays` respected; short-retention user never has a purged day re-rolled to zero; concurrent second run exits on the run-level lock |
+| Analytics job | Vitest + test DB | clearing `visitor_hash` leaves `click_events` row count and dashboard totals unchanged; rollup before vs after hash clearing → identical `click_daily_stats`; breakdowns for country/device/referrer match raw groupings; breakdown rows are written before raw purge; stale breakdown values are removed on recompute; rollup rerun is idempotent (same rows/counts, watermark unchanged); first run backfills historical raw days; purge never deletes days `> watermark` (simulate a missed rollup); dashboard totals/breakdowns equal before and after purge; per-user `rawEventRetentionDays` respected; short-retention user never has a purged day re-rolled to zero; concurrent second run exits on the run-level lock |
 | Visitor hash | Vitest | same ip/ua/link same day → same hash; different link or day → different; daily key never persisted; `referrer_host` comes from the body's `document.referrer`, not the request `Referer` |
+| Country code | Supertest | valid `X-Web-Proxy-Secret` + `x-vercel-ip-country` stores a two-letter code; missing/wrong secret ignores the header and stores null; lowercase/invalid values are rejected; direct API requests cannot spoof country; no IP is stored or logged |
 | Proxy trust | Supertest | with configured `trust proxy`, spoofed leftmost `X-Forwarded-For` does not change `req.ip` |
 | Usernames | Supertest | availability endpoint; rename revalidates old+new tags |
 | Beacon parsing | Supertest | `text/plain` JSON accepted → 204 + row; `application/json`, malformed, oversized, bad UUID → 204, no row; bad Origin → 204, no row; rate-limited request → 204; bot UA ignored; dedupe window; body referrer host persisted, request `Referer` ignored |
 | Revalidation | Vitest (route handler) | valid signature → 204 + `revalidateTag` called; bad signature, stale timestamp, bad tag → 401/400; rename revalidates old and new tags; replay within the window is bounded by the nonce cache if enabled; public profile fetch sends the internal token and is exempt from the public rate limit |
 | Session store | Supertest + test DB | `connect-pg-simple` reads/writes the Prisma-created `sessions` table; `sess->>'userId'` index is used; status change/password reset deletes all user sessions; orphan sessions removed on user purge |
 | Public DTO / cache | Supertest | public profile response contains no email/status/plan/user_id and no `Set-Cookie`; `Cache-Control` is public on the profile endpoint and `no-store` on auth/dashboard; internal-token fetch bypasses the public limiter |
-| Export safety | Vitest | CSV cells starting with `= + - @` are escaped; zip contains the four CSVs; export is tenant-scoped and excludes password hashes/tokens/sessions |
+| Export safety | Vitest | CSV cells starting with `= + - @` are escaped; zip contains the five CSVs (profile, links, categories, daily_stats, daily_breakdowns); JSON is `schemaVersion: 2`; export is tenant-scoped and excludes account email/password hashes/tokens/sessions |
 | Theme/avatar | Vitest + Supertest | invalid theme keys/CSS are rejected; non-HTTPS or private-host avatar URLs are rejected; link URLs reject private/localhost/metadata hosts |
 | Rate limits | Supertest | IPv6 addresses in the same /64 share a bucket; availability endpoint is limited; click limiter returns 204 |
 | Accessibility | Playwright + axe | public profile and dashboard keyboard/focus/contrast; avatar alt text; no keyboard trap in reorder |
 | SEO | Playwright | published profile has canonical/OG metadata; unpublished profile returns 404/noindex; sitemap excludes unpublished profiles |
-| Routing | Playwright | `/dashboard` beats `[username]`; reserved paths not resolved as profiles; `/` respects `ROOT_MODE`; `/robots.txt` and `/sitemap.xml` generated |
-| E2E | Playwright | owner flow (login, CRUD, reorder, publish, view public page, click, analytics, export); registration → verify → create profile (signup enabled env) |
+| Routing | Playwright | `/dashboard` beats `[username]`; reserved paths (incl. `/check-inbox`, `/restore-account`, `/preview`) not resolved as profiles; `/` respects `ROOT_MODE`; `/robots.txt` and `/sitemap.xml` generated; `/preview` returns 404 when demo mode is off |
+| E2E | Playwright | owner flow (login, CRUD, reorder, publish, view public page, click, analytics, export); registration → verify → create profile (signup enabled env); settings email/password/session flows; delete → restore → login; CSV zip has five files |
 
 ### Acceptance Criteria
 
@@ -907,8 +1055,9 @@ Order:
 - Unverified/suspended/deleted users are blocked per §7.3.
 - Clicks recorded via beacon without affecting navigation; bots and repeats ignored; `referrer_host` reflects the external source, not the profile page.
 - Revalidation only accepts signed, fresh requests; profile edits become visible within the documented ISR behavior; public pages remain cacheable.
-- Public profile responses expose no account internals; CSV exports are formula-safe.
-- Analytics totals are identical before/after purge and hash clearing; the nightly job is single-run and first-run safe.
+- Public profile responses expose no account internals; CSV exports are formula-safe and contain the five v2 files.
+- Analytics totals and country/device/referrer breakdowns are identical before/after purge and hash clearing; the nightly job is single-run and first-run safe.
+- Account deletion hides the profile immediately, restore works via login or the emailed link during the 30-day grace period, and the purge hard-deletes only expired accounts.
 - No excluded features present. No raw IPs stored.
 
 ---
@@ -936,8 +1085,11 @@ Order:
 
 - [ ] Neon DB, `citext` extension, `prisma migrate deploy` in release step
 - [ ] Owner seeded (strong password), profile `DEFAULT_USERNAME` published
-- [ ] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET` ≥ 32 random bytes, distinct
-- [ ] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile`
+- [ ] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET`, `WEB_PROXY_SECRET` ≥ 32 random bytes, distinct
+- [ ] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile`, `ALLOW_DEMO_PREVIEW=false`
+- [ ] Web rewrite adds `X-Web-Proxy-Secret`; API stores country only when it matches; direct API country spoof is ignored
+- [ ] Account deletion/restore emails delivered; purge job scheduled and tested against a throwaway account; restore link and login both cancel deletion
+- [ ] Export verified as `schemaVersion: 2` with five CSVs and formula-safe cells
 - [ ] Rewrite `/api/:path*` only; `/internal/revalidate` reachable from API via `WEB_INTERNAL_URL`
 - [ ] **Verify `TRUST_PROXY` (do not assume):**
   1. Temporarily enable `GET /api/v1/debug/ip` (`DEBUG_IP_ENDPOINT=true`; requires owner session) returning `req.ip`, `req.ips`, raw `X-Forwarded-For`, and `req.socket.remoteAddress` — or log the same fields once.
@@ -969,7 +1121,11 @@ The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=pr
 - [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
 - [ ] CSRF/Origin enforced on login/register/forgot/reset; token race tests pass
 - [ ] Public profile DTO, cache headers, and ISR internal token verified
-- [ ] ToS and Privacy pages published and linked from signup; manual deletion request path documented
+- [ ] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
+- [ ] Account email change, password change and session revocation tested in production
+- [ ] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
+- [ ] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
+- [ ] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
 - [ ] Abuse report path live (profile footer link → owner inbox)
 - [ ] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayan`
 - [ ] Owner account migration: confirm `role=owner`, `status=active`, `email_verified_at` set, `plan=free`; data migration script idempotent
@@ -1008,15 +1164,20 @@ WEB_INTERNAL_URL=http://localhost:3000   # API → Next.js /internal/revalidate
 
 # --- Web ---
 API_BASE_URL=http://localhost:4000       # rewrite target (prod: https://api.nayankunwar.com)
+NEXT_PUBLIC_APP_URL=https://link.nayankunwar.com  # canonical public origin used in metadata/links
+NEXT_PUBLIC_ALLOW_SIGNUP=true            # UI flag only; the API enforces ALLOW_SIGNUP
+ALLOW_DEMO_PREVIEW=false                 # true only for the local UI-first demo; enables /preview
 
 # --- Shared (API + Web) ---
 REVALIDATE_SECRET=change-me-32-bytes-min # signs /internal/revalidate, server-only
 INTERNAL_FETCH_TOKEN=change-me-32-bytes-min # exempts ISR/build fetches from the public limiter
+WEB_PROXY_SECRET=change-me-32-bytes-min  # web tier adds X-Web-Proxy-Secret; API trusts country header only with it
 
 # --- Tenancy & features ---
 DEFAULT_USERNAME=nayan
 ROOT_MODE=profile                        # profile | landing
 ALLOW_SIGNUP=false                       # true only at public launch
+ACCOUNT_DELETION_GRACE_DAYS=30           # keep in sync with shared LIMITS.deleteGraceDays
 
 # --- Email ---
 EMAIL_PROVIDER=console                   # console | resend
@@ -1034,24 +1195,24 @@ SEED_OWNER_EMAIL=owner@nayankunwar.com
 SEED_OWNER_PASSWORD=change-me-12-chars
 ```
 
-Analytics raw/history retention comes from entitlements, not env. In production, startup env validation rejects known placeholders (values containing `change-me`), secrets shorter than 32 bytes, and equal secrets; `INTERNAL_FETCH_TOKEN` must differ from the session, revalidation and analytics secrets. The seed password is development-only.
+Analytics raw/history retention comes from entitlements, not env. In production, startup env validation rejects known placeholders (values containing `change-me`), secrets shorter than 32 bytes, and equal secrets; `INTERNAL_FETCH_TOKEN` and `WEB_PROXY_SECRET` must differ from the session, revalidation and analytics secrets. `ALLOW_DEMO_PREVIEW` must be false in production; `NEXT_PUBLIC_ALLOW_SIGNUP` is display-only and never replaces the API's `ALLOW_SIGNUP` check. The seed password is development-only.
 
 ---
 
 ## 20. Implementation Phases
 
 0. **Local dev, CI, staging** — pnpm workspace, Docker/Neon branch, `.env` bootstrap, GitHub Actions (lint, typecheck, unit, integration, migration, build), preview environment with a separate Neon branch.
-1. **Foundation, schema, migrations, owner seed** — monorepo, shared package, full Prisma schema (incl. `verification_tokens`, `accounts`, `sessions`, `click_daily_stats`), composite analytics FKs, analytics indexes, `citext`, `sessions` table + raw SQL expression index, seed, env validation, Express skeleton (request ID, logger, envelope, health/live), Next.js 16 with `/api/*` rewrite.
-2. **Auth, registration infrastructure, session security, tenant isolation** — sessions, argon2id, CSRF/Origin on all non-GET, rate limits (IPv6-normalized), `loadUser` + status checks, register/verify/resend/forgot/reset endpoints behind `ALLOW_SIGNUP`, atomic token consumption, mailer (console + Resend), `scoped()` repositories, atomic entitlements, cross-tenant test harness.
-3. **Profiles, usernames, links, categories, dashboard** — username validation/availability/rename, link and category CRUD/reorder/status, search/filter, appearance/theme validation, export with CSV escaping, dashboard UI (`no-store`), signup/verify/reset pages.
-4. **Public pages, click analytics, cache revalidation** — `[username]` ISR, `ROOT_MODE`, beacon + `text/plain` endpoint with body referrer, bot filter, dedupe, always-204 handlers, analytics endpoints + Recharts, HMAC `/internal/revalidate`, ISR internal token/cache headers, run-level job lock, watermark backfill, raw retention/prune, SEO metadata/sitemap/robots.
-5. **Testing, security review, deployment, public-launch readiness** — full test matrix (§16), Playwright E2E, accessibility check, security review, error tracking/audit, staging deploy, production deploy (private), ToS/Privacy, landing page, abuse report path, launch checklist (§18).
+1. **Foundation, schema, migrations, owner seed** — monorepo, shared package, full Prisma schema (incl. `verification_tokens`, `accounts`, `sessions`, `click_daily_stats`, `click_daily_breakdowns`, `deletion_scheduled_for`, `pending_email`), composite analytics FKs, analytics indexes, `citext`, `sessions` table + raw SQL expression index, seed, env validation, Express skeleton (request ID, logger, envelope, health/live), Next.js 16 with `/api/*` rewrite.
+2. **Auth, registration infrastructure, session security, tenant isolation** — sessions, argon2id, CSRF/Origin on all non-GET, rate limits (IPv6-normalized), `loadUser` + status checks, register/verify/resend/forgot/reset endpoints behind `ALLOW_SIGNUP`, atomic token consumption, email change (`pending_email` + `email_change` token), password change, session list/revoke, account deletion/restore with 30-day grace, mailer (console + Resend), `scoped()` repositories, atomic entitlements, cross-tenant test harness.
+3. **Profiles, usernames, links, categories, dashboard** — username validation/availability/rename, profile headline/socials/appearance, link and category CRUD/reorder/status/icon, category description/color/visibility, search/filter, appearance/theme validation, export v2 with five CSVs and formula escaping, dashboard UI (`no-store`), settings UI, signup/verify/reset/check-inbox/restore-account pages.
+4. **Public pages, click analytics, cache revalidation** — `[username]` ISR, `ROOT_MODE`, beacon + `text/plain` endpoint with body referrer, trusted country header, bot filter, dedupe, always-204 handlers, analytics endpoints + breakdowns + Recharts, HMAC `/internal/revalidate`, ISR internal token/cache headers, run-level job lock, watermark backfill, totals → breakdowns → clear hashes → purge → prune, SEO metadata/sitemap/robots.
+5. **Testing, security review, deployment, public-launch readiness** — full test matrix (§16), Playwright E2E, accessibility check, security review, error tracking/audit, staging deploy, production deploy (private), ToS/Privacy, landing page, abuse report path, deletion/restore and email-change verification, launch checklist (§18).
 
 ---
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · OAuth (Google/GitHub) · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · self-serve account deletion and full GDPR export · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
+Billing/paid plans · OAuth (Google/GitHub) · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 
@@ -1080,8 +1241,8 @@ Each user could own several shareable pages, e.g. `/nayan` (default) and `/nayan
 7. Registration must return `403 SIGNUP_DISABLED` when `ALLOW_SIGNUP` is not `true`. Verification/reset tokens: random, hashed at rest, consumed atomically, expiring.
 8. Usernames: lowercase, regex, reserved list from `packages/shared`; add every new top-level web route and metadata route to the reserved list.
 9. Rewrite only `/api/*`. Revalidation lives at Next.js `POST /internal/revalidate`, HMAC-signed with timestamp; never call it from the browser; revalidate old and new tags on rename; await the call with a timeout.
-10. Click tracking: same-origin `sendBeacon` with a string body (`text/plain`), `fetch keepalive` fallback, `express.text()` on that route only, Zod parse, Origin check, body `document.referrer` host, always 204 including rate-limit/parser/Origin failures. Anchors link directly to the original URL.
-11. Never store raw IPs; never log secrets or tokens. Visitor hash = HMAC-SHA256(daily key derived from `ANALYTICS_HASH_SECRET`, `ip|ua|linkId`); never persist the key. Raw events are retained per `rawEventRetentionDays`; hashes are nulled after 24 h.
+10. Click tracking: same-origin `sendBeacon` with a string body (`text/plain`), `fetch keepalive` fallback, `express.text()` on that route only, Zod parse, Origin check, body `document.referrer` host, always 204 including rate-limit/parser/Origin failures. Anchors link directly to the original URL. `country_code` comes only from `x-vercel-ip-country` when `X-Web-Proxy-Secret` matches `WEB_PROXY_SECRET`.
+11. Never store raw IPs; never log secrets or tokens. Visitor hash = HMAC-SHA256(daily key derived from `ANALYTICS_HASH_SECRET`, `ip|ua|linkId`); never persist the key. Raw events are retained per `rawEventRetentionDays`; hashes are nulled after 24 h. Country is a two-letter code from the trusted proxy header, never an IP lookup.
 11a. Resolve every referenced ID (`categoryId`, reorder IDs, future `page_id`) through the scoped repository → 404 if not owned; keep the composite FKs; detach links in the category-delete transaction (no composite `SetNull`).
 11b. Do not guess `TRUST_PROXY`; follow the verification steps in §17 and treat `express-rate-limit` validation warnings as errors. Normalize IPv6 rate-limit keys to /64.
 11c. CSRF/Origin applies to all non-GET requests, including login/register/forgot/reset; bind or sign the CSRF token.
@@ -1094,3 +1255,42 @@ Each user could own several shareable pages, e.g. `/nayan` (default) and `/nayan
 15. Each phase must pass lint, typecheck and tests before the next begins; add the §16 tests for token races, click 204 paths, composite FKs, cache headers, CSV/theme/avatar validation.
 16. Use `nayankunwar.com` domains everywhere.
 17. Do not use `prisma db push` in production; migrations only, with a backup/PITR checkpoint and a forward-fix plan.
+18. Account lifecycle: email changes use `pending_email` + a single-use 24 h `email_change` token; password changes revoke all other sessions; session revoke is tenant-scoped; deletion schedules a 30-day grace (`deletion_scheduled_for`), unpublishes immediately, is idempotent, and is cancelled by login or a single-use restore token. Restoring never republishes. Only the prune job hard-deletes.
+19. Export is `schemaVersion: 2` and, for CSV, exactly five files: `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv`, `daily_breakdowns.csv`. Escape formula-leading cells. Never export account email, password hashes, sessions or tokens.
+20. The UI-first milestone uses typed mocks and a demo `lh.sid` cookie; `/preview` must be gated by `ALLOW_DEMO_PREVIEW` and disabled in production. Replace mock auth with the API session, keep `proxy.ts` as a presence check only, and preserve the prototype layout, violet/Inter design, dashboard shell, phone preview and all approved states.
+21. Analytics job order is fixed: totals → breakdowns → clear hashes → purge raw → prune. Breakdowns and totals must be identical before/after purge; never purge a day that has not been rolled up.
+
+---
+
+## 23. UI Surface & Prototype Parity (v2.4)
+
+The production web app lives in `apps/web`; `link-hub-ui/` is the visual reference and its gallery page is **not** shipped. Every approved prototype screen is implemented against typed mocks (`lib/store.tsx`, `lib/mock-data.ts`, `lib/analytics.ts`) and will be wired to the API in the next phase without changing the component contracts.
+
+| Route | Screen | Implemented behavior |
+|---|---|---|
+| `/` | Landing | Marketing hero, features, steps, FAQ, CTA, site header/footer and a static phone preview |
+| `/login` | Sign in | Split auth layout; any email/password signs in except password `wrong`; `?next=` is honored; signing in clears a scheduled deletion |
+| `/signup` | Create account | Split auth layout; username availability/reserved/invalid states; `NEXT_PUBLIC_ALLOW_SIGNUP=false` closes signup; success routes to `/check-inbox` |
+| `/forgot-password`, `/reset-password` | Recovery | Request, expired-token, invalid-password and success states |
+| `/verify-email` | Verification | Verifying, success, expired and already-verified states |
+| `/check-inbox` | Verification pending | Resend cooldown, change-email form, success/expired states |
+| `/restore-account` | Restore | Scheduled, restored, active/nothing-to-restore and expired states; restores without republishing |
+| `/dashboard` | Overview | Range selector, stat cards, Recharts click chart, top links, links table, toggles and phone preview |
+| `/dashboard/links` | Links | Search/filter/sort, dnd-kit pointer reorder plus direct ↑/↓ keyboard reorder, add/edit dialog, delete confirmation, 50-link limit, `?q/add/edit` deep links |
+| `/dashboard/categories` | Categories | Stats, CRUD dialog, description/color/icon/visibility, dnd-kit + keyboard reorder, delete detaches links, 20-category limit |
+| `/dashboard/appearance` | Appearance | Draft state, theme preset, primary color, background, card/button styles, visibility toggles, live phone preview, reset/save, unsaved-changes warning |
+| `/dashboard/analytics` | Analytics | Range selector, stats, chart, traffic/devices/countries/insights, per-link table, `?linkId=` filter banner, fallback skeleton |
+| `/dashboard/export` | Export | Format cards, include checkboxes, never-included notice, JSON/ZIP generation, preview, copy, download, size label; ZIP has five CSVs |
+| `/dashboard/profile` | Profile | URL-only avatar, headline/bio/username/socials, mock availability check, publish toggle, copy/open public URL, unsaved warning, 30-day deletion dialog, restore banner |
+| `/settings` | Settings | Account/Security/Preferences/Notifications tabs, pending email, password change, session revoke one/all, read-only UTC note, account summary |
+| `/[username]` | Public profile | Themed profile from the mock store; unknown and unpublished usernames show the same unavailable page |
+| `/terms`, `/privacy`, `not-found` | Legal / 404 | Shared marketing shell and accessible content |
+| `/preview` | Demo entry | Sets `lh.sid=demo-preview` and redirects to `/dashboard`; gated by `ALLOW_DEMO_PREVIEW` |
+
+**Cross-cutting implementation notes**
+
+- The mock store persists to `localStorage` key `linkhub-demo-v2`; analytics are deterministic over 365 UTC days from `MockLink.baseWeight`; new links start at zero clicks.
+- Mock auth accepts any email/password except `wrong`; signup is enabled by default through `NEXT_PUBLIC_ALLOW_SIGNUP`; the demo cookie is `lh.sid=demo-preview`.
+- `proxy.ts` guards `/dashboard/**` and `/settings/**` by cookie presence only; the API remains the identity authority.
+- Design language: Inter, violet primary (`#7c3aed`), rounded 2xl cards, soft violet surfaces, focus rings, `aria-live` status text, labelled controls, keyboard reorder and dialog focus management.
+- API wiring: replace `useMockData` reads with server queries/DTOs, keep the shared Zod schemas as the single validation contract, move export generation to `/export`, switch the public page to ISR, and remove the mock cookie/`/preview` before public launch.

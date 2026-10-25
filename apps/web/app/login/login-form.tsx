@@ -17,7 +17,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function LoginForm() {
   const router = useRouter();
-  const { state } = useMockData();
+  const { state, restoreAccount } = useMockData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
@@ -56,6 +56,8 @@ export function LoginForm() {
       return;
     }
 
+    // Signing in during the 30-day grace period cancels the deletion.
+    if (state.account.deletionScheduledFor) restoreAccount();
     startDemoSession(parsed.data.email, state.profile.displayName);
     const nextParam = new URLSearchParams(window.location.search).get("next");
     const destination = nextParam?.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
@@ -174,11 +176,6 @@ export function LoginForm() {
       ) : (
         <p className="mt-6 text-center text-sm font-medium text-zinc-700">Sign-ups opening soon</p>
       )}
-
-      <p className="mt-4 rounded-lg bg-zinc-50 px-3 py-2 text-center text-[11px] leading-relaxed text-zinc-500">
-        UI preview: use any email and password to sign in. Type <span className="font-semibold">wrong</span> as
-        the password to see the error state.
-      </p>
     </AuthLayout>
   );
 }

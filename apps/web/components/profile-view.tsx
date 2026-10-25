@@ -1,15 +1,13 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { AppearanceSettings, Category, Link as LinkRecord, Profile } from "@linkhub/shared";
-import { THEME_PRESETS as PRESETS } from "@linkhub/shared";
 import { ExternalLink } from "lucide-react";
+import { backgroundFor, themeFor } from "@/lib/appearance";
 import { Avatar } from "./avatar";
 import { CategoryIcon } from "./category-icon";
 import { LinkIcon } from "./link-icon";
 import { SocialIcons } from "./social-icons";
 import { cn, shadeHex } from "@/lib/utils";
-
-type ThemePreset = (typeof PRESETS)[number];
 
 interface ProfileViewProps {
   profile: Profile;
@@ -19,21 +17,6 @@ interface ProfileViewProps {
   variant?: "phone" | "page";
   showUnpublishedNote?: boolean;
   className?: string;
-}
-
-function themeFor(appearance: AppearanceSettings): ThemePreset {
-  return PRESETS.find((preset) => preset.id === appearance.theme) ?? PRESETS[0];
-}
-
-function backgroundFor(appearance: AppearanceSettings, theme: ThemePreset): string {
-  if (appearance.background === "solid") return theme.solid;
-  if (appearance.background === "pattern") {
-    return `radial-gradient(${theme.dark ? "#ffffff22" : "#7c3aed22"} 1.2px, transparent 1.3px) 0 0/14px 14px, ${theme.solid}`;
-  }
-  if (appearance.background === "blur") {
-    return `radial-gradient(circle at 20% 15%, ${appearance.color}55, transparent 45%), radial-gradient(circle at 85% 60%, ${appearance.color}40, transparent 45%), ${theme.solid}`;
-  }
-  return theme.background;
 }
 
 function groupLinks(categories: Category[], links: LinkRecord[]) {

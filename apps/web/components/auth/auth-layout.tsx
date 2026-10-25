@@ -104,13 +104,13 @@ export function AuthLayout({
             <Waves />
             <AuthTrees />
             <div className="relative z-10 flex h-full flex-col">
-              <span className="inline-flex w-fit rounded-full bg-violet-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-violet-900">
+              <span className="mt-[1.2px] inline-block w-fit rounded-full bg-violet-100 px-[0.8rem] py-[0.3rem] text-[0.7rem] font-bold uppercase leading-[1.5] tracking-[0.08em] text-violet-800">
                 {badge}
               </span>
               <h2 className="mt-4 max-w-md text-[2.6rem] font-extrabold leading-[1.1] tracking-tight text-[#1e1b4b]">
                 {title}
               </h2>
-              <p className="mt-3 max-w-sm text-[1.05rem] leading-relaxed text-zinc-600">{description}</p>
+              <p className="mt-3 max-w-sm text-[1.05rem] text-zinc-600">{description}</p>
               <div className="relative mt-5 flex-1">{aside}</div>
             </div>
           </aside>
@@ -144,7 +144,11 @@ export function AuthPreviewCard() {
       </svg>
       <div className="rounded-3xl bg-white/95 p-5 shadow-2xl shadow-violet-300/60">
         <div className="flex flex-col items-center text-center">
-          <Avatar name="Nayan Kunwar" className="size-16 text-2xl" ring={false} />
+          <Avatar
+            name="Nayan Kunwar"
+            className="size-16 text-2xl ring-4 ring-violet-100"
+            ring={false}
+          />
           <p className="mt-3 font-bold text-[#1e1b4b]">Nayan Kunwar</p>
           <p className="text-xs text-zinc-600">Backend Engineer</p>
           <div className="mt-3 flex items-center gap-3">
@@ -153,21 +157,21 @@ export function AuthPreviewCard() {
             <BrandIcon name="x" className="size-4" />
             <BrandIcon name="medium" className="size-4" />
           </div>
-          <ul className="mt-4 w-full space-y-2">
+          <ul className="mt-3 w-full space-y-2">
             {PREVIEW_ROWS.map((row) => (
               <li
                 key={row.title}
                 className="flex items-center gap-3 rounded-xl bg-violet-50 px-3 py-2 text-left text-sm font-semibold text-zinc-800 shadow-sm"
               >
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-violet-800">
-                  {row.type === "globe" ? (
+                {row.type === "globe" ? (
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-violet-800">
                     <Globe2 className="size-4" strokeWidth={2} />
-                  ) : (
-                    <BrandIcon name={row.type} className="size-3.5" />
-                  )}
-                </span>
+                  </span>
+                ) : (
+                  <BrandIcon name={row.type} className="size-5" />
+                )}
                 <span className="flex-1">{row.title}</span>
-                <ExternalLink className="size-3.5 shrink-0 text-zinc-600" />
+                <ExternalLink className="size-4 shrink-0 text-zinc-600" />
               </li>
             ))}
           </ul>

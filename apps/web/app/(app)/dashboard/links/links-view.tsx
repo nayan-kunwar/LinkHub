@@ -202,7 +202,7 @@ function SortableLinkRow({
           <Pencil className="size-3.5" />
         </Button>
         <Button asChild variant="outline" size="icon-sm" aria-label={`Analytics for ${link.title}`}>
-          <Link href={`/dashboard/analytics?link=${link.id}`}>
+          <Link href={`/dashboard/analytics?linkId=${link.id}`}>
             <BarChart3 className="size-3.5" />
           </Link>
         </Button>

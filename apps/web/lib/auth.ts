@@ -1,6 +1,9 @@
 "use client";
 
-export const SESSION_COOKIE = "lh.sid";
+import { SESSION_COOKIE, SESSION_DURATION_SECONDS } from "./session";
+
+export { SESSION_COOKIE };
+
 const SESSION_STORAGE_KEY = "linkhub-demo-session";
 
 export interface DemoSession {
@@ -9,6 +12,11 @@ export interface DemoSession {
   startedAt: string;
 }
 
+/**
+ * Demo-only session: a client-readable cookie so the proxy can gate dashboard
+ * routes before the real API exists. The API milestone replaces this with an
+ * httpOnly cookie issued by the server.
+ */
 export function startDemoSession(email: string, displayName: string): DemoSession {
   const session: DemoSession = {
     email,
@@ -16,7 +24,7 @@ export function startDemoSession(email: string, displayName: string): DemoSessio
     startedAt: new Date().toISOString(),
   };
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  document.cookie = `${SESSION_COOKIE}=demo-preview; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+  document.cookie = `${SESSION_COOKIE}=demo-preview; path=/; max-age=${SESSION_DURATION_SECONDS}; samesite=lax`;
   return session;
 }
 

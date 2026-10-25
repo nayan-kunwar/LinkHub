@@ -8,7 +8,7 @@ import {
   ChevronDown,
   Crown,
   Folder,
-  LayoutDashboard,
+  Home,
   Link2,
   LogOut,
   Menu,
@@ -38,7 +38,7 @@ import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon }> = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/links", label: "Links", icon: Link2 },
   { href: "/dashboard/categories", label: "Categories", icon: Folder },
   { href: "/dashboard/appearance", label: "Appearance", icon: Palette },

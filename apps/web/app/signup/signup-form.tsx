@@ -134,7 +134,6 @@ export function SignupForm() {
       }
       description="Share your projects, social profiles and important links with the world."
       aside={<AuthBenefits />}
-      panelClassName="md:min-h-[660px]"
     >
       <h1 className="text-3xl font-extrabold tracking-tight">Create your account</h1>
       <p className="mb-5 mt-1 text-sm text-zinc-600">Join Link Hub and start building your profile.</p>
