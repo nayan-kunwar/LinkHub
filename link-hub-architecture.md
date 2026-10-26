@@ -1101,7 +1101,7 @@ Order:
 - [x] HTTPS enforced; Secure cookies; session table + `sess->>'userId'` expression index created by migration
 - [x] Dashboard `no-store` verified; public profile API cache headers verified and the profile fetch sends `X-Internal-Token`
 - [x] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
-- [ ] Cold-start behavior tested through the Vercel rewrite; keep-warm or paid API decision recorded
+- [ ] Cold-start behavior tested through the Vercel rewrite; keep-warm or paid API decision recorded (rewrite path exercised by the owner smoke test; UptimeRobot keeps the free API warm, so a true cold start was not observed)
 - [x] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
 - [ ] Error tracking and job-failure alerts configured; audit log path documented
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
@@ -1124,6 +1124,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Public profile DTO, cache headers, and profile-fetch internal token verified
 - [x] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
 - [x] Account password change and session revocation tested in production
+- [x] Owner authenticated smoke test passed through the Vercel rewrite on 2026-10-27: login, `__Host-lh.sid`/`__Host-lh.csrf` attributes, `/auth/me`, account, profile, links, categories, analytics overview/timeseries/breakdowns, session list, link create → toggle → update → delete, `/health`, public profile page, logout, and `no-store` headers all verified
 - [x] Account email change verification completed in production (request/cancel and pending-email identity tested; full change completed through a temporary mail.tm inbox on 2026-10-27 — verification email arrived in 4 s, the old address stopped working, sessions were revoked, and `pendingEmail` cleared). The dedicated test account now uses `linkhub-nk2@maxxspace.com`; its credentials and final state are kept in the ignored `TEST-ACCOUNT.local.md`.
 - [x] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
 - [x] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
@@ -1139,7 +1140,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [ ] Neon PITR confirmed in the Neon console (dashboard/API access required); record the chosen restore point before the public flip.
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
 - [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
-- [ ] Cold-start behavior tested for signup/login; consider moving API off free tier
+- [ ] Cold-start behavior tested for signup/login; consider moving API off free tier (UptimeRobot keep-warm monitor active; a true cold start was not observed)
 - [ ] Vendor ToS reviewed (Vercel Hobby non-commercial, Render free cold starts)
 - [ ] Flip `ALLOW_SIGNUP=true`; smoke-test register → verify → publish → public page → click → analytics → export
 - [ ] Rollback: set `ALLOW_SIGNUP=false` (no data loss); forward-fix migration plan documented
