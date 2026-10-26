@@ -874,7 +874,7 @@ All account routes are authenticated except `POST /account/restore` (token is th
   ```
   X-Revalidate-Timestamp: <unix seconds>
   X-Revalidate-Signature: hex(HMAC_SHA256(REVALIDATE_SECRET, `${timestamp}.${rawBody}`))
-  body: { "tags": ["profile:nayan", "profile:old-name"] }
+  body: { "tags": ["profile:nayankunwar", "profile:old-name"] }
   ```
 - Next.js 16 uses `proxy.ts` (Next.js 15: `middleware.ts`). `revalidateTag(tag, 'max')` is a stale-while-revalidate profile, not immediate expiration: the first request after a mutation may still receive stale HTML while regeneration runs. If immediate visibility is required, verify whether `updateTag`/`expireTag` is available in the route handler for the chosen Next version; otherwise keep the 300 s fallback and state the one-request-stale behavior.
 - Handler: read the raw body and verify the signature over it **before** JSON parsing; reject if |now − timestamp| > 300 s; constant-time compare (`crypto.timingSafeEqual`); Zod-validate tags (`^profile:[a-z0-9-]{3,30}$`, max 10); call `revalidateTag` for each; return `204`. Invalid → `401` with no detail. The timestamp window bounds replay but does not eliminate it; add a short-lived nonce cache (e.g. 5 min) keyed by the signature if replay matters.
@@ -1048,7 +1048,7 @@ Order:
 
 ### Acceptance Criteria
 
-- Owner logs in and manages everything; public page at `/nayan` (and `/` in `ROOT_MODE=profile`) serves from ISR during API cold start.
+- Owner logs in and manages everything; public page at `/nayankunwar` (and `/` in `ROOT_MODE=profile`) serves from ISR during API cold start.
 - Registered, verified users manage only their own data; all cross-tenant tests pass.
 - Signup is impossible while `ALLOW_SIGNUP=false`.
 - Login/register/forgot/reset reject missing/invalid CSRF or Origin; public profile responses never carry `Set-Cookie`.
@@ -1127,7 +1127,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=pr
 - [ ] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
 - [ ] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
 - [ ] Abuse report path live (profile footer link → owner inbox)
-- [ ] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayan`
+- [ ] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
 - [ ] Owner account migration: confirm `role=owner`, `status=active`, `email_verified_at` set, `plan=free`; data migration script idempotent
 - [ ] Reserved list reviewed against all current and planned routes
 - [ ] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
@@ -1174,7 +1174,7 @@ INTERNAL_FETCH_TOKEN=change-me-32-bytes-min # exempts ISR/build fetches from the
 WEB_PROXY_SECRET=change-me-32-bytes-min  # web tier adds X-Web-Proxy-Secret; API trusts country header only with it
 
 # --- Tenancy & features ---
-DEFAULT_USERNAME=nayan
+DEFAULT_USERNAME=nayankunwar
 ROOT_MODE=profile                        # profile | landing
 ALLOW_SIGNUP=false                       # true only at public launch
 ACCOUNT_DELETION_GRACE_DAYS=30           # keep in sync with shared LIMITS.deleteGraceDays
@@ -1217,7 +1217,7 @@ Billing/paid plans · OAuth (Google/GitHub) · custom domains · advanced modera
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 
-Each user could own several shareable pages, e.g. `/nayan` (default) and `/nayan/projects`, each with its own title, description and ordered links. **Not in the MVP schema or API.**
+Each user could own several shareable pages, e.g. `/nayankunwar` (default) and `/nayankunwar/projects`, each with its own title, description and ordered links. **Not in the MVP schema or API.**
 
 - **Table `pages`:** `id` (uuid PK), `user_id` (FK), `slug` (unique per user: `@@unique([userId, slug])`), `title`, `description`, `is_default` (one per user, partial unique index), `is_published`, `sort_order`, `created_at`, `updated_at`, `deleted_at`.
 - **Link membership:** add nullable `links.page_id` (ownership-checked in the service and backed by a composite FK `(page_id, user_id) → pages(id, user_id)`, same pattern as categories) (null = default page) if each link lives on one page; use a `page_links(page_id, link_id, sort_order)` join table instead if a link must appear on several pages. Decide at approval time.

@@ -5,7 +5,7 @@ Production topology:
 | Piece | Platform | URL |
 |---|---|---|
 | Web (Next.js) | Vercel | `https://link.nayankunwar.com` |
-| API (Express) | Render | `https://linkhub-api.onrender.com` (or a custom API domain) |
+| API (Express) | Render | `https://linkhub-api-yphe.onrender.com` (or a custom API domain) |
 | Nightly analytics | GitHub Actions | 03:00 UTC |
 | PostgreSQL | Neon | Singapore region |
 | Email | Brevo | `no-reply@nayankunwar.com` |
@@ -101,13 +101,13 @@ and the nightly analytics job runs from GitHub Actions.
 5. Deploy. The build runs `pnpm install`, `pnpm db:generate` and
    `pnpm api:build`.
 6. Copy the service URL, for example
-   `https://linkhub-api.onrender.com`.
+   `https://linkhub-api-yphe.onrender.com`.
 
 Check:
 
 ```bash
-curl -fsS https://linkhub-api.onrender.com/api/v1/health
-curl -fsS https://linkhub-api.onrender.com/api/v1/health/live
+curl -fsS https://linkhub-api-yphe.onrender.com/api/v1/health
+curl -fsS https://linkhub-api-yphe.onrender.com/api/v1/health/live
 ```
 
 `/health` returns `503` if the database is unreachable. `/health/live` stays
@@ -120,7 +120,9 @@ seconds to wake. The first login or dashboard request after idle can exceed the
 Vercel proxy timeout. Options:
 
 - Add a free UptimeRobot monitor (or similar) pinging
-  `https://linkhub-api.onrender.com/api/v1/health/live` every 5 minutes.
+  `https://linkhub-api-yphe.onrender.com/api/v1/health/live` every 5 minutes.
+  Use `/health/live`, not `/health`: the live check does not query Postgres, so
+  the pings do not keep Neon awake and consume its free compute hours.
 - Upgrade the Render service to an always-on paid instance later.
 
 Public profile pages are cached, but a cache miss still waits for the API.
@@ -143,20 +145,17 @@ The workflow is `.github/workflows/analytics-nightly.yml`. It runs at **03:00
 UTC** daily and can be started manually from **Actions → Nightly analytics →
 Run workflow**.
 
-Add these repository secrets under **Settings → Secrets and variables →
-Actions**:
+Add only these two repository secrets under **Settings → Secrets and variables
+→ Actions**:
 
 - `DATABASE_URL`
 - `DIRECT_URL`
-- `SESSION_SECRET`
-- `REVALIDATE_SECRET`
-- `INTERNAL_FETCH_TOKEN`
-- `WEB_PROXY_SECRET`
-- `ANALYTICS_HASH_SECRET`
 
+The workflow deliberately receives no signing, proxy, or analytics secrets.
 The job takes a PostgreSQL advisory lock, so overlapping runs are safe.
-Scheduled workflows are paused after 60 days without repository activity;
-re-enable the workflow if GitHub warns you.
+Scheduled runs can be delayed during high load. GitHub only disables schedules
+after 60 days without repository activity in public repositories; this one is
+private, but re-enable the workflow if GitHub ever warns you.
 
 ### Optional: API custom domain
 
@@ -178,13 +177,17 @@ Domains, create the shown CNAME at Hostinger, and use that URL for
      this domain; `nayankunwar.com` has no MX records.
    - If Brevo shows an SPF value, use that exact value. Do not create a second
      SPF record.
-4. Add the sender `no-reply@nayankunwar.com`. If Brevo requires email
-   verification and the address cannot receive mail, create an alias at
-   Hostinger or switch `EMAIL_FROM` to an address with a real inbox.
+4. Add the sender `no-reply@nayankunwar.com`. Once the domain is authenticated,
+   Brevo auto-verifies senders on that domain, so no inbox is needed. Confirm
+   the sender is listed under **Senders**.
 5. **SMTP & API → API Keys → Generate a new API key (v3)**. Copy it once.
 6. Set on Render: `EMAIL_PROVIDER=brevo`, `EMAIL_BREVO_API_KEY=...`, and
    `EMAIL_FROM="Link Hub <no-reply@nayankunwar.com>"` (already in
    `render.yaml` except the key).
+7. Disable **Settings → Security → Authorized IPs → Blocking unauthorized IP
+   addresses → API keys**. Render's free-plan egress IPs are dynamic, so an
+   allowlist cannot cover them. If Brevo ever reactivates this automatically,
+   outbound email will fail until it is deactivated again.
 
 Test delivery:
 
@@ -200,9 +203,13 @@ curl -X POST https://api.brevo.com/v3/smtp/email \
   }'
 ```
 
-Check the received message's original headers for `SPF: PASS`, `DKIM: PASS`
+Check the received message's original headers for `DKIM: PASS`
 (`d=nayankunwar.com`) and `DMARC: PASS`. A `via brevosend.com` label means
-domain authentication is incomplete.
+domain authentication is incomplete. SPF may show `none` because Brevo's
+domain authentication uses DKIM + DMARC and does not require an SPF record.
+To add SPF alignment too, create one TXT record:
+`v=spf1 include:spf.brevo.com ~all` (only if nothing else sends from the
+domain).
 
 ---
 
