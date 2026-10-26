@@ -1124,7 +1124,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Public profile DTO, cache headers, and profile-fetch internal token verified
 - [x] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
 - [x] Account password change and session revocation tested in production
-- [ ] Account email change verification completed in production (request/cancel and pending-email identity tested)
+- [x] Account email change verification completed in production (request/cancel and pending-email identity tested; full change completed through a temporary mail.tm inbox on 2026-10-27 — verification email arrived in 4 s, the old address stopped working, sessions were revoked, and `pendingEmail` cleared). The dedicated test account now uses `linkhub-nk2@maxxspace.com`; its credentials and final state are kept in the ignored `TEST-ACCOUNT.local.md`.
 - [x] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
 - [x] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
 - [x] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
