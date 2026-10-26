@@ -45,9 +45,12 @@ placeholder secrets.
 3. Append the Prisma parameters:
 
 ```env
-DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require&pgbouncer=true&connection_limit=5
-DIRECT_URL=postgresql://.../neondb?sslmode=require
+DATABASE_URL="postgresql://...-pooler.../neondb?sslmode=require&pgbouncer=true&connection_limit=5"
+DIRECT_URL="postgresql://.../neondb?sslmode=require"
 ```
+
+Keep the quotes: the URLs contain `&`, and the runbook sources this file from a
+shell.
 
 4. Apply migrations and seed the owner from your machine. Copy
    `.env.deploy.example` to `.env.deploy.local` (gitignored), fill in the Neon
