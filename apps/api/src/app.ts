@@ -84,6 +84,7 @@ export function createApp() {
     if (!safeEqual(provided, env.WEB_PROXY_SECRET)) throw fail.notFound();
     noStore(res);
     sendData(res, {
+      trustProxy: env.TRUST_PROXY,
       ip: req.ip ?? null,
       ips: req.ips,
       xForwardedFor: req.header("x-forwarded-for") ?? null,
