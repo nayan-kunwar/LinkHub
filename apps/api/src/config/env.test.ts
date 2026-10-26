@@ -21,7 +21,7 @@ describe("environment validation", () => {
     const env = loadEnv(productionEnv);
     expect(env.isProd).toBe(true);
     expect(env.sessionCookieName).toBe("__Host-lh.sid");
-    expect(env.csrfCookieName).toBe("lh.csrf");
+    expect(env.csrfCookieName).toBe("__Host-lh.csrf");
     expect(env.sessionMaxAgeMs).toBe(7 * 24 * 60 * 60 * 1000);
   });
 

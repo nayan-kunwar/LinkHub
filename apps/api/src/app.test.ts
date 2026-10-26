@@ -33,7 +33,14 @@ describe("app assembly", () => {
     expect(response.body.data.csrfToken).toMatch(/^[A-Za-z0-9_-]+$/);
 
     const cookies = response.headers["set-cookie"] as unknown as string[];
-    expect(cookies.some((cookie) => cookie.startsWith("lh.csrf="))).toBe(true);
+    const csrfCookie = cookies.find((cookie) =>
+      cookie.startsWith(`${env.csrfCookieName}=`),
+    );
+    expect(csrfCookie).toBeDefined();
+    expect(csrfCookie).toContain("Path=/");
+    expect(csrfCookie).toContain("SameSite=Lax");
+    expect(csrfCookie).not.toContain("HttpOnly");
+    expect(csrfCookie).not.toContain("Domain=");
     expect(cookies.some((cookie) => cookie.startsWith("lh.sid="))).toBe(false);
   });
 

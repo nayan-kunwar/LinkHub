@@ -9,19 +9,33 @@ import {
 } from "./crypto";
 
 describe("CSRF signing", () => {
-  it("round-trips a signed token", () => {
+  it("round-trips a token bound to its session", () => {
+    const token = randomToken(16);
+    const signed = signCsrfToken(token, "session-a");
+    expect(signed.startsWith(`${token}.`)).toBe(true);
+    expect(verifySignedCsrfToken(signed, "session-a")).toBe(token);
+  });
+
+  it("rejects a token bound to another session", () => {
+    const token = randomToken(16);
+    const signed = signCsrfToken(token, "session-a");
+    expect(verifySignedCsrfToken(signed, "session-b")).toBeNull();
+    expect(verifySignedCsrfToken(signed)).toBeNull();
+  });
+
+  it("keeps anonymous tokens unbound", () => {
     const token = randomToken(16);
     const signed = signCsrfToken(token);
-    expect(signed.startsWith(`${token}.`)).toBe(true);
     expect(verifySignedCsrfToken(signed)).toBe(token);
+    expect(verifySignedCsrfToken(signed, "session-a")).toBeNull();
   });
 
   it("rejects tampered or malformed values", () => {
     const token = randomToken(16);
-    const signed = signCsrfToken(token);
-    expect(verifySignedCsrfToken(`${signed}x`)).toBeNull();
-    expect(verifySignedCsrfToken("garbage")).toBeNull();
-    expect(verifySignedCsrfToken(undefined)).toBeNull();
+    const signed = signCsrfToken(token, "session-a");
+    expect(verifySignedCsrfToken(`${signed}x`, "session-a")).toBeNull();
+    expect(verifySignedCsrfToken("garbage", "session-a")).toBeNull();
+    expect(verifySignedCsrfToken(undefined, "session-a")).toBeNull();
   });
 });
 

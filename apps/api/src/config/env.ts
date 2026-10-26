@@ -217,7 +217,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     isTest,
     appOrigin: appUrl.origin,
     sessionCookieName: isProd ? "__Host-lh.sid" : "lh.sid",
-    csrfCookieName: "lh.csrf",
+    csrfCookieName: isProd ? "__Host-lh.csrf" : "lh.csrf",
     sessionMaxAgeMs: parsed.data.SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
     webInternalUrl: (parsed.data.WEB_INTERNAL_URL ?? parsed.data.APP_URL).replace(/\/$/, ""),
     directUrl,

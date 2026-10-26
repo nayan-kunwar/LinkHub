@@ -29,21 +29,38 @@ export function safeEqualBuffer(left: Buffer, right: Buffer): boolean {
   return timingSafeEqual(left, right);
 }
 
-const CSRF_CONTEXT = "linkhub-csrf-v1:";
+const CSRF_CONTEXT = "linkhub-csrf-v2:";
 
-export function signCsrfToken(token: string): string {
-  return `${token}.${hmacSha256(env.SESSION_SECRET, `${CSRF_CONTEXT}${token}`)}`;
+/**
+ * CSRF signatures are bound to the current session ID when one exists, so a
+ * token minted for another session cannot satisfy the double-submit check.
+ * Anonymous tokens use an empty binding because no session exists yet.
+ */
+function csrfSignature(token: string, sessionId: string | null | undefined): string {
+  return hmacSha256(
+    env.SESSION_SECRET,
+    `${CSRF_CONTEXT}${sessionId ?? ""}:${token}`,
+  );
 }
 
-export function verifySignedCsrfToken(value: string | undefined): string | null {
+export function signCsrfToken(
+  token: string,
+  sessionId?: string | null,
+): string {
+  return `${token}.${csrfSignature(token, sessionId)}`;
+}
+
+export function verifySignedCsrfToken(
+  value: string | undefined,
+  sessionId?: string | null,
+): string | null {
   if (!value) return null;
   const separator = value.lastIndexOf(".");
   if (separator <= 0) return null;
   const token = value.slice(0, separator);
   const signature = value.slice(separator + 1);
   if (!token || !signature) return null;
-  const expected = hmacSha256(env.SESSION_SECRET, `${CSRF_CONTEXT}${token}`);
-  return safeEqual(signature, expected) ? token : null;
+  return safeEqual(signature, csrfSignature(token, sessionId)) ? token : null;
 }
 
 /** Constant-time comparison of a web-tier proxy secret. */

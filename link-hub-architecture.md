@@ -756,7 +756,7 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 | POST | `/auth/forgot-password` `{ email }` | – | Public launch |
 | POST | `/auth/reset-password` `{ token, password }` | – | Public launch |
 
-`GET /auth/csrf` sets (or rotates) the readable `lh.csrf` cookie and returns `{ csrfToken }` with `Cache-Control: no-store`; clients echo it in `X-CSRF-Token`. The cookie is `SameSite=Lax`, `Secure` in production, `Path=/`, and is not httpOnly because the client must read it.
+`GET /auth/csrf` sets (or rotates) the readable `__Host-lh.csrf` cookie in production (`lh.csrf` in dev/test) and returns `{ csrfToken }` with `Cache-Control: no-store`; clients echo it in `X-CSRF-Token`. The cookie is `SameSite=Lax`, `Secure` in production, `Path=/`, host-only, and is not httpOnly because the client must read it. Authenticated tokens are HMAC-bound to the current session ID; anonymous tokens are unbound and are replaced by a session-bound token on login.
 
 **Account (own)**
 
@@ -926,8 +926,8 @@ Order:
 
 ## 12. Security
 
-- First-party cookies via same-origin rewrite; session cookie httpOnly, Secure (prod), SameSite=Lax, host-only, `__Host-` prefix where possible. The CSRF cookie is intentionally readable by JS, `SameSite=Lax`, `Secure` (prod), `Path=/`.
-- CSRF: signed/bound double-submit token (`lh.csrf` cookie + `X-CSRF-Token` header) **and** Origin check on **all non-GET requests**, including login/register/forgot/reset; the anonymous click route uses Origin only and always returns `204`. Bind the token to the session (or HMAC it) so a sibling-subdomain cookie cannot satisfy the check; login performs session regeneration.
+- First-party cookies via same-origin rewrite; session cookie is `__Host-lh.sid` in production (`lh.sid` in dev/test), httpOnly, Secure (prod), SameSite=Lax, `Path=/`, host-only. The CSRF cookie is `__Host-lh.csrf` in production (`lh.csrf` in dev/test), intentionally readable by JS, `SameSite=Lax`, `Secure` (prod), `Path=/`, host-only.
+- CSRF: signed double-submit token (`__Host-lh.csrf` cookie + `X-CSRF-Token` header) **and** Origin check on **all non-GET requests**, including login/register/forgot/reset; the anonymous click route uses Origin only and always returns `204`. Authenticated tokens are HMAC-bound to `req.sessionID`, so a token minted for another session cannot satisfy the check; anonymous tokens are unbound because no session exists. Login regenerates the session, issues a new session-bound token, and logout clears both cookies.
 - Account-status enforcement on every authenticated request (§7.3).
 - Tenant isolation in repositories; 404 for non-owned; cross-tenant tests mandatory.
 - Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.

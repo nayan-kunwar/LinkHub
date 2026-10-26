@@ -35,9 +35,9 @@ import {
 
 export const authRouter = Router();
 
-authRouter.get("/csrf", (_req, res) => {
+authRouter.get("/csrf", (req, res) => {
   noStore(res);
-  const csrfToken = issueCsrfToken(res);
+  const csrfToken = issueCsrfToken(req, res);
   sendData(res, { csrfToken });
 });
 
@@ -54,7 +54,7 @@ authRouter.post(
     // Only clear a scheduled deletion after the session is safely persisted.
     await restoreScheduledDeletion(user.id);
     const me = await getMe(user.id);
-    const csrfToken = issueCsrfToken(res);
+    const csrfToken = issueCsrfToken(req, res);
     noStore(res);
     sendData(res, { ...me, csrfToken });
   },
