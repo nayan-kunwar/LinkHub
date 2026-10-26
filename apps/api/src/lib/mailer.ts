@@ -8,6 +8,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Optional reply-to address, for example a contact form submitter. */
+  replyTo?: string;
 }
 
 interface ResendResponse {
@@ -46,6 +48,7 @@ export function buildBrevoPayload(message: MailMessage): Record<string, unknown>
     subject: message.subject,
     textContent: message.text,
     ...(message.html ? { htmlContent: message.html } : {}),
+    ...(message.replyTo ? { replyTo: { email: message.replyTo } } : {}),
   };
 }
 
@@ -98,6 +101,7 @@ async function sendWithResend(message: MailMessage): Promise<void> {
           subject: message.subject,
           text: message.text,
           html: message.html,
+          ...(message.replyTo ? { reply_to: message.replyTo } : {}),
         }),
         signal: AbortSignal.timeout(10_000),
       });
@@ -212,6 +216,43 @@ export async function sendEmailChangedNotice(
       "All sessions have been signed out. If you made this change, sign in again with the new address.",
       "",
       `If you did not make this change, reset the password immediately: ${resetLink}`,
+    ].join("\n"),
+  });
+}
+
+const CONTACT_TOPIC_LABELS: Record<string, string> = {
+  abuse: "Abuse report",
+  privacy: "Privacy request",
+  support: "Support request",
+  other: "Contact request",
+};
+
+export async function sendContactEmail(input: {
+  to: string;
+  topic: string;
+  username?: string;
+  reporterEmail?: string;
+  message: string;
+}): Promise<void> {
+  const topic = CONTACT_TOPIC_LABELS[input.topic] ?? CONTACT_TOPIC_LABELS.other;
+  const subject = `[Link Hub] ${topic}${input.username ? `: @${input.username}` : ""}`;
+  const appUrl = env.APP_URL.replace(/\/$/, "");
+
+  await sendMail({
+    to: input.to,
+    subject,
+    replyTo: input.reporterEmail,
+    text: [
+      `Topic: ${topic}`,
+      ...(input.username
+        ? [`Profile: @${input.username}`, `Profile URL: ${appUrl}/${input.username}`]
+        : []),
+      `Reporter email: ${input.reporterEmail || "not provided"}`,
+      "",
+      "Message:",
+      input.message,
+      "",
+      "Sent from the Link Hub contact form.",
     ].join("\n"),
   });
 }

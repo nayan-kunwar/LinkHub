@@ -27,6 +27,7 @@ function columnsFor(
       links: [
         { href: "/terms", label: "Terms" },
         { href: "/privacy", label: "Privacy" },
+        { href: "/contact", label: "Contact" },
       ],
     },
     {

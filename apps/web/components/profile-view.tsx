@@ -219,13 +219,28 @@ export function ProfileView({
         </p>
       ) : null}
 
-      <Link
-        href="/"
-        className={cn("transition hover:underline", isPage ? "mt-10 text-xs" : "mt-5 text-[10px]")}
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-center gap-x-2 gap-y-1",
+          isPage ? "mt-10 text-xs" : "mt-5 text-[10px]",
+        )}
         style={{ color: theme.muted }}
       >
-        Made with Link Hub
-      </Link>
+        <Link href="/" className="transition hover:underline">
+          Made with Link Hub
+        </Link>
+        {isPage ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <Link
+              href={`/contact?topic=abuse&username=${encodeURIComponent(profile.username)}`}
+              className="transition hover:underline"
+            >
+              Report this page
+            </Link>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 

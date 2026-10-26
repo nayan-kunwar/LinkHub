@@ -86,8 +86,8 @@ export default function TermsPage() {
       <section>
         <h2>8. Contact</h2>
         <p>
-          Questions about these terms? Email{" "}
-          <a href="mailto:support@linkhub.app">support@linkhub.app</a>. See also our{" "}
+          Questions about these terms? Use the{" "}
+          <Link href="/contact?topic=support">contact form</Link>. See also our{" "}
           <Link href="/privacy">Privacy Policy</Link>.
         </p>
       </section>

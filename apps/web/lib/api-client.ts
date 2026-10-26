@@ -4,6 +4,7 @@ import type {
   BreakdownSlice,
   Category,
   CategoryFormValues,
+  ContactValues,
   DailyPoint,
   Link,
   LinkFormValues,
@@ -261,6 +262,14 @@ export const api = {
       request<{ message: string }>("/auth/reset-password", {
         method: "POST",
         body: { token, password },
+      }),
+  },
+
+  contact: {
+    send: (input: ContactValues) =>
+      request<{ message: string }>("/contact", {
+        method: "POST",
+        body: input,
       }),
   },
 

@@ -300,9 +300,12 @@ function MarketingPage() {
               </h2>
               <p className="mt-3 text-zinc-700">
                 Still curious?{" "}
-                <a href="mailto:support@linkhub.app" className="font-semibold text-violet-800 underline">
-                  Email support
-                </a>
+                <Link
+                  href="/contact?topic=support"
+                  className="font-semibold text-violet-800 underline"
+                >
+                  Contact support
+                </Link>
                 .
               </p>
             </div>

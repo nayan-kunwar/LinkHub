@@ -291,9 +291,12 @@ export function RestoreAccountView() {
             </Link>
             <p className="mt-4 text-xs text-zinc-500">
               Need help?{" "}
-              <a href="mailto:support@linkhub.app" className="font-semibold text-violet-800 underline">
+              <Link
+                href="/contact?topic=support"
+                className="font-semibold text-violet-800 underline"
+              >
                 Contact support
-              </a>
+              </Link>
               .
             </p>
           </>

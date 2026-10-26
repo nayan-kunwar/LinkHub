@@ -70,6 +70,16 @@ describe("buildBrevoPayload", () => {
     });
     expect(payload.htmlContent).toBe("<p>Click the link.</p>");
   });
+
+  it("adds a reply-to address when supplied", () => {
+    const payload = buildBrevoPayload({
+      to: "owner@example.com",
+      subject: "Abuse report",
+      text: "Details.",
+      replyTo: "reporter@example.com",
+    });
+    expect(payload.replyTo).toEqual({ email: "reporter@example.com" });
+  });
 });
 
 describe("sendMail with Brevo", () => {

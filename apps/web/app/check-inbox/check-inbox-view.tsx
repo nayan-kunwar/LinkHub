@@ -152,12 +152,12 @@ export function CheckInboxView() {
 
           <p className="mt-5 text-sm text-zinc-700">
             Wrong email?{" "}
-            <a
-              href="mailto:support@linkhub.app"
+            <Link
+              href="/contact?topic=support"
               className="font-semibold text-violet-800 hover:underline"
             >
               Contact support
-            </a>{" "}
+            </Link>{" "}
             and we&apos;ll help you fix it.
           </p>
           <p className="mt-6 border-t border-line pt-4 text-center text-xs text-zinc-500">

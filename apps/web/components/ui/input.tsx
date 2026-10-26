@@ -71,18 +71,34 @@ const Label = React.forwardRef<HTMLLabelElement, React.LabelHTMLAttributes<HTMLL
 );
 Label.displayName = "Label";
 
-function FieldError({ children, className }: { children?: React.ReactNode; className?: string }) {
+function FieldError({
+  children,
+  className,
+  id,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  id?: string;
+}) {
   if (!children) return null;
   return (
-    <p role="alert" className={cn("mt-1 text-xs font-medium text-red-700", className)}>
+    <p id={id} role="alert" className={cn("mt-1 text-xs font-medium text-red-700", className)}>
       {children}
     </p>
   );
 }
 
-function FieldHint({ children, className }: { children?: React.ReactNode; className?: string }) {
+function FieldHint({
+  children,
+  className,
+  id,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  id?: string;
+}) {
   if (!children) return null;
-  return <p className={cn("mt-1 text-xs text-zinc-500", className)}>{children}</p>;
+  return <p id={id} className={cn("mt-1 text-xs text-zinc-500", className)}>{children}</p>;
 }
 
 export { Input, Textarea, Select, Label, FieldError, FieldHint };

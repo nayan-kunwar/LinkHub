@@ -131,6 +131,14 @@ export const authenticatedApiLimiter = rateLimit({
   keyGenerator: userKey,
 });
 
+export const contactLimiter = rateLimit({
+  ...base,
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  keyGenerator: ipKey,
+  handler: envelopeHandler("Too many messages. Try again later."),
+});
+
 export const exportLimiter = rateLimit({
   ...base,
   windowMs: 60 * 60 * 1000,

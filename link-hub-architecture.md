@@ -780,8 +780,9 @@ All account routes are authenticated except `POST /account/restore` (token is th
 |---|---|---|
 | GET | `/public/profiles/:username` | MVP |
 | GET | `/usernames/:username/availability` → `{ available, reason? }` (`reserved`/`taken`/`invalid`) | MVP |
+| POST | `/contact` `{ topic, username?, email?, message }` | Public launch |
 
-`/public/profiles/:username` returns an **explicit DTO** (profile display fields incl. `headline`, `avatarUrl` and validated `socials`, appearance, published active links with their icon, visible categories with name/description/color/icon/order) and never `email`, `pending_email`, `status`, `plan`, `deletion_scheduled_for`, `user_id`, session data or internal IDs. Hidden categories and their links are omitted. It is cacheable (`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`) so Next.js tagged fetches work. It is rate-limited 120/min/IP for browsers, but requests carrying a valid `X-Internal-Token` equal to `INTERNAL_FETCH_TOKEN` are exempt so Vercel ISR/build traffic does not consume the bucket. The public profile endpoint must not set cookies (`saveUninitialized: false`), or a cached `Set-Cookie` could leak a session. The availability endpoint is rate-limited 30/min/IP and returns only `available`/`reason`.
+`/public/profiles/:username` returns an **explicit DTO** (profile display fields incl. `headline`, `avatarUrl` and validated `socials`, appearance, published active links with their icon, visible categories with name/description/color/icon/order) and never `email`, `pending_email`, `status`, `plan`, `deletion_scheduled_for`, `user_id`, session data or internal IDs. Hidden categories and their links are omitted. It is cacheable (`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`) so Next.js tagged fetches work. It is rate-limited 120/min/IP for browsers, but requests carrying a valid `X-Internal-Token` equal to `INTERNAL_FETCH_TOKEN` are exempt so Vercel ISR/build traffic does not consume the bucket. The public profile endpoint must not set cookies (`saveUninitialized: false`), or a cached `Set-Cookie` could leak a session. The availability endpoint is rate-limited 30/min/IP and returns only `available`/`reason`. `POST /contact` is CSRF- and Origin-protected, rate-limited 5/h/IP, and forwards abuse/privacy/support messages to every active `role=owner` inbox through the configured mail transport; the reporter's optional email becomes `Reply-To`. Messages are not stored, and the reporter's IP is neither logged nor included in the email.
 
 **Profile (own)**
 
@@ -930,7 +931,7 @@ Order:
 - CSRF: signed double-submit token (`__Host-lh.csrf` cookie + `X-CSRF-Token` header) **and** Origin check on **all non-GET requests**, including login/register/forgot/reset; the anonymous click route uses Origin only and always returns `204`. Authenticated tokens are HMAC-bound to `req.sessionID`, so a token minted for another session cannot satisfy the check; anonymous tokens are unbound because no session exists. Login regenerates the session, issues a new session-bound token, and logout clears both cookies.
 - Account-status enforcement on every authenticated request (§7.3).
 - Tenant isolation in repositories; 404 for non-owned; cross-tenant tests mandatory.
-- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
+- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; contact 5/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
 - Tokens: random 32 bytes, stored hashed, single-use consumed atomically, expiring; never logged. Password length 12–128 chars before argon2; unknown-email logins perform a dummy hash.
 - Revalidation: HMAC + timestamp window; secret server-only; optional nonce cache for replay; `INTERNAL_FETCH_TOKEN` for server-to-server public profile fetches.
 - No email enumeration on register/forgot-password; email change returns a generic success and never reveals whether the target address is registered.
@@ -958,7 +959,7 @@ Order:
 | Availability endpoint rate limit | MVP |
 | Suspension via `status=suspended` (manual SQL/script) | MVP |
 | Email verification before profile is visible | Public launch |
-| Basic abuse report (mailto/form on profile footer → owner inbox) | Public launch |
+| Basic abuse report (`/contact` form linked from the profile footer → owner inbox via the configured mail transport; CSRF + Origin + 5/h/IP, no IP stored) | Public launch |
 | ToS and Privacy pages | Public launch |
 | SPF/DKIM/DMARC for sending domain | Public launch |
 | Safe Browsing URL screening | Later |
@@ -1000,7 +1001,7 @@ Order:
 2. The public profile is hidden immediately (unpublished). The owner can still sign in, export, change settings or restore during the grace period.
 3. `POST /account/restore` consumes the single-use `account_restore` token (valid for the 30-day grace window, hashed at rest) and clears `deletion_scheduled_for`. An authenticated owner can also call `POST /account/cancel-deletion`, which clears the flag and invalidates any outstanding restore token. A successful login also clears it. Restoring never republishes the profile; the owner must publish again.
 4. The nightly prune hard-deletes users whose `deletion_scheduled_for` has passed, cascading profiles, categories, links, `click_events`, `click_daily_stats`, `click_daily_breakdowns` and tokens, and deleting sessions by `sess->>'userId'`. It sets `status=deleted` immediately before the hard delete for audit clarity.
-5. Audit-log scheduling, restore and purge. Deletion requests are not accepted by email once the self-serve flow ships; the contact address remains for abuse/privacy questions.
+5. Audit-log scheduling, restore and purge. Deletion requests are not accepted by email once the self-serve flow ships; the `/contact` form remains for abuse/privacy questions.
 
 ---
 
@@ -1087,19 +1088,19 @@ Order:
 - [x] Owner seeded (strong password), profile `DEFAULT_USERNAME` published
 - [x] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET`, `WEB_PROXY_SECRET` ≥ 32 random bytes, distinct
 - [x] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile` during the private phase, `ALLOW_DEMO_PREVIEW=false`
-- [ ] Web rewrite adds `X-Web-Proxy-Secret`; API stores country only when it matches; direct API country spoof is ignored
+- [x] Web rewrite adds `X-Web-Proxy-Secret`; API stores country only when it matches; direct API country spoof is ignored (verified in production)
 - [ ] Account deletion/restore emails delivered; purge job scheduled and tested against a throwaway account; restore link and login both cancel deletion
-- [ ] Export verified as `schemaVersion: 2` with five CSVs and formula-safe cells
-- [ ] Rewrite `/api/:path*` only; `/internal/revalidate` reachable from API via `WEB_INTERNAL_URL`
-- [ ] **Verify `TRUST_PROXY` (do not assume):**
-  1. Temporarily enable `GET /api/v1/debug/ip` (`DEBUG_IP_ENDPOINT=true`; requires owner session) returning `req.ip`, `req.ips`, raw `X-Forwarded-For`, and `req.socket.remoteAddress` — or log the same fields once.
+- [x] Export verified as `schemaVersion: 2` with five CSVs and formula-safe cells
+- [x] Rewrite `/api/:path*` only; `/internal/revalidate` reachable from API via `WEB_INTERNAL_URL` (verified in production)
+- [x] **Verify `TRUST_PROXY` (do not assume):** verified 2026-10-26 with a temporary secret-gated probe. The live `X-Forwarded-For` chain is client → Cloudflare edge → Render proxy; `TRUST_PROXY=3` makes `req.ip` equal the real client IP (and `CF-Connecting-IP`), while a forged leading `X-Forwarded-For` is ignored. The probe was removed after verification.
+  1. If the proxy chain changes, temporarily add a secret-gated probe (or enable `GET /api/v1/debug/ip` with `DEBUG_IP_ENDPOINT=true` and an owner session) returning `req.ip`, `req.ips`, raw `X-Forwarded-For`, and `req.socket.remoteAddress`.
   2. Call it from a known client IP through `link.nayankunwar.com/api/...` (Vercel → Render path).
   3. Count proxy hops in `X-Forwarded-For` to the right of your real IP; set `TRUST_PROXY` to that number so `req.ip` equals your real IP. Repeat with a forged leading `X-Forwarded-For` header and confirm `req.ip` is unchanged.
   4. Check logs for `express-rate-limit` validation warnings; fix before proceeding.
-  5. Set `DEBUG_IP_ENDPOINT=false` and redeploy.
-- [ ] HTTPS enforced; Secure cookies; session table + `sess->>'userId'` expression index created by migration
+  5. Remove the probe (or set `DEBUG_IP_ENDPOINT=false`) and redeploy.
+- [x] HTTPS enforced; Secure cookies; session table + `sess->>'userId'` expression index created by migration
 - [x] Dashboard `no-store` verified; public profile API cache headers verified and the profile fetch sends `X-Internal-Token`
-- [ ] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
+- [x] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
 - [ ] Cold-start behavior tested through the Vercel rewrite; keep-warm or paid API decision recorded
 - [x] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
 - [ ] Error tracking and job-failure alerts configured; audit log path documented
@@ -1118,7 +1119,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [ ] All **Public launch** items in §2.1 complete and tested
 - [x] Brevo domain verified (DKIM/DMARC; SPF optional); verification and reset emails delivered in production (incl. spam-folder check)
 - [x] Account-status checks verified in production (active, suspended, pending verification, deleted)
-- [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
+- [x] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks (production, including spoofed `X-Forwarded-For` and IPv6 buckets; in-memory limits reset on deploy, so Redis remains a later hardening item)
 - [x] CSRF/Origin enforced on login/register/forgot/reset; tokens are session-bound; token race tests pass
 - [x] Public profile DTO, cache headers, and profile-fetch internal token verified
 - [x] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested

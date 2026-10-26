@@ -95,7 +95,8 @@ and the nightly analytics job runs from GitHub Actions.
    - Region: Singapore
    - Plan: Free
    - Health check: `/api/v1/health/live`
-   - `TRUST_PROXY=1`
+   - `TRUST_PROXY=3` (verified Render/Cloudflare hop count; do not change
+     without repeating the probe procedure in `link-hub-architecture.md` §17)
 4. Keep `EMAIL_PROVIDER=brevo` for production. The API refuses to start with
    the console mailer unless `ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true` is set
    deliberately; do not enable that override on the public site. If Brevo is

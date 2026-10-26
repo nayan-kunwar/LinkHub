@@ -124,8 +124,8 @@ export default function PrivacyPage() {
       <section>
         <h2>9. Contact</h2>
         <p>
-          For privacy questions or requests, email{" "}
-          <a href="mailto:privacy@linkhub.app">privacy@linkhub.app</a>. See also our{" "}
+          For privacy questions or requests, use the{" "}
+          <Link href="/contact?topic=privacy">contact form</Link>. See also our{" "}
           <Link href="/terms">Terms of Service</Link>.
         </p>
       </section>

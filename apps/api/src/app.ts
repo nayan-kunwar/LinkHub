@@ -18,6 +18,7 @@ import { analyticsRouter } from "./modules/analytics/analytics.routes";
 import { clickRouter } from "./modules/analytics/click.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { categoriesRouter } from "./modules/categories/categories.routes";
+import { contactRouter } from "./modules/contact/contact.routes";
 import { exportRouter } from "./modules/export/export.routes";
 import { linksRouter } from "./modules/links/links.routes";
 import { profileRouter } from "./modules/profile/profile.routes";
@@ -100,6 +101,7 @@ export function createApp() {
   app.use("/api/v1/links", linksRouter);
   app.use("/api/v1/categories", categoriesRouter);
   app.use("/api/v1/analytics", analyticsRouter);
+  app.use("/api/v1/contact", contactRouter);
   app.use("/api/v1/export", exportRouter);
 
   app.get(

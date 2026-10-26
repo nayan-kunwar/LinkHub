@@ -187,6 +187,35 @@ export const deleteAccountSchema = z.object({
   }),
 });
 
+export const CONTACT_TOPICS = ["abuse", "privacy", "support", "other"] as const;
+
+export const contactSchema = z.object({
+  topic: z.enum(CONTACT_TOPICS),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(30, "Usernames can be at most 30 characters.")
+    .refine(
+      (value) => value === "" || USERNAME_REGEX.test(value),
+      "Enter a valid username.",
+    )
+    .optional(),
+  email: z
+    .union([
+      z.string().trim().email("Enter a valid email address."),
+      z.literal(""),
+    ])
+    .optional(),
+  message: z
+    .string()
+    .trim()
+    .min(10, "Add a little more detail so we can help.")
+    .max(2000, "Keep the message under 2000 characters."),
+  /** Hidden honeypot field. Bots that fill it get a silent success. */
+  website: z.string().max(200).optional(),
+});
+
 export const socialKeys = SOCIAL_KEYS;
 
 export type Appearance = z.infer<typeof appearanceSchema>;
@@ -201,3 +230,5 @@ export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
 export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
 export type ChangeEmailValues = z.infer<typeof changeEmailSchema>;
 export type DeleteAccountValues = z.infer<typeof deleteAccountSchema>;
+export type ContactValues = z.infer<typeof contactSchema>;
+export type ContactTopic = (typeof CONTACT_TOPICS)[number];
