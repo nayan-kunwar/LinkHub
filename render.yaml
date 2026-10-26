@@ -57,7 +57,7 @@ services:
       - key: WEB_INTERNAL_URL
         value: https://link.nayankunwar.com
       - key: TRUST_PROXY
-        value: "1"
+        value: "3"
       - key: DEFAULT_USERNAME
         value: nayankunwar
       - key: ROOT_MODE
