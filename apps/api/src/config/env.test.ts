@@ -55,6 +55,19 @@ describe("environment validation", () => {
     expect(env.sessionCookieName).toBe("lh.sid");
   });
 
+  it("requires a Brevo API key in production when selected", () => {
+    expect(() =>
+      loadEnv({ ...productionEnv, EMAIL_PROVIDER: "brevo" }),
+    ).toThrow(/EMAIL_BREVO_API_KEY/);
+
+    const env = loadEnv({
+      ...productionEnv,
+      EMAIL_PROVIDER: "brevo",
+      EMAIL_BREVO_API_KEY: "xkeysib-test",
+    });
+    expect(env.EMAIL_PROVIDER).toBe("brevo");
+  });
+
   it("parses boolean flags", () => {
     const enabled = loadEnv({
       ...productionEnv,

@@ -15,6 +15,70 @@ interface ResendResponse {
   message?: string;
 }
 
+interface BrevoResponse {
+  messageId?: string;
+  message?: string;
+}
+
+interface MailSender {
+  name?: string;
+  email: string;
+}
+
+/**
+ * Parse a From value such as `Link Hub <no-reply@example.com>` or a bare
+ * address into the object shape Brevo expects. Display names may be quoted.
+ */
+export function parseSenderAddress(value: string): MailSender {
+  const trimmed = value.trim();
+  const match = /^(.*?)\s*<([^<>]+)>$/.exec(trimmed);
+  if (!match) return { email: trimmed };
+
+  const name = match[1].trim().replace(/^"(.*)"$/, "$1").trim();
+  const email = match[2].trim();
+  return name ? { name, email } : { email };
+}
+
+export function buildBrevoPayload(message: MailMessage): Record<string, unknown> {
+  return {
+    sender: parseSenderAddress(env.EMAIL_FROM),
+    to: [{ email: message.to }],
+    subject: message.subject,
+    textContent: message.text,
+    ...(message.html ? { htmlContent: message.html } : {}),
+  };
+}
+
+async function sendWithBrevo(message: MailMessage): Promise<void> {
+  if (!env.EMAIL_BREVO_API_KEY) {
+    throw new Error("EMAIL_BREVO_API_KEY is not configured.");
+  }
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": env.EMAIL_BREVO_API_KEY,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildBrevoPayload(message)),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as BrevoResponse;
+        throw new Error(`Brevo responded ${response.status}: ${body.message ?? "unknown error"}`);
+      }
+      return;
+    } catch (error) {
+      if (attempt === 1) throw error;
+      logger.warn({ err: error }, "brevo delivery failed; retrying once");
+    }
+  }
+}
+
 async function sendWithResend(message: MailMessage): Promise<void> {
   if (!env.EMAIL_RESEND_API_KEY) {
     throw new Error("EMAIL_RESEND_API_KEY is not configured.");
@@ -77,6 +141,10 @@ async function sendToConsoleOutbox(message: MailMessage): Promise<void> {
 export async function sendMail(message: MailMessage): Promise<void> {
   if (env.EMAIL_PROVIDER === "resend") {
     await sendWithResend(message);
+    return;
+  }
+  if (env.EMAIL_PROVIDER === "brevo") {
+    await sendWithBrevo(message);
     return;
   }
   await sendToConsoleOutbox(message);

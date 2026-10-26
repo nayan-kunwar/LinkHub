@@ -65,7 +65,7 @@
 - Product vision is now **multi-tenant**: every registered user manages their own profile, links, categories, appearance, analytics and exports.
 - Public profiles move to **`link.nayankunwar.com/:username`**. Root `/` is governed by `ROOT_MODE` (`profile` → `DEFAULT_USERNAME` during private phase, `landing` at launch).
 - Every feature is labeled **MVP**, **Public launch** (required before `ALLOW_SIGNUP=true`), or **Later** (deferred until explicitly approved).
-- Added registration, email verification (`verification_tokens`, Resend), password reset, and account-status checks (`pending_verification` / `active` / `suspended` / `deleted`) at login **and** on every authenticated request.
+- Added registration, email verification (`verification_tokens`, Brevo), password reset, and account-status checks (`pending_verification` / `active` / `suspended` / `deleted`) at login **and** on every authenticated request.
 - Fixed the `sendBeacon` content-type problem: same-origin path, `text/plain` body, route-scoped `express.text()`, Zod parsing, always `204`.
 - Defined secure ISR revalidation: Next.js route handler `POST /internal/revalidate`, HMAC-signed, timestamped, replay-protected, server-to-server only; tag `profile:<username>`; old username revalidated on rename.
 - Added routing rules: reserved route list, Next.js route precedence, middleware order, `/api/*`-only rewrites, `no-store` on dashboard.
@@ -128,7 +128,7 @@ It is built and used by the owner first, but the schema, authorization model and
 | Centralized entitlements (`free` plan) | MVP | |
 | Account-status check on login + every request | MVP | Enforced even in private phase |
 | Registration endpoint | MVP (built, flag-off) → Public launch (enabled) | `ALLOW_SIGNUP` |
-| Email verification (Resend) | Public launch | `verification_tokens` |
+| Email verification (Brevo) | Public launch | `verification_tokens` |
 | Password reset | Public launch | `verification_tokens` |
 | ToS / Privacy pages, basic abuse report (email/form) | Public launch | |
 | Landing page | Public launch | |
@@ -163,7 +163,7 @@ It is built and used by the owner first, but the schema, authorization model and
 | Database | PostgreSQL on Neon (free tier) |
 | ORM | Prisma |
 | Auth | `express-session` + `connect-pg-simple`, argon2id |
-| Email | Resend (free tier) via a thin `mailer` module; console transport in dev |
+| Email | Brevo (free tier) via a thin `mailer` module; console transport in dev |
 | Testing | Vitest, Supertest, Playwright |
 | Package manager | pnpm workspaces |
 
@@ -182,7 +182,7 @@ flowchart LR
     V -->|anchor click| X[Original URL]
     A --> P[(Neon PostgreSQL)]
     A -->|HMAC POST /internal/revalidate<br/>server-to-server| W
-    A --> M[Resend email]
+    A --> M[Brevo email]
     J[Nightly job<br/>rollup, clear hashes, purge, prune] --> P
 ```
 
@@ -730,7 +730,7 @@ model ClickDailyBreakdown {
 | Password change | `PATCH /account/password` requires the current password and the 12–128 policy; updates the hash and deletes **all other** sessions, keeping the current one. | MVP |
 | Session management | `GET /account/sessions` lists the current user's sessions from `sess` metadata; `DELETE /account/sessions/:sid` revokes one (non-current) session; `DELETE /account/sessions` revokes all others. Non-owned/non-existent SIDs → 404. | MVP |
 | Account deletion & restore | `DELETE /account` requires the current password and the exact username, sets `deletion_scheduled_for = now() + 30 days`, unpublishes the profile, revokes all other sessions and emails a restore link (`account_restore` token, 30-day window). `POST /account/restore` consumes the token and clears the schedule; a successful login also clears it. Restoring does not republish. The nightly prune hard-deletes expired accounts. | MVP |
-| Email transport | Resend in prod (`EMAIL_PROVIDER=resend`), console logger in dev/test; outbound timeout + retry/log; verification/reset/restore pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
+| Email transport | Brevo in prod (`EMAIL_PROVIDER=brevo`), console logger in dev/test; outbound timeout + retry/log; verification/reset/restore pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
 | OAuth | `accounts` table reserved | Later |
 
 ---
@@ -1069,7 +1069,7 @@ Order:
 | Web | Vercel Hobby (or Cloudflare Pages) | ISR, `/api/*` rewrite, `/internal/revalidate`; Hobby is non-commercial — verify the plan fits a public multi-tenant service |
 | API | Render free | Cold starts ~30–60 s; public pages unaffected (ISR); auth/dashboard requests can exceed the Vercel proxy timeout; upgrade for always-on |
 | DB | Neon free | Pooled `DATABASE_URL`, `DIRECT_URL` for migrations; PITR window per plan; set a small `connection_limit` so Prisma + sessions do not exhaust connections |
-| Email | Resend free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
+| Email | Brevo free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
 | Jobs | Render Cron or GitHub Actions schedule | One nightly job (§11.3), ~00:30 UTC; verify free-tier cron availability, GitHub Actions is the fallback |
 | DNS | `link.nayankunwar.com` → Vercel; `api.nayankunwar.com` → Render | |
 
@@ -1105,7 +1105,7 @@ Order:
 - [ ] Error tracking and job-failure alerts configured; audit log path documented
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [ ] Logs redact secrets and auth bodies
-- [ ] Vendor ToS/quota reviewed (Vercel Hobby non-commercial, Render hours, Neon connections, Resend daily limit)
+- [ ] Vendor ToS/quota reviewed (Vercel Hobby non-commercial, Render hours, Neon connections, Brevo daily limit)
 
 ---
 
@@ -1116,7 +1116,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=pr
 ### Launch Checklist
 
 - [ ] All **Public launch** items in §2.1 complete and tested
-- [ ] Resend domain verified (SPF/DKIM/DMARC); verification and reset emails delivered in production (incl. spam-folder check)
+- [ ] Brevo domain verified (SPF/DKIM/DMARC); verification and reset emails delivered in production (incl. spam-folder check)
 - [ ] Account-status checks verified in production
 - [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
 - [ ] CSRF/Origin enforced on login/register/forgot/reset; token race tests pass
@@ -1134,7 +1134,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=pr
 - [ ] Accessibility: keyboard drag-and-drop, focus states, contrast, avatar alt text checked
 - [ ] Backups: Neon PITR confirmed; manual `pg_dump` taken before flip; restore tested once
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
-- [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Resend daily limit (100/day free) — confirm headroom
+- [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier
 - [ ] Vendor ToS reviewed (Vercel Hobby non-commercial, Render cron availability)
 - [ ] Flip `ALLOW_SIGNUP=true`; smoke-test register → verify → publish → public page → click → analytics → export
@@ -1180,9 +1180,10 @@ ALLOW_SIGNUP=false                       # true only at public launch
 ACCOUNT_DELETION_GRACE_DAYS=30           # keep in sync with shared LIMITS.deleteGraceDays
 
 # --- Email ---
-EMAIL_PROVIDER=console                   # console | resend
+EMAIL_PROVIDER=console                   # console | resend | brevo
 EMAIL_FROM="Link Hub <no-reply@nayankunwar.com>"
 EMAIL_RESEND_API_KEY=
+EMAIL_BREVO_API_KEY=
 EMAIL_VERIFICATION_TTL_HOURS=24
 PASSWORD_RESET_TTL_MINUTES=60
 
@@ -1203,7 +1204,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 0. **Local dev, CI, staging** — pnpm workspace, Docker/Neon branch, `.env` bootstrap, GitHub Actions (lint, typecheck, unit, integration, migration, build), preview environment with a separate Neon branch.
 1. **Foundation, schema, migrations, owner seed** — monorepo, shared package, full Prisma schema (incl. `verification_tokens`, `accounts`, `sessions`, `click_daily_stats`, `click_daily_breakdowns`, `deletion_scheduled_for`, `pending_email`), composite analytics FKs, analytics indexes, `citext`, `sessions` table + raw SQL expression index, seed, env validation, Express skeleton (request ID, logger, envelope, health/live), Next.js 16 with `/api/*` rewrite.
-2. **Auth, registration infrastructure, session security, tenant isolation** — sessions, argon2id, CSRF/Origin on all non-GET, rate limits (IPv6-normalized), `loadUser` + status checks, register/verify/resend/forgot/reset endpoints behind `ALLOW_SIGNUP`, atomic token consumption, email change (`pending_email` + `email_change` token), password change, session list/revoke, account deletion/restore with 30-day grace, mailer (console + Resend), `scoped()` repositories, atomic entitlements, cross-tenant test harness.
+2. **Auth, registration infrastructure, session security, tenant isolation** — sessions, argon2id, CSRF/Origin on all non-GET, rate limits (IPv6-normalized), `loadUser` + status checks, register/verify/resend/forgot/reset endpoints behind `ALLOW_SIGNUP`, atomic token consumption, email change (`pending_email` + `email_change` token), password change, session list/revoke, account deletion/restore with 30-day grace, mailer (console + Brevo), `scoped()` repositories, atomic entitlements, cross-tenant test harness.
 3. **Profiles, usernames, links, categories, dashboard** — username validation/availability/rename, profile headline/socials/appearance, link and category CRUD/reorder/status/icon, category description/color/visibility, search/filter, appearance/theme validation, export v2 with five CSVs and formula escaping, dashboard UI (`no-store`), settings UI, signup/verify/reset/check-inbox/restore-account pages.
 4. **Public pages, click analytics, cache revalidation** — `[username]` ISR, `ROOT_MODE`, beacon + `text/plain` endpoint with body referrer, trusted country header, bot filter, dedupe, always-204 handlers, analytics endpoints + breakdowns + Recharts, HMAC `/internal/revalidate`, ISR internal token/cache headers, run-level job lock, watermark backfill, totals → breakdowns → clear hashes → purge → prune, SEO metadata/sitemap/robots.
 5. **Testing, security review, deployment, public-launch readiness** — full test matrix (§16), Playwright E2E, accessibility check, security review, error tracking/audit, staging deploy, production deploy (private), ToS/Privacy, landing page, abuse report path, deletion/restore and email-change verification, launch checklist (§18).

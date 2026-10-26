@@ -70,9 +70,10 @@ const envSchema = z.object({
   ALLOW_SIGNUP: booleanString.default(false),
   ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().positive().max(365).default(30),
 
-  EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
+  EMAIL_PROVIDER: z.enum(["console", "resend", "brevo"]).default("console"),
   EMAIL_FROM: z.string().default("Link Hub <no-reply@localhost>"),
   EMAIL_RESEND_API_KEY: z.string().optional(),
+  EMAIL_BREVO_API_KEY: z.string().optional(),
   EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 
@@ -125,6 +126,10 @@ function assertProductionSecrets(env: z.infer<typeof envSchema>): void {
 
   if (env.EMAIL_PROVIDER === "resend" && !env.EMAIL_RESEND_API_KEY) {
     throw new Error("EMAIL_RESEND_API_KEY is required when EMAIL_PROVIDER=resend.");
+  }
+
+  if (env.EMAIL_PROVIDER === "brevo" && !env.EMAIL_BREVO_API_KEY) {
+    throw new Error("EMAIL_BREVO_API_KEY is required when EMAIL_PROVIDER=brevo.");
   }
 }
 

@@ -95,8 +95,11 @@ Useful feature flags: `ALLOW_SIGNUP`, `ALLOW_DEMO_PREVIEW` (web),
 `CLICK_DEDUPE_SECONDS`.
 
 Email uses `EMAIL_PROVIDER=console` locally. Messages are written to
-`apps/api/.mail-outbox/` (gitignored) instead of being sent. Set
-`EMAIL_PROVIDER=resend` and `EMAIL_RESEND_API_KEY` to send real mail.
+`apps/api/.mail-outbox/` (gitignored) instead of being sent. For production,
+set `EMAIL_PROVIDER=brevo` and `EMAIL_BREVO_API_KEY` (recommended), or
+`EMAIL_PROVIDER=resend` and `EMAIL_RESEND_API_KEY`. `EMAIL_FROM` must use a
+sender address on a domain authenticated in the provider, for example
+`Link Hub <no-reply@nayankunwar.com>`.
 
 In production the process refuses to start with development fallbacks for
 `SESSION_SECRET`, `ANALYTICS_HASH_SECRET`, `REVALIDATE_SECRET`,
