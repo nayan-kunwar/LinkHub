@@ -164,6 +164,54 @@ Scheduled runs can be delayed during high load. GitHub only disables schedules
 after 60 days without repository activity in public repositories; this one is
 private, but re-enable the workflow if GitHub ever warns you.
 
+If a run fails, the workflow opens or comments on a GitHub issue labeled
+`nightly-failure` with the run URL and commit SHA. Check the job log first, then
+the Render service log; rerunning is safe.
+
+### Monitoring and alerts
+
+- **Uptime:** UptimeRobot Free checks
+  `https://linkhub-api-yphe.onrender.com/api/v1/health/live` every 5 minutes to
+  keep the free instance warm. Add a second monitor for
+  `https://linkhub-api-yphe.onrender.com/api/v1/health` (readiness; checks
+  Postgres) so a database outage alerts you. The free plan allows 50 monitors.
+- **API errors:** any 5xx sends a throttled email to active owner accounts (at
+  most one per 15 minutes per API instance). The email contains the request ID,
+  method, path, status, code, error name and user ID. It never contains request
+  bodies, IP addresses, stack traces, tokens or email addresses. Look up the
+  request ID in Render logs for the redacted stack.
+- **Nightly job:** a failed run opens or updates a `nightly-failure` GitHub
+  issue.
+- **Audit log:** security-relevant actions emit Pino lines with `"audit": true`
+  (registration, login/logout, email verification/change, password change/reset,
+  session revocation, deletion scheduled/cancelled/restored/purged, profile
+  publish/unpublish, username change). Render Hobby retains logs for 7 days;
+  forward the log stream if you need a longer trail.
+- **Log review:** keep `LOG_LEVEL=info`; do not enable `debug` or `trace` in
+  production. Check Render logs for 5xx responses, `express-rate-limit`
+  warnings, failed email delivery, and unexpected audit events.
+
+### Free-tier quota watch (reviewed 2026-10-27)
+
+| Vendor | Free limit | Watch |
+|---|---|---|
+| Render | 750 instance hours/month; 5 GB outbound bandwidth; 512 MB RAM | One API service running 24/7 uses about 730 hours, leaving ~20. A second free Render service would exceed the hours. Render's free docs say free instances are not for production. |
+| Vercel Hobby | 100 GB fast data transfer; 1M function invocations; 4 CPU-hours; 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 seconds. Hobby is non-commercial only; a public multi-tenant launch may require Pro or another host. |
+| Neon Free | 100 CU-hours/project/month; 1 GB storage; 6-hour history; one manual snapshot; no full PITR | Database is 8.7 MB. If revalidation or API traffic keeps compute awake, 100 CU-hours can run out before month-end. Monitor **Usage** in the Neon console. |
+| Brevo Free | 300 emails/day | Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
+| UptimeRobot Free | 50 monitors; 5-minute interval | One liveness monitor is active; add readiness. |
+| GitHub Actions | 2,000 minutes/month for private repos | Nightly job uses about 30 minutes/month. |
+
+The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
+8 links, 5 categories, 5 click events, 1 session and 5 verification tokens.
+Render, Vercel and Brevo dashboard usage still needs an owner review because
+those accounts have no API token configured here.
+
+> **Before public signup:** record whether you accept the free-tier availability,
+> quota and vendor-policy risk, or move the affected piece to a paid or
+> commercial-friendly tier. Render free is documented as not for production,
+> Vercel Hobby is non-commercial only, and Neon Free has no full PITR.
+
 ### Optional: API custom domain
 
 If you prefer `api.nayankunwar.com`, add it in Render → Settings → Custom
@@ -277,9 +325,14 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 6. Open a public link and check `/dashboard/analytics` for the click.
 7. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
 8. Check Render logs for errors and confirm no IP addresses or tokens appear.
+   Confirm the expected `audit` events (`auth.login`, etc.) are present.
+9. If a password was shared in chat or a support ticket, rotate it immediately
+   from **Settings → Account** and store the new value only in your password
+   manager. A password change revokes every other session.
 
 Run the nightly job once from **GitHub → Actions → Nightly analytics → Run
-workflow** and confirm it exits successfully.
+workflow** and confirm it exits successfully. A failed run should create or
+update a `nightly-failure` issue.
 
 ---
 
@@ -288,6 +341,13 @@ workflow** and confirm it exits successfully.
 - **Vercel:** promote a previous deployment from the Deployments tab.
 - **Render:** redeploy a previous commit; Prisma migrations are forward-only,
   so write a compensating migration before rolling back schema changes.
-- **Neon:** use point-in-time restore if data is damaged.
+- **Neon:** Free has no full point-in-time restore. Use the 6-hour history
+  window or the one manual snapshot if available, otherwise restore the latest
+  `pg_dump --format=custom` backup into a new branch/database and repoint
+  `DATABASE_URL` and `DIRECT_URL`. Keep an off-machine backup current before
+  schema changes.
+- **Free-tier suspension:** if Render's 750 instance hours or Neon's 100
+  CU-hours are exhausted, the service or compute suspends until the next
+  billing period. Data is not deleted; wait for the reset or upgrade.
 
 Never commit `.env`, `.env.deploy.local`, API keys, or the owner password.

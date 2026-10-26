@@ -1,6 +1,7 @@
 import "dotenv/config";
 import pg from "pg";
 import type { Plan } from "@prisma/client";
+import { audit } from "../lib/audit";
 import { entitlementsFor } from "../lib/entitlements";
 import { logger } from "../lib/logger";
 
@@ -264,6 +265,7 @@ async function prune(client: pg.Client): Promise<PruneCounts> {
       );
       await client.query(`DELETE FROM users WHERE id = $1::uuid`, [user.id]);
       await client.query("COMMIT");
+      audit({ action: "account.purged", targetUserId: user.id });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

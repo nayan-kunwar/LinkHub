@@ -1,4 +1,5 @@
 import { Prisma, type Profile } from "@prisma/client";
+import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/db";
 import { profileDto, type ProfileDto } from "../../lib/dto";
 import { fail } from "../../lib/errors";
@@ -67,6 +68,11 @@ export async function updateProfile(
 
   if (usernameChanged) {
     await revalidateProfileRename(current.username, updated.username);
+    audit({
+      action: "profile.username_changed",
+      actorUserId: userId,
+      metadata: { from: current.username, to: updated.username },
+    });
   } else {
     await revalidateProfile(updated.username);
   }
@@ -93,6 +99,10 @@ export async function setPublished(
     data: { isPublished },
   });
   await revalidateProfile(updated.username);
+  audit({
+    action: isPublished ? "profile.published" : "profile.unpublished",
+    actorUserId: userId,
+  });
   return profileDto(updated);
 }
 

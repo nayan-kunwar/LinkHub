@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { env } from "../../config/env";
+import { audit } from "../../lib/audit";
 import { sendData, sendNoContent, noStore } from "../../lib/http";
 import { fail } from "../../lib/errors";
 import { issueCsrfToken } from "../../middleware/csrf";
@@ -51,6 +52,7 @@ authRouter.post(
     await createSessionForUser(req, user.id, req.header("user-agent"), {
       remember,
     });
+    audit({ action: "auth.login", actorUserId: user.id });
     // Only clear a scheduled deletion after the session is safely persisted.
     await restoreScheduledDeletion(user.id);
     const me = await getMe(user.id);
@@ -61,6 +63,7 @@ authRouter.post(
 );
 
 authRouter.post("/logout", async (req, res) => {
+  if (req.user) audit({ action: "auth.logout", actorUserId: req.user.id });
   await destroySession(req);
   res.clearCookie(env.sessionCookieName, {
     path: "/",

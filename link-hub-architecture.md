@@ -2,7 +2,7 @@
 
 **Version:** 2.4
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
-**Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `api.nayankunwar.com` (reached by browsers only through the same-origin `/api/*` rewrite)
+**Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `linkhub-api-yphe.onrender.com` (reached by browsers only through the same-origin `/api/*` rewrite; a custom API domain is optional)
 **Status:** Owner-first, multi-tenant by design
 
 ---
@@ -177,7 +177,7 @@ Auth.js/NextAuth is **not** used. The Express API is the single identity authori
 flowchart LR
     V[Visitor] -->|GET /:username| W[Next.js on Vercel<br/>profile pages, cached data]
     U[Registered user] -->|/dashboard no-store| W
-    W -->|rewrite /api/* same-origin| A[Express API<br/>api.nayankunwar.com]
+    W -->|rewrite /api/* same-origin| A[Express API<br/>linkhub-api-yphe.onrender.com]
     V -.->|sendBeacon text/plain<br/>POST /api/v1/analytics/clicks| W
     V -->|anchor click| X[Original URL]
     A --> P[(Neon PostgreSQL)]
@@ -1010,9 +1010,11 @@ Order:
 - `GET /api/v1/health` → `{ status, db, version, uptime }` (readiness; DB check). `GET /api/v1/health/live` → liveness only, so a DB outage does not trigger a restart loop.
 - pino JSON logs (`LOG_LEVEL`); redact passwords, tokens, cookies, signatures, and request bodies on auth routes.
 - `X-Request-Id` on every request/log/error; accept an inbound ID only if it matches a safe pattern, otherwise generate one.
-- Error tracking (e.g. Sentry free tier) for API and web; nightly-job failures and repeated revalidation failures alert the owner.
-- Audit log for account status changes, email changes (pending and confirmed), password changes, session revocations, deletion scheduled/restored/purged, username changes, and owner/admin actions; manual SQL changes are recorded in the runbook.
-- Uptime monitor on `https://api.nayankunwar.com/api/v1/health` (and optionally `https://link.nayankunwar.com/api/v1/health` to cover the rewrite) (free tier, e.g. UptimeRobot) — Public launch.
+- Error tracking: API 5xx responses call `notifyServerError` (`apps/api/src/lib/alerts.ts`), which emails active owners at most once per 15 minutes with the request ID, method, path, status, code, error name, and user ID. It excludes request bodies, IPs, stack traces, tokens, and email addresses; the request ID maps to the redacted Render log line. No third-party error tracker is configured on the free tier.
+- Job alerts: `.github/workflows/analytics-nightly.yml` opens or updates a GitHub issue labeled `nightly-failure` on failure, including the run URL and commit SHA.
+- Audit log: `audit()` (`apps/api/src/lib/audit.ts`) emits structured events (`"audit": true`) for registration, login/logout, email verification/change request/confirmation/cancel, password change/reset, session revocation, deletion scheduled/cancelled/restored/purged, profile publish/unpublish, and username changes. Render Hobby retains logs for 7 days; forward the stream for a longer trail. Manual SQL changes are recorded in the runbook.
+- Uptime: UptimeRobot Free (5-minute interval) monitors `https://linkhub-api-yphe.onrender.com/api/v1/health/live` to keep the free API warm, and should also monitor `/api/v1/health` readiness. The free plan allows 50 monitors.
+- Free-tier limits and vendor caveats are reviewed in §18.1.
 
 ---
 
@@ -1072,7 +1074,7 @@ Order:
 | DB | Neon free | Pooled `DATABASE_URL`, `DIRECT_URL` for migrations; PITR window per plan; set a small `connection_limit` so Prisma + sessions do not exhaust connections |
 | Email | Brevo free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
 | Jobs | GitHub Actions schedule | One nightly job (§11.3) at 03:00 UTC; Render's free plan has no cron jobs |
-| DNS | `link.nayankunwar.com` → Vercel; `api.nayankunwar.com` → Render | |
+| DNS | `link.nayankunwar.com` → Vercel; API uses the Render `onrender.com` hostname (a custom API domain is optional) | |
 
 **Scaling path (Later):** stateless API → multiple instances → Redis for rate limits/sessions → queue for click ingestion → partition `click_events` → custom domains via edge middleware.
 
@@ -1103,16 +1105,31 @@ Order:
 - [x] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
 - [ ] Cold-start behavior tested through the Vercel rewrite; keep-warm or paid API decision recorded (rewrite path exercised by the owner smoke test; UptimeRobot keeps the free API warm, so a true cold start was not observed)
 - [x] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
-- [ ] Error tracking and job-failure alerts configured; audit log path documented
+- [x] Error tracking and job-failure alerts configured; audit log path documented (2026-10-27): throttled owner email on API 5xx, a `nightly-failure` GitHub issue on workflow failure, and structured `audit` events for security-relevant account/profile actions
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
-- [ ] Vendor ToS/quota reviewed (Vercel Hobby non-commercial, Render hours, Neon connections, Brevo daily limit)
+- [x] Vendor ToS/quota reviewed (2026-10-27; see §18.1). Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR and a 100 CU-hour cap, and Brevo Free is 300 emails/day. Public launch requires an explicit accept-or-migrate decision.
 
 ---
 
 ## 18. Private → Public Release
 
 The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=profile` while testing the owner profile at `/`, then switch to `ROOT_MODE=landing` once the marketing page is ready. Going public is a controlled flip.
+
+### 18.1 Free-Tier Capacity Review (2026-10-27)
+
+| Vendor | Free allowance | Current use / implication |
+|---|---|---|
+| Render | 750 free instance hours/month; 5 GB outbound bandwidth; 512 MB RAM; 0.1 CPU; free web services sleep after 15 minutes; free docs say free instances are not for production | One API service running 24/7 consumes about 730 hours, leaving ~20 hours. Public profile HTML is served by Vercel, so Render bandwidth is small JSON API traffic. UptimeRobot keep-warm prevents sleep; a true cold start remains untested. |
+| Vercel Hobby | 100 GB fast data transfer; 10 GB fast origin transfer; 1M function invocations; 4 CPU-hours; 360 GB-hours; 1-hour runtime logs; non-commercial personal use only | Public profile HTML is rendered per request and profile data is cached for 300 seconds; avatars are URL-only. Dashboard usage still needs an owner review. A public multi-tenant service may be considered commercial under Vercel's fair-use rules. |
+| Neon Free | 100 CU-hours/project/month; 1 GB storage/project; 20 GB account storage; 5 GB egress; scale-to-zero after 5 minutes; 6-hour history window (1 GB limit); 1 manual snapshot; no full PITR | Database is 8.7 MB with 2 users, 2 profiles, 8 links, 5 categories, 5 click events, 1 session and 5 verification tokens (2026-10-27). If profile revalidation or API traffic keeps compute awake, 100 CU-hours can be exhausted before month-end; monitor Neon usage. |
+| Brevo Free | 300 emails/day | Low current volume. Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota; a signup spike can exhaust it. |
+| UptimeRobot Free | 50 monitors; 5-minute interval | One liveness monitor is active; add a readiness monitor for `/api/v1/health`. |
+| GitHub Actions | 2,000 minutes/month for private repositories | The nightly job is about one minute per day (~30 minutes/month). |
+
+**Measured 2026-10-27:** PostgreSQL database size `8,672 kB`; 2 users; 2 profiles; 8 links (including one soft-deleted smoke-test row); 5 categories; 5 click events; 1 session; 5 verification tokens; 0 rollup rows. Render, Vercel and Brevo dashboard usage still needs owner review because there is no API token for those accounts.
+
+**Decision required before public flip:** Staying on all free tiers is acceptable for a private beta/owner demo, but a public multi-tenant launch requires explicitly accepting availability, quota and vendor-policy risk, or moving one or more pieces to a paid or commercial-friendly tier. Do not enable `ALLOW_SIGNUP=true` until this decision is recorded.
 
 ### Launch Checklist
 
@@ -1137,11 +1154,12 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
 - [x] Accessibility: keyboard drag-and-drop (ArrowUp/Down + live region + focus restore), focus rings, contrast (placeholders raised to zinc-500), and decorative avatar alt text reviewed; a manual screen-reader pass is still recommended before public signup
 - [x] Manual logical backup taken and restore tested once (2026-10-27): `pg_dump --format=custom` from Neon restored into a local PostgreSQL 18 container; all 12 public tables, 40 indexes, 94 constraints and the `sessions_user_id_expr_idx` expression index matched, and every table's row count matched.
-- [ ] Neon PITR confirmed in the Neon console (dashboard/API access required); record the chosen restore point before the public flip.
-- [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
-- [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
+- [ ] Neon PITR confirmed in the Neon console. **Blocked on Free:** Neon Free has no full PITR, only a 6-hour history window (1 GB limit) and one manual snapshot. The logical backup is the recovery path; record its location and test restore again before the flip.
+- [x] Monitoring: UptimeRobot liveness monitor on `/api/v1/health/live`; API 5xx owner email alerts; nightly-workflow failure issues; structured audit events; log redaction reviewed (2026-10-27). Add a readiness monitor for `/api/v1/health`.
+- [x] Load/quota check reviewed (2026-10-27): see §18.1. Database is 8.7 MB; Render 24/7 uses ~730 of 750 free hours; Neon has a 100 CU-hour cap and no PITR; Vercel Hobby is non-commercial; Brevo is 300/day. Owner must still check Render/Vercel/Brevo dashboards for actual usage.
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier (UptimeRobot keep-warm monitor active; a true cold start was not observed)
-- [ ] Vendor ToS reviewed (Vercel Hobby non-commercial, Render free cold starts)
+- [x] Vendor ToS reviewed (2026-10-27): Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR, Brevo Free is 300 emails/day. See §18.1.
+- [ ] Vendor decision recorded: explicitly accept free-tier risk or move to paid/commercial-friendly tiers before public signup.
 - [ ] Flip `ALLOW_SIGNUP=true`; smoke-test register → verify → publish → public page → click → analytics → export
 - [ ] Rollback: set `ALLOW_SIGNUP=false` (no data loss); forward-fix migration plan documented
 
@@ -1168,7 +1186,7 @@ DEBUG_IP_ENDPOINT=false                  # owner-only /api/v1/debug/ip, enable o
 WEB_INTERNAL_URL=http://localhost:3000   # API → Next.js /internal/revalidate
 
 # --- Web ---
-API_BASE_URL=http://localhost:4000       # rewrite target (prod: https://api.nayankunwar.com)
+API_BASE_URL=http://localhost:4000       # rewrite target (prod: https://linkhub-api-yphe.onrender.com)
 NEXT_PUBLIC_APP_URL=https://link.nayankunwar.com  # canonical public origin used in metadata/links
 NEXT_PUBLIC_ALLOW_SIGNUP=true            # UI flag only; the API enforces ALLOW_SIGNUP
 ALLOW_DEMO_PREVIEW=false                 # true only for the local UI-first demo; enables /preview

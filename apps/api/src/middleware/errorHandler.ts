@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+import { notifyServerError } from "../lib/alerts";
 import { AppError, fail } from "../lib/errors";
 import { logger } from "../lib/logger";
 import type { ErrorEnvelope } from "../lib/http";
@@ -85,6 +86,15 @@ export function errorHandler(
 
   if (appError.status >= 500) {
     logger.error({ ...logContext, err: error }, "request failed");
+    notifyServerError({
+      requestId: req.requestId,
+      method: req.method,
+      path: logContext.path,
+      status: appError.status,
+      code: appError.code,
+      userId: req.user?.id,
+      error,
+    });
   } else if (appError.status !== 404) {
     logger.warn(logContext, "request rejected");
   }

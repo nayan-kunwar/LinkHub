@@ -1,10 +1,10 @@
 import { Prisma, type TokenType, type User } from "@prisma/client";
 import type { Request } from "express";
 import { env } from "../../config/env";
+import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/db";
 import { DEFAULT_APPEARANCE, meDto, type MeDto } from "../../lib/dto";
 import { fail } from "../../lib/errors";
-import { logger } from "../../lib/logger";
 import {
   sendAccountRestoreEmail,
   sendEmailChangeVerification,
@@ -116,9 +116,9 @@ export async function register(input: SignupInput) {
     return GENERIC_REGISTER_RESPONSE;
   }
 
-  let rawToken: string;
+  let created: { rawToken: string; userId: string };
   try {
-    rawToken = await prisma.$transaction(async (tx) => {
+    created = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           email,
@@ -136,7 +136,10 @@ export async function register(input: SignupInput) {
           isPublished: false,
         },
       });
-      return issueToken(tx, user.id, "email_verification");
+      return {
+        rawToken: await issueToken(tx, user.id, "email_verification"),
+        userId: user.id,
+      };
     });
   } catch (error) {
     if (isUniqueError(error)) {
@@ -147,7 +150,8 @@ export async function register(input: SignupInput) {
     throw error;
   }
 
-  enqueueMail(() => sendVerificationEmail(email, rawToken));
+  enqueueMail(() => sendVerificationEmail(email, created.rawToken));
+  audit({ action: "account.registered", targetUserId: created.userId });
 
   return GENERIC_REGISTER_RESPONSE;
 }
@@ -179,10 +183,17 @@ export async function login(input: LoginInput): Promise<User> {
  * If session creation fails, the deletion schedule must remain untouched.
  */
 export async function restoreScheduledDeletion(userId: string): Promise<void> {
-  await prisma.user.updateMany({
+  const result = await prisma.user.updateMany({
     where: { id: userId, deletionScheduledFor: { not: null } },
     data: { deletionScheduledFor: null },
   });
+  if (result.count > 0) {
+    audit({
+      action: "account.deletion_cancelled",
+      targetUserId: userId,
+      metadata: { via: "login" },
+    });
+  }
 }
 
 export async function getMe(userId: string): Promise<MeDto> {
@@ -209,6 +220,8 @@ export async function verifyEmail(rawToken: string): Promise<void> {
       emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
     },
   });
+
+  audit({ action: "account.email_verified", actorUserId: user.id });
 }
 
 export async function verifyEmailChange(rawToken: string): Promise<void> {
@@ -250,7 +263,7 @@ export async function verifyEmailChange(rawToken: string): Promise<void> {
   // a fresh sign-in everywhere and tell the previous mailbox what happened.
   await revokeAllSessions(user.id);
   enqueueMail(() => sendEmailChangedNotice(previousEmail, target));
-  logger.info({ userId: user.id }, "account email changed");
+  audit({ action: "account.email_changed", actorUserId: user.id });
 }
 
 export async function resendVerification(userId: string): Promise<void> {
@@ -298,6 +311,7 @@ export async function resetPassword(rawToken: string, password: string): Promise
   });
 
   await revokeAllSessions(token.userId);
+  audit({ action: "account.password_reset", targetUserId: token.userId });
 }
 
 export async function createSessionForUser(
@@ -335,9 +349,14 @@ export async function destroySession(req: Request): Promise<void> {
 export async function revokeAllSessions(userId: string, exceptSid?: string): Promise<void> {
   if (exceptSid) {
     await prisma.$executeRaw`DELETE FROM sessions WHERE sess->>'userId' = ${userId} AND sid <> ${exceptSid}`;
-    return;
+  } else {
+    await prisma.$executeRaw`DELETE FROM sessions WHERE sess->>'userId' = ${userId}`;
   }
-  await prisma.$executeRaw`DELETE FROM sessions WHERE sess->>'userId' = ${userId}`;
+  audit({
+    action: "account.sessions_revoked",
+    targetUserId: userId,
+    metadata: { exceptCurrent: Boolean(exceptSid) },
+  });
 }
 
 export interface SessionSummaryDto {
@@ -392,6 +411,7 @@ export async function deleteSession(userId: string, sid: string): Promise<void> 
     WHERE sid = ${sid} AND sess->>'userId' = ${userId}
   `;
   if (count === 0) throw fail.notFound();
+  audit({ action: "account.session_revoked", actorUserId: userId });
 }
 
 export async function scheduleAccountDeletion(
@@ -425,6 +445,14 @@ export async function scheduleAccountDeletion(
       await tx.$executeRaw`DELETE FROM sessions WHERE sess->>'userId' = ${user.id} AND sid <> ${currentSid}`;
     });
     await revalidateProfile(profile.username);
+    audit({
+      action: "account.deletion_scheduled",
+      actorUserId: user.id,
+      metadata: {
+        scheduledFor: user.deletionScheduledFor.toISOString(),
+        repeated: true,
+      },
+    });
     return user.deletionScheduledFor;
   }
 
@@ -450,6 +478,12 @@ export async function scheduleAccountDeletion(
   // Unpublishing the profile changes the public page immediately.
   await revalidateProfile(profile.username);
 
+  audit({
+    action: "account.deletion_scheduled",
+    actorUserId: user.id,
+    metadata: { scheduledFor: scheduledFor.toISOString() },
+  });
+
   return scheduledFor;
 }
 
@@ -458,6 +492,11 @@ export async function restoreAccount(rawToken: string): Promise<void> {
   await prisma.user.update({
     where: { id: token.userId },
     data: { deletionScheduledFor: null },
+  });
+  audit({
+    action: "account.restored",
+    targetUserId: token.userId,
+    metadata: { via: "email" },
   });
 }
 
@@ -483,6 +522,11 @@ export async function cancelAccountDeletion(userId: string): Promise<void> {
       where: { userId, type: "account_restore", usedAt: null },
       data: { usedAt: new Date() },
     });
+  });
+  audit({
+    action: "account.deletion_cancelled",
+    actorUserId: userId,
+    metadata: { via: "session" },
   });
 }
 
@@ -530,6 +574,7 @@ export async function requestEmailChange(
   }
 
   enqueueMail(() => sendEmailChangeVerification(email, rawToken));
+  audit({ action: "account.email_change_requested", actorUserId: userId });
   return GENERIC_EMAIL_CHANGE_RESPONSE;
 }
 
@@ -544,6 +589,7 @@ export async function cancelPendingEmailChange(userId: string): Promise<void> {
       data: { usedAt: new Date() },
     });
   });
+  audit({ action: "account.email_change_cancelled", actorUserId: userId });
 }
 
 export async function changePassword(
@@ -561,4 +607,5 @@ export async function changePassword(
     data: { passwordHash },
   });
   await revokeAllSessions(user.id, currentSid);
+  audit({ action: "account.password_changed", actorUserId: user.id });
 }

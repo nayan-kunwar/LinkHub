@@ -15,3 +15,4 @@ test-results
 # Local-only QA and audit notes (contain credentials/findings; never publish).
 TEST-ACCOUNT.local.md
 SECURITY-AUDIT.md
+OWNER-CREDENTIALS.local.md
