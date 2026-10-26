@@ -265,7 +265,8 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
    is at `/nayankunwar`. The first API-backed request after Render has been
    idle may take 30–60 seconds while the free instance wakes.
 2. `/login` signs in as the seeded owner; the session cookie is
-   `__Host-lh.sid` and `Secure`.
+   `__Host-lh.sid` and the readable CSRF cookie is `__Host-lh.csrf`. Both are
+   `Secure`, `Path=/` and host-only; logout clears both.
 3. Create a link, toggle it inactive, delete it.
 4. Rename the profile and confirm the public page updates immediately (the
    `profile:<username>` tag is revalidated and the route re-renders with fresh

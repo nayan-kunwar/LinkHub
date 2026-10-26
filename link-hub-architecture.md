@@ -1119,7 +1119,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Brevo domain verified (DKIM/DMARC; SPF optional); verification and reset emails delivered in production (incl. spam-folder check)
 - [ ] Account-status checks verified in production
 - [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
-- [ ] CSRF/Origin enforced on login/register/forgot/reset; token race tests pass
+- [x] CSRF/Origin enforced on login/register/forgot/reset; tokens are session-bound; token race tests pass
 - [ ] Public profile DTO, cache headers, and profile-fetch internal token verified
 - [ ] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
 - [ ] Account email change, password change and session revocation tested in production
