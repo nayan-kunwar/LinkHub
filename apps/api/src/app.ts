@@ -2,6 +2,7 @@ import express from "express";
 import helmet from "helmet";
 import { env } from "./config/env";
 import { checkDatabase } from "./lib/db";
+import { safeEqual } from "./lib/crypto";
 import { fail } from "./lib/errors";
 import { noStore, sendData } from "./lib/http";
 import { cors } from "./middleware/cors";
@@ -74,6 +75,22 @@ export function createApp() {
       return;
     }
     sendData(res, { ...healthPayload(), db: "up" });
+  });
+
+  // Temporary, secret-gated proxy-chain probe used to verify TRUST_PROXY.
+  // It returns IP metadata in the response only; nothing is logged or stored.
+  app.get("/api/v1/debug/proxy-chain", (req, res) => {
+    const provided = req.header("x-debug-secret") ?? "";
+    if (!safeEqual(provided, env.WEB_PROXY_SECRET)) throw fail.notFound();
+    noStore(res);
+    sendData(res, {
+      ip: req.ip ?? null,
+      ips: req.ips,
+      xForwardedFor: req.header("x-forwarded-for") ?? null,
+      cfConnectingIp: req.header("cf-connecting-ip") ?? null,
+      trueClientIp: req.header("true-client-ip") ?? null,
+      remoteAddress: req.socket.remoteAddress ?? null,
+    });
   });
 
   // 5. Cacheable/public and beacon routes run before JSON parsing and sessions
