@@ -66,7 +66,9 @@ pnpm db:seed
 
 The seed creates the `nayankunwar` owner, marks the email verified, and publishes an
 empty profile. It creates no demo links or categories. Store the owner password
-in your password manager.
+in your password manager. Rerunning the seed against an existing owner **resets
+that account's password** and republishes the profile; do not rerun it after
+changing the production password unless you intend to reset it.
 
 Verify:
 
