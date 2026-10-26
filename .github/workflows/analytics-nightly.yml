@@ -1,0 +1,45 @@
+name: Nightly analytics
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analytics-nightly
+  cancel-in-progress: false
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+
+      - name: Run nightly rollup and prune
+        run: pnpm job:analytics
+        env:
+          NODE_ENV: production
+          APP_URL: https://link.nayankunwar.com
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+          INTERNAL_FETCH_TOKEN: ${{ secrets.INTERNAL_FETCH_TOKEN }}
+          WEB_PROXY_SECRET: ${{ secrets.WEB_PROXY_SECRET }}
+          ANALYTICS_HASH_SECRET: ${{ secrets.ANALYTICS_HASH_SECRET }}

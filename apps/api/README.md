@@ -140,21 +140,22 @@ links/categories, analytics, export and the account lifecycle. The local
 ## Deployment
 
 See [`DEPLOYMENT.md`](../../DEPLOYMENT.md) for the full Neon + Render + Vercel
-runbook. The repository's `render.yaml` defines:
+runbook. The repository's `render.yaml` defines `linkhub-api`: a Node web
+service in Singapore on Render's free plan with health check
+`/api/v1/health/live`.
 
-- `linkhub-api`: Node web service in Singapore with
-  `preDeployCommand: pnpm db:deploy` and health check `/api/v1/health/live`.
-- `linkhub-analytics-nightly`: cron job at 03:00 UTC running
-  `pnpm job:analytics`. It takes a PostgreSQL advisory lock, so overlapping runs
-  are safe.
+The free plan does not support `preDeployCommand` or cron jobs:
+
+- Run `pnpm db:deploy` manually before deploying schema-dependent changes.
+- Nightly analytics runs from `.github/workflows/analytics-nightly.yml` at
+  03:00 UTC. It takes a PostgreSQL advisory lock, so overlapping runs are safe.
 
 Set `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Neon, keep the web
 and API `APP_URL` values aligned, and set `TRUST_PROXY` to the real proxy hop
 count. Put the API behind HTTPS; cookies are `Secure` when
 `NODE_ENV=production`. Monitor `GET /api/v1/health`; it returns `503` when the
-database is down.
-   `/api/v1/health/live` stays `200` so the platform does not restart-loop on a
-   database outage.
+database is down. `/api/v1/health/live` stays `200` so the platform does not
+restart-loop on a database outage.
 
 Never store or log IP addresses. Country analytics only trust
 `x-vercel-ip-country` when the request also presents the correct

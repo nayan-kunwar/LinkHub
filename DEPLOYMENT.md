@@ -6,7 +6,7 @@ Production topology:
 |---|---|---|
 | Web (Next.js) | Vercel | `https://link.nayankunwar.com` |
 | API (Express) | Render | `https://linkhub-api.onrender.com` (or a custom API domain) |
-| Nightly analytics | Render cron | — |
+| Nightly analytics | GitHub Actions | 03:00 UTC |
 | PostgreSQL | Neon | Singapore region |
 | Email | Brevo | `no-reply@nayankunwar.com` |
 
@@ -77,10 +77,11 @@ psql "$DIRECT_URL" -c "select username, is_published from profiles;"
 
 ---
 
-## 3. Render API
+## 3. Render API (free plan)
 
-The repository contains `render.yaml` with the API web service and the nightly
-analytics cron job.
+The repository contains `render.yaml` for the API web service. The free plan
+does not support `preDeployCommand` or cron jobs, so migrations are run manually
+and the nightly analytics job runs from GitHub Actions.
 
 1. In Render: **New → Blueprint**, connect the GitHub repository, and apply
    `render.yaml`.
@@ -90,12 +91,14 @@ analytics cron job.
    - `EMAIL_BREVO_API_KEY` from Brevo
 3. Confirm the service settings:
    - Region: Singapore
-   - Plan: `0.5c-512mb` (paid; required for `preDeployCommand`)
+   - Plan: Free
    - Health check: `/api/v1/health/live`
    - `TRUST_PROXY=1`
-4. Deploy. The build runs `pnpm install`, `pnpm db:generate` and
-   `pnpm api:build`; the pre-deploy command runs `pnpm db:deploy`.
-5. Copy the service URL, for example
+4. If Brevo is not ready, set `EMAIL_PROVIDER=console` in the Render dashboard
+   for the first deploy. Switch it back to `brevo` once the API key is set.
+5. Deploy. The build runs `pnpm install`, `pnpm db:generate` and
+   `pnpm api:build`.
+6. Copy the service URL, for example
    `https://linkhub-api.onrender.com`.
 
 Check:
@@ -108,8 +111,50 @@ curl -fsS https://linkhub-api.onrender.com/api/v1/health/live
 `/health` returns `503` if the database is unreachable. `/health/live` stays
 `200` so Render does not restart-loop during a database outage.
 
-The cron job runs at **03:00 UTC** daily. It uses a PostgreSQL advisory lock, so
-overlapping runs are safe.
+### Free-plan cold starts
+
+Free instances sleep after 15 minutes of inactivity and take roughly 30–60
+seconds to wake. The first login or dashboard request after idle can exceed the
+Vercel proxy timeout. Options:
+
+- Add a free UptimeRobot monitor (or similar) pinging
+  `https://linkhub-api.onrender.com/api/v1/health/live` every 5 minutes.
+- Upgrade the Render service to an always-on paid instance later.
+
+Public profile pages are cached, but a cache miss still waits for the API.
+
+### Migrations
+
+The schema is already applied. For future schema changes, run migrations from
+your machine before deploying the code that depends on them:
+
+```bash
+set -a; source .env.deploy.local; set +a
+pnpm db:deploy
+```
+
+The free plan has no pre-deploy command, so this is a manual step.
+
+### Nightly analytics
+
+The workflow is `.github/workflows/analytics-nightly.yml`. It runs at **03:00
+UTC** daily and can be started manually from **Actions → Nightly analytics →
+Run workflow**.
+
+Add these repository secrets under **Settings → Secrets and variables →
+Actions**:
+
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `SESSION_SECRET`
+- `REVALIDATE_SECRET`
+- `INTERNAL_FETCH_TOKEN`
+- `WEB_PROXY_SECRET`
+- `ANALYTICS_HASH_SECRET`
+
+The job takes a PostgreSQL advisory lock, so overlapping runs are safe.
+Scheduled workflows are paused after 60 days without repository activity;
+re-enable the workflow if GitHub warns you.
 
 ### Optional: API custom domain
 
@@ -199,7 +244,9 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 
 ## 6. Production smoke test
 
-1. `https://link.nayankunwar.com` loads the owner profile.
+1. `https://link.nayankunwar.com` loads the owner profile. The first request
+   after Render has been idle may take 30–60 seconds while the free instance
+   wakes.
 2. `/login` signs in as the seeded owner; the session cookie is
    `__Host-lh.sid` and `Secure`.
 3. Create a link, toggle it inactive, delete it.
@@ -211,8 +258,8 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 7. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
 8. Check Render logs for errors and confirm no IP addresses or tokens appear.
 
-Run the nightly job once from the Render dashboard (**Cron Job → Trigger Run**)
-and confirm it exits successfully.
+Run the nightly job once from **GitHub → Actions → Nightly analytics → Run
+workflow** and confirm it exits successfully.
 
 ---
 

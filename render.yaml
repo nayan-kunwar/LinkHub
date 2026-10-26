@@ -1,5 +1,15 @@
-# Render Blueprint for the LinkHub API and nightly analytics job.
+# Render Blueprint for the LinkHub API on the free plan.
 # The web app is deployed separately on Vercel (root directory: apps/web).
+#
+# Free instances sleep after 15 minutes of inactivity and cold-start in
+# ~30-60 seconds. Keep the API warm with a 5-minute uptime monitor, or upgrade
+# the service to a paid always-on instance.
+#
+# Free instances do not support preDeployCommand or cron jobs:
+# - Run schema migrations manually before deploying schema changes:
+#     pnpm db:deploy
+# - The nightly analytics job runs from
+#   .github/workflows/analytics-nightly.yml.
 #
 # Secrets marked `sync: false` are prompted for when the Blueprint is created.
 # Generate five distinct values with:
@@ -34,10 +44,9 @@ services:
     name: linkhub-api
     runtime: node
     region: singapore
-    plan: 0.5c-512mb
+    plan: free
     branch: main
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm api:build
-    preDeployCommand: pnpm db:deploy
     startCommand: pnpm api:start
     healthCheckPath: /api/v1/health/live
     autoDeployTrigger: commit
@@ -71,18 +80,3 @@ services:
         value: "30"
       - key: LOG_LEVEL
         value: info
-
-  - type: cron
-    name: linkhub-analytics-nightly
-    runtime: node
-    region: singapore
-    plan: 0.5c-512mb
-    branch: main
-    schedule: "0 3 * * *"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate
-    startCommand: pnpm job:analytics
-    autoDeployTrigger: commit
-    envVars:
-      - fromGroup: linkhub-api-shared
-      - key: APP_URL
-        value: https://link.nayankunwar.com

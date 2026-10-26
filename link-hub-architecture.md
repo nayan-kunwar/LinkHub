@@ -1070,14 +1070,14 @@ Order:
 | API | Render free | Cold starts ~30–60 s; public pages unaffected (ISR); auth/dashboard requests can exceed the Vercel proxy timeout; upgrade for always-on |
 | DB | Neon free | Pooled `DATABASE_URL`, `DIRECT_URL` for migrations; PITR window per plan; set a small `connection_limit` so Prisma + sessions do not exhaust connections |
 | Email | Brevo free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
-| Jobs | Render Cron or GitHub Actions schedule | One nightly job (§11.3), ~00:30 UTC; verify free-tier cron availability, GitHub Actions is the fallback |
+| Jobs | GitHub Actions schedule | One nightly job (§11.3) at 03:00 UTC; Render's free plan has no cron jobs |
 | DNS | `link.nayankunwar.com` → Vercel; `api.nayankunwar.com` → Render | |
 
 **Scaling path (Later):** stateless API → multiple instances → Redis for rate limits/sessions → queue for click ingestion → partition `click_events` → custom domains via edge middleware.
 
 **Cold starts and proxy timeouts:** ISR protects public pages, but login/register/dashboard calls go through the Vercel rewrite to Render. A Render free cold start (~30–60 s) can exceed the Vercel proxy/function timeout, so the first auth request after idle may fail. Keep the API warm with a 5-minute uptime ping, move to a paid always-on instance, or implement an explicit retry/loading UX. Do not rely on ISR for authenticated flows.
 
-**Vendor limits:** Vercel Hobby is intended for personal, non-commercial use; confirm the plan fits a public multi-tenant service. Verify Render Cron availability on the free tier (GitHub Actions is the fallback). Set `connection_limit` on `DATABASE_URL` and a small `pg` pool for `connect-pg-simple` so Prisma + sessions do not exhaust Neon connections.
+**Vendor limits:** Vercel Hobby is intended for personal, non-commercial use; confirm the plan fits a public multi-tenant service. Render's free plan has no cron jobs, so nightly analytics runs in GitHub Actions. Set `connection_limit` on `DATABASE_URL` and a small `pg` pool for `connect-pg-simple` so Prisma + sessions do not exhaust Neon connections.
 
 **Staging and CI:** use a separate Neon branch and Vercel/Render preview environment with distinct secrets. CI runs lint, typecheck, unit tests, integration tests against a Postgres service, `prisma migrate deploy` on a throwaway DB, and the web build. Migrations are forward-only; take a `pg_dump`/PITR checkpoint before production migrations and document the forward-fix rollback.
 
@@ -1136,7 +1136,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=pr
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
 - [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier
-- [ ] Vendor ToS reviewed (Vercel Hobby non-commercial, Render cron availability)
+- [ ] Vendor ToS reviewed (Vercel Hobby non-commercial, Render free cold starts)
 - [ ] Flip `ALLOW_SIGNUP=true`; smoke-test register → verify → publish → public page → click → analytics → export
 - [ ] Rollback: set `ALLOW_SIGNUP=false` (no data loss); forward-fix migration plan documented
 
