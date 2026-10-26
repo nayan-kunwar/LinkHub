@@ -1089,7 +1089,7 @@ Order:
 - [x] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET`, `WEB_PROXY_SECRET` ≥ 32 random bytes, distinct
 - [x] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile` during the private phase, `ALLOW_DEMO_PREVIEW=false`
 - [x] Web rewrite adds `X-Web-Proxy-Secret`; API stores country only when it matches; direct API country spoof is ignored (verified in production)
-- [ ] Account deletion/restore emails delivered; purge job scheduled and tested against a throwaway account; restore link and login both cancel deletion
+- [x] Account deletion/restore emails delivered (mail.tm, 4 s); nightly purge tested against a throwaway account (`users: 1` pruned in run `40391648990`); restore link and login both cancel deletion; the profile stays unpublished after restore
 - [x] Export verified as `schemaVersion: 2` with five CSVs and formula-safe cells
 - [x] Rewrite `/api/:path*` only; `/internal/revalidate` reachable from API via `WEB_INTERNAL_URL` (verified in production)
 - [x] **Verify `TRUST_PROXY` (do not assume):** verified 2026-10-26 with a temporary secret-gated probe. The live `X-Forwarded-For` chain is client → Cloudflare edge → Render proxy; `TRUST_PROXY=3` makes `req.ip` equal the real client IP (and `CF-Connecting-IP`), while a forged leading `X-Forwarded-For` is ignored. The probe was removed after verification.
