@@ -207,10 +207,13 @@ The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
 Render, Vercel and Brevo dashboard usage still needs an owner review because
 those accounts have no API token configured here.
 
-> **Before public signup:** record whether you accept the free-tier availability,
-> quota and vendor-policy risk, or move the affected piece to a paid or
-> commercial-friendly tier. Render free is documented as not for production,
-> Vercel Hobby is non-commercial only, and Neon Free has no full PITR.
+> **Decision 2026-10-27:** stay private on the free tiers and keep
+> `ALLOW_SIGNUP=false` while the cold-start, recovery and vendor-policy items
+> are resolved. Before any public signup, record whether you accept the
+> free-tier availability, quota and vendor-policy risk, or move the affected
+> piece to a paid or commercial-friendly tier. Render free is documented as not
+> for production, Vercel Hobby is non-commercial only, and Neon Free has no full
+> PITR.
 
 ### Optional: API custom domain
 

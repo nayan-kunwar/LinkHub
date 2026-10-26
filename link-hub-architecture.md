@@ -1136,7 +1136,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 
 **Measured 2026-10-27:** PostgreSQL database size `8,672 kB`; 2 users; 2 profiles; 8 links (including one soft-deleted smoke-test row); 5 categories; 5 click events; 1 session; 5 verification tokens; 0 rollup rows. Render, Vercel and Brevo dashboard usage still needs owner review because there is no API token for those accounts.
 
-**Decision required before public flip:** Staying on all free tiers is acceptable for a private beta/owner demo, but a public multi-tenant launch requires explicitly accepting availability, quota and vendor-policy risk, or moving one or more pieces to a paid or commercial-friendly tier. Do not enable `ALLOW_SIGNUP=true` until this decision is recorded.
+**Decision (2026-10-27):** Stay private on the free tiers. Keep `ALLOW_SIGNUP=false` while the owner finishes the cold-start, recovery and vendor-policy review. Revisit this decision before any public signup; a public multi-tenant launch would require explicitly accepting availability, quota and vendor-policy risk, or moving one or more pieces to a paid or commercial-friendly tier.
 
 ### Launch Checklist
 
@@ -1166,7 +1166,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Load/quota check reviewed (2026-10-27): see §18.1. Database is 8.7 MB; Render 24/7 uses ~730 of 750 free hours; Neon has a 100 CU-hour cap and no PITR; Vercel Hobby is non-commercial; Brevo is 300/day. Owner must still check Render/Vercel/Brevo dashboards for actual usage.
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier (UptimeRobot keep-warm monitor active; a true cold start was not observed)
 - [x] Vendor ToS reviewed (2026-10-27): Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR, Brevo Free is 300 emails/day. See §18.1.
-- [ ] Vendor decision recorded: explicitly accept free-tier risk or move to paid/commercial-friendly tiers before public signup.
+- [x] Vendor decision recorded (2026-10-27): stay private on the free tiers; keep `ALLOW_SIGNUP=false` while cold-start, recovery and vendor-policy items are resolved. Revisit before public signup.
 - [ ] Flip `ALLOW_SIGNUP=true`; smoke-test register → verify → publish → public page → click → analytics → export
 - [ ] Rollback: set `ALLOW_SIGNUP=false` (no data loss); forward-fix migration plan documented
 
