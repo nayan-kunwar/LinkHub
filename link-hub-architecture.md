@@ -1117,14 +1117,15 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 
 - [ ] All **Public launch** items in §2.1 complete and tested
 - [x] Brevo domain verified (DKIM/DMARC; SPF optional); verification and reset emails delivered in production (incl. spam-folder check)
-- [ ] Account-status checks verified in production
+- [x] Account-status checks verified in production (active, suspended, pending verification, deleted)
 - [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
 - [x] CSRF/Origin enforced on login/register/forgot/reset; tokens are session-bound; token race tests pass
-- [ ] Public profile DTO, cache headers, and profile-fetch internal token verified
-- [ ] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
-- [ ] Account email change, password change and session revocation tested in production
-- [ ] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
-- [ ] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
+- [x] Public profile DTO, cache headers, and profile-fetch internal token verified
+- [x] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
+- [x] Account password change and session revocation tested in production
+- [ ] Account email change verification completed in production (request/cancel and pending-email identity tested)
+- [x] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
+- [x] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
 - [x] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
 - [ ] Abuse report path live (profile footer link → owner inbox)
 - [x] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
