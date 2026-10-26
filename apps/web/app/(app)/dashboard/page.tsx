@@ -25,33 +25,39 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { InfoTip } from "@/components/ui/info-tip";
-import { useMockData } from "@/lib/store";
+import { useAppData } from "@/lib/store";
 import { useRange } from "@/lib/use-range";
-import { getAnalytics, getLinkClickCount } from "@/lib/analytics";
+import { sumSeries, useAnalytics, useLinkSeries } from "@/lib/analytics";
 import { formatNumber } from "@/lib/utils";
 
 const ACC_TIP =
   "Recorded clicks count taps on your links. Known bots and repeat taps within a few seconds are filtered out, so treat totals as close estimates, not exact visitor counts.";
 
 export default function DashboardPage() {
-  const { state, toggleLink } = useMockData();
+  const { state, toggleLink } = useAppData();
   const [range, setRange] = useRange(30);
-  const overview = useMemo(() => getAnalytics(state, range), [state, range]);
+  const analytics = useAnalytics(range);
+  const overview = analytics.data;
+  const analyticsLoading = analytics.loading;
+  const { seriesById } = useLinkSeries(state.links, range);
   const counts = useMemo(
-    () => new Map(state.links.map((link) => [link.id, getLinkClickCount(state, link, range)])),
-    [state, range],
+    () => new Map(state.links.map((link) => [link.id, sumSeries(seriesById.get(link.id))])),
+    [state.links, seriesById],
   );
   const categoriesById = useMemo(
     () => new Map(state.categories.map((category) => [category.id, category])),
     [state.categories],
   );
-  const inactiveCount = state.links.length - overview.activeLinks;
+  const activeLinks =
+    overview?.activeLinks ?? state.links.filter((link) => link.isActive).length;
+  const inactiveCount = state.links.length - activeLinks;
   const hiddenCategories = state.categories.filter((category) => !category.isVisible).length;
+  const topLinks = overview?.topLinks ?? [];
 
-  const toggle = (id: string, title: string) => {
+  const toggle = async (id: string, title: string) => {
     const link = state.links.find((item) => item.id === id);
-    toggleLink(id);
-    toast.success(`${title} ${link?.isActive ? "deactivated" : "activated"}`);
+    const ok = await toggleLink(id);
+    if (ok) toast.success(`${title} ${link?.isActive ? "deactivated" : "activated"}`);
   };
 
   return (
@@ -65,10 +71,10 @@ export default function DashboardPage() {
       <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard
           label="Total recorded clicks"
-          value={formatNumber(overview.total)}
+          value={analyticsLoading ? "—" : formatNumber(overview?.total ?? 0)}
           sub={
             <span className="flex flex-wrap items-center gap-1.5">
-              <DeltaPill change={overview.change} />
+              <DeltaPill change={overview?.change ?? null} />
               <span>last {range} days</span>
             </span>
           }
@@ -77,7 +83,7 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Active links"
-          value={`${overview.activeLinks} / ${LIMITS.maxLinks}`}
+          value={`${activeLinks} / ${LIMITS.maxLinks}`}
           sub={`${inactiveCount} inactive`}
           icon={Link2}
         />
@@ -89,8 +95,8 @@ export default function DashboardPage() {
         />
         <StatCard
           label="Avg clicks / day"
-          value={overview.averagePerDay.toFixed(1)}
-          sub={<DeltaPill change={overview.change} />}
+          value={(overview?.averagePerDay ?? 0).toFixed(1)}
+          sub={<DeltaPill change={overview?.change ?? null} />}
           icon={Star}
         />
       </div>
@@ -101,7 +107,7 @@ export default function DashboardPage() {
             <h2 className="font-bold text-zinc-900">Clicks over time</h2>
             <span className="text-xs text-zinc-500">UTC</span>
           </div>
-          <ClicksChart data={overview.series} rangeDays={range} />
+          <ClicksChart data={overview?.series ?? []} rangeDays={range} />
         </Card>
 
         <Card className="p-5">
@@ -112,12 +118,14 @@ export default function DashboardPage() {
             </Link>
           </div>
           <ol className="space-y-3">
-            {overview.topLinks.length === 0 ? (
-              <p className="py-8 text-center text-sm text-zinc-500">No link clicks yet.</p>
+            {topLinks.length === 0 ? (
+              <p className="py-8 text-center text-sm text-zinc-500">
+                {analyticsLoading ? "Loading click data…" : "No link clicks yet."}
+              </p>
             ) : (
-              overview.topLinks.map((item) => {
+              topLinks.map((item) => {
                 const link = state.links.find((candidate) => candidate.id === item.linkId);
-                const max = overview.topLinks[0]?.count ?? 1;
+                const max = topLinks[0]?.count ?? 1;
                 return (
                   <li key={item.linkId} className="flex items-center gap-3">
                     {link ? <LinkIcon icon={link.icon} url={link.url} className="size-6" /> : null}
@@ -198,7 +206,9 @@ export default function DashboardPage() {
                       <td className="py-2.5 pr-2">
                         <Switch
                           checked={link.isActive}
-                          onCheckedChange={() => toggle(link.id, link.title)}
+                          onCheckedChange={() => {
+                            void toggle(link.id, link.title);
+                          }}
                           aria-label={`${link.title} active`}
                         />
                       </td>

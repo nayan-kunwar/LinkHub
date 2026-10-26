@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
-import { MockDataProvider } from "@/lib/store";
+import { AppDataProvider } from "@/lib/store";
 import "./globals.css";
 
 const inter = Inter({
@@ -35,7 +35,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={inter.variable}>
       <body>
-        <MockDataProvider>{children}</MockDataProvider>
+        <AppDataProvider>{children}</AppDataProvider>
         <Toaster
           position="bottom-center"
           toastOptions={{

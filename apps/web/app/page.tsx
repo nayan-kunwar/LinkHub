@@ -17,7 +17,12 @@ import { ProfileView } from "@/components/profile-view";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
-import { MOCK_STATE } from "@/lib/mock-data";
+import {
+  DEMO_APPEARANCE,
+  DEMO_CATEGORIES,
+  DEMO_LINKS,
+  DEMO_PROFILE,
+} from "@/lib/demo-profile";
 
 export const metadata: Metadata = {
   title: "All your links in one place",
@@ -159,10 +164,10 @@ export default function HomePage() {
               <div className="relative">
                 <PhoneFrame className="rotate-1">
                   <ProfileView
-                    profile={MOCK_STATE.profile}
-                    categories={MOCK_STATE.categories}
-                    links={MOCK_STATE.links}
-                    appearance={MOCK_STATE.appearance}
+                    profile={DEMO_PROFILE}
+                    categories={DEMO_CATEGORIES}
+                    links={DEMO_LINKS}
+                    appearance={DEMO_APPEARANCE}
                     variant="phone"
                   />
                 </PhoneFrame>

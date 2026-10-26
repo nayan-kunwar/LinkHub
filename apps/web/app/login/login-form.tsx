@@ -9,15 +9,12 @@ import { AuthLayout, AuthPreviewCard } from "@/components/auth/auth-layout";
 import { AuthAlert, PasswordInput, SubmitButton } from "@/components/auth/auth-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Label, FieldError } from "@/components/ui/input";
-import { useMockData } from "@/lib/store";
-import { startDemoSession } from "@/lib/auth";
+import { formatFieldErrors, useAppData } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function LoginForm() {
   const router = useRouter();
-  const { state, restoreAccount } = useMockData();
+  const { state, login } = useAppData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
@@ -30,6 +27,15 @@ export function LoginForm() {
   useEffect(() => {
     setDeletionScheduledFor(state.account.deletionScheduledFor);
   }, [state.account.deletionScheduledFor]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "preview") {
+      setFormError("Demo preview is unavailable right now. Sign in to continue.");
+    }
+    const queryEmail = params.get("email");
+    if (queryEmail) setEmail(queryEmail);
+  }, []);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,20 +54,38 @@ export function LoginForm() {
     }
 
     setLoading(true);
-    await wait(650);
+    try {
+      const result = await login(parsed.data);
+      if (!result.ok) {
+        const error = result.error;
+        if (error?.code === "VALIDATION_ERROR") {
+          const fieldErrors = formatFieldErrors(error.details);
+          setErrors({
+            email: fieldErrors.email,
+            password: fieldErrors.password,
+          });
+        } else if (error?.code === "INVALID_CREDENTIALS") {
+          setFormError("Email or password is incorrect.");
+        } else if (error?.code === "ACCOUNT_SUSPENDED") {
+          setFormError(error.message);
+        } else if (error?.status === 429) {
+          setFormError("Too many sign-in attempts. Wait a few minutes and try again.");
+        } else {
+          setFormError(error?.message ?? "Could not sign in. Try again.");
+        }
+        return;
+      }
 
-    if (password === "wrong") {
+      const nextParam = new URLSearchParams(window.location.search).get("next");
+      const destination =
+        nextParam?.startsWith("/") && !nextParam.startsWith("//")
+          ? nextParam
+          : "/dashboard";
+      router.push(destination);
+      router.refresh();
+    } finally {
       setLoading(false);
-      setFormError("Incorrect email or password.");
-      return;
     }
-
-    // Signing in during the 30-day grace period cancels the deletion.
-    if (state.account.deletionScheduledFor) restoreAccount();
-    startDemoSession(parsed.data.email, state.profile.displayName);
-    const nextParam = new URLSearchParams(window.location.search).get("next");
-    const destination = nextParam?.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
-    router.push(destination);
   };
 
   return (

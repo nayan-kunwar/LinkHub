@@ -5,10 +5,50 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Check, Clock3, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { AuthLayout, EnvelopeIllustration } from "@/components/auth/auth-layout";
-import { useMockData } from "@/lib/store";
+import { ApiError, api } from "@/lib/api-client";
+import { useAppData } from "@/lib/store";
 import { formatDate } from "@/lib/utils";
 
-type RestoreView = "scheduled" | "restored" | "active" | "expired";
+type RestoreView =
+  | "checking"
+  | "scheduled"
+  | "restoring"
+  | "restored"
+  | "active"
+  | "expired"
+  | "invalid";
+
+type TokenResult = "restored" | "expired" | "invalid";
+
+const tokenResults = new Map<string, TokenResult>();
+const tokenRequests = new Map<string, Promise<TokenResult>>();
+
+async function consumeRestoreToken(token: string): Promise<TokenResult> {
+  const cached = tokenResults.get(token);
+  if (cached) return cached;
+  const pending = tokenRequests.get(token);
+  if (pending) return pending;
+
+  const request = (async (): Promise<TokenResult> => {
+    try {
+      await api.account.restore(token);
+      tokenResults.set(token, "restored");
+      return "restored";
+    } catch (error) {
+      const result: TokenResult =
+        error instanceof ApiError && error.code === "TOKEN_EXPIRED"
+          ? "expired"
+          : "invalid";
+      tokenResults.set(token, result);
+      return result;
+    } finally {
+      tokenRequests.delete(token);
+    }
+  })();
+
+  tokenRequests.set(token, request);
+  return request;
+}
 
 function daysLeft(value: string): number {
   const remaining = new Date(value).getTime() - Date.now();
@@ -27,31 +67,68 @@ function RestoreSkeleton() {
 }
 
 export function RestoreAccountView() {
-  const { state, hydrated, restoreAccount } = useMockData();
-  const [restored, setRestored] = useState(false);
-  const [expired, setExpired] = useState(false);
+  const { state, hydrated, status, restoreAccount, refresh } = useAppData();
+  const [view, setView] = useState<RestoreView>("checking");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("state") === "expired") setExpired(true);
-    if (params.get("state") === "restored") setRestored(true);
+    const stateParam = params.get("state");
+    const token = params.get("token");
+
+    if (stateParam === "expired") {
+      setView("expired");
+      return;
+    }
+    if (stateParam === "restored") {
+      setView("restored");
+      return;
+    }
+    if (!token) return;
+
+    setView("restoring");
+    let cancelled = false;
+    void consumeRestoreToken(token).then(async (result) => {
+      if (cancelled) return;
+      if (result === "restored" && status === "authenticated") {
+        await refresh();
+      }
+      if (cancelled) return;
+      setView(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // The token is read from the URL once; provider updates must not re-consume it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const scheduledFor = state.account.deletionScheduledFor;
-  const view: RestoreView | null = !hydrated
-    ? null
-    : expired
-      ? "expired"
-      : restored
-        ? "restored"
-        : scheduledFor
-          ? "scheduled"
-          : "active";
+  const signedIn = status === "authenticated";
 
-  const restore = () => {
-    restoreAccount();
-    setRestored(true);
-    toast.success("Account restored. Your data is safe.");
+  useEffect(() => {
+    if (view !== "checking") return;
+    if (!hydrated) return;
+    if (signedIn && scheduledFor) {
+      setView("scheduled");
+    } else {
+      setView("active");
+    }
+  }, [view, hydrated, signedIn, scheduledFor]);
+
+  const restore = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ok = await restoreAccount();
+      if (ok) {
+        setView("restored");
+        toast.success("Account restored. Your data is safe.");
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -73,12 +150,12 @@ export function RestoreAccountView() {
       }
       aside={
         <EnvelopeIllustration
-          status={view === "restored" ? "check" : view === "expired" ? "expired" : "lock"}
+          status={view === "restored" ? "check" : view === "expired" || view === "invalid" ? "expired" : "lock"}
         />
       }
     >
       <div className="flex flex-col items-center text-center">
-        {view === null ? <RestoreSkeleton /> : null}
+        {view === "checking" || view === "restoring" ? <RestoreSkeleton /> : null}
 
         {view === "scheduled" && scheduledFor ? (
           <>
@@ -109,10 +186,13 @@ export function RestoreAccountView() {
 
             <button
               type="button"
-              onClick={restore}
-              className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
+              onClick={() => {
+                void restore();
+              }}
+              disabled={busy}
+              className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200 disabled:cursor-not-allowed disabled:bg-violet-400"
             >
-              Restore my account
+              {busy ? "Restoring…" : "Restore my account"}
             </button>
             <p className="mt-4 text-sm text-zinc-600">
               Prefer to sign in?{" "}
@@ -137,18 +217,34 @@ export function RestoreAccountView() {
               unpublished until you publish it.
             </p>
             <div className="mt-6 flex w-full flex-col gap-2">
-              <Link
-                href="/dashboard"
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
-              >
-                Go to dashboard
-              </Link>
-              <Link
-                href="/dashboard/profile"
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-900 transition hover:bg-violet-50 focus-visible:ring-4 focus-visible:ring-violet-200"
-              >
-                Review your profile
-              </Link>
+              {signedIn ? (
+                <>
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
+                  >
+                    Go to dashboard
+                  </Link>
+                  <Link
+                    href="/dashboard/profile"
+                    className="inline-flex h-10 items-center justify-center rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-900 transition hover:bg-violet-50 focus-visible:ring-4 focus-visible:ring-violet-200"
+                  >
+                    Review your profile
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
+                  >
+                    Sign in
+                  </Link>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Sign in with your usual email and password to continue.
+                  </p>
+                </>
+              )}
             </div>
           </>
         ) : null}
@@ -162,14 +258,15 @@ export function RestoreAccountView() {
               Nothing to restore
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
-              This account is active and no deletion is scheduled. If you followed an email link,
-              it may have already been used.
+              {signedIn
+                ? "Your account is active and no deletion is scheduled."
+                : "This account is active and no deletion is scheduled. If you followed an email link, it may have already been used."}
             </p>
             <Link
-              href="/login"
+              href={signedIn ? "/dashboard" : "/login"}
               className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
             >
-              Sign in
+              {signedIn ? "Go to dashboard" : "Sign in"}
             </Link>
           </>
         ) : null}
@@ -199,6 +296,27 @@ export function RestoreAccountView() {
               </a>
               .
             </p>
+          </>
+        ) : null}
+
+        {view === "invalid" ? (
+          <>
+            <span className="flex size-14 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+              <AlertCircle aria-hidden="true" className="size-6" />
+            </span>
+            <h1 className="mt-6 text-3xl font-extrabold leading-tight tracking-tight">
+              Link already used
+            </h1>
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-zinc-600">
+              This restore link has already been used or is no longer valid. If your account was
+              restored, sign in to continue.
+            </p>
+            <Link
+              href="/login"
+              className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus-visible:ring-4 focus-visible:ring-violet-200"
+            >
+              Sign in
+            </Link>
           </>
         ) : null}
 

@@ -9,62 +9,112 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
+import { LIMITS } from "@linkhub/shared";
 import type {
   AppearanceSettings,
   Category,
   CategoryFormValues,
+  Link,
   LinkFormValues,
+  Profile,
   ProfileInput,
 } from "@linkhub/shared";
-import { LIMITS } from "@linkhub/shared";
 import {
+  ApiError,
+  api,
+  type ApiAccount,
+  type ApiProfile,
+} from "./api-client";
+import { invalidateAnalyticsCache } from "./analytics";
+import {
+  EMPTY_ACCOUNT,
+  EMPTY_PROFILE,
   createEmptyState,
-  createId,
-  type MockLink,
-  type MockState,
-} from "./mock-data";
+  type AppAccount,
+  type AppState,
+} from "./app-state";
 
-const STORAGE_KEY = "linkhub-demo-v2";
+export type LoadStatus =
+  | "loading"
+  | "authenticated"
+  | "anonymous"
+  | "pending"
+  | "error";
 
-interface MockDataContextValue {
-  state: MockState;
-  hydrated: boolean;
-  addLink: (values: LinkFormValues) => MockLink;
-  updateLink: (id: string, values: LinkFormValues) => void;
-  deleteLink: (id: string) => void;
-  toggleLink: (id: string) => void;
-  reorderLinks: (activeId: string, overId: string) => void;
-  addCategory: (values: CategoryFormValues) => Category;
-  updateCategory: (id: string, values: CategoryFormValues) => void;
-  deleteCategory: (id: string) => void;
-  toggleCategory: (id: string) => void;
-  reorderCategories: (activeId: string, overId: string) => void;
-  updateProfile: (values: ProfileInput) => void;
-  setAppearance: (appearance: AppearanceSettings) => void;
-  resetAppearance: () => void;
-  setPendingEmail: (email: string) => void;
-  cancelPendingEmail: () => void;
-  removeSession: (id: string) => void;
-  removeOtherSessions: () => void;
-  scheduleDeletion: () => void;
-  restoreAccount: () => void;
-  resetDemoData: () => void;
+export interface MutationResult {
+  ok: boolean;
+  error?: ApiError;
 }
 
-const MockDataContext = createContext<MockDataContextValue | null>(null);
+interface AppDataContextValue {
+  state: AppState;
+  hydrated: boolean;
+  status: LoadStatus;
+  loadError: string | null;
+  refresh: () => Promise<void>;
+  login: (input: {
+    email: string;
+    password: string;
+    remember?: boolean;
+  }) => Promise<MutationResult>;
+  logout: () => Promise<void>;
+  addLink: (values: LinkFormValues) => Promise<boolean>;
+  updateLink: (id: string, values: LinkFormValues) => Promise<boolean>;
+  deleteLink: (id: string) => Promise<boolean>;
+  toggleLink: (id: string) => Promise<boolean>;
+  reorderLinks: (activeId: string, overId: string) => Promise<boolean>;
+  addCategory: (values: CategoryFormValues) => Promise<boolean>;
+  updateCategory: (id: string, values: CategoryFormValues) => Promise<boolean>;
+  deleteCategory: (id: string) => Promise<boolean>;
+  toggleCategory: (id: string) => Promise<boolean>;
+  reorderCategories: (activeId: string, overId: string) => Promise<boolean>;
+  updateProfile: (values: ProfileInput) => Promise<MutationResult>;
+  setPublished: (published: boolean) => Promise<boolean>;
+  setAppearance: (appearance: AppearanceSettings) => Promise<boolean>;
+  requestEmailChange: (
+    email: string,
+    currentPassword: string,
+  ) => Promise<MutationResult>;
+  cancelPendingEmail: () => Promise<boolean>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<MutationResult>;
+  removeSession: (id: string) => Promise<boolean>;
+  removeOtherSessions: () => Promise<boolean>;
+  scheduleDeletion: (
+    password: string,
+    confirmUsername: string,
+  ) => Promise<MutationResult>;
+  restoreAccount: () => Promise<boolean>;
+}
 
-function normalizeState(candidate: Partial<MockState>): MockState {
-  const fallback = createEmptyState();
-  if (!candidate || candidate.version !== 2) return fallback;
+const AppDataContext = createContext<AppDataContextValue | null>(null);
+
+function toProfile(profile: ApiProfile): Profile {
+  const { appearance: _appearance, ...rest } = profile;
+  return rest;
+}
+
+function toAccount(account: ApiAccount): AppAccount {
   return {
-    ...fallback,
-    ...candidate,
-    profile: { ...fallback.profile, ...candidate.profile, socials: { ...fallback.profile.socials, ...candidate.profile?.socials } },
-    account: { ...fallback.account, ...candidate.account },
-    appearance: { ...fallback.appearance, ...candidate.appearance },
-    categories: candidate.categories?.length ? candidate.categories : fallback.categories,
-    links: candidate.links ?? fallback.links,
-    sessions: candidate.sessions ?? fallback.sessions,
+    id: account.id,
+    email: account.email,
+    emailVerified: account.emailVerified,
+    pendingEmail: account.pendingEmail,
+    plan: account.plan,
+    status: account.status,
+    createdAt: account.createdAt,
+    deletionScheduledFor: account.deletionScheduledFor,
+  };
+}
+
+function applyProfile(current: AppState, profile: ApiProfile): AppState {
+  return {
+    ...current,
+    profile: toProfile(profile),
+    appearance: profile.appearance,
   };
 }
 
@@ -72,7 +122,11 @@ function withSortOrder<T extends { id: string; sortOrder: number }>(items: T[]):
   return items.map((item, index) => ({ ...item, sortOrder: index }));
 }
 
-function moveItem<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
+function moveItem<T extends { id: string }>(
+  items: T[],
+  activeId: string,
+  overId: string,
+): T[] {
   const from = items.findIndex((item) => item.id === activeId);
   const to = items.findIndex((item) => item.id === overId);
   if (from === -1 || to === -1 || from === to) return items;
@@ -82,214 +136,663 @@ function moveItem<T extends { id: string }>(items: T[], activeId: string, overId
   return next;
 }
 
-export function MockDataProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<MockState>(() => createEmptyState());
-  const [hydrated, setHydrated] = useState(false);
+function normalizeError(error: unknown, fallback: string): ApiError {
+  if (error instanceof ApiError) return error;
+  return new ApiError(
+    0,
+    "INTERNAL_ERROR",
+    error instanceof Error && error.message ? error.message : fallback,
+  );
+}
 
-  useEffect(() => {
+function formatFieldErrors(details: unknown): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!Array.isArray(details)) return errors;
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object") continue;
+    const item = detail as { path?: unknown; message?: unknown };
+    if (typeof item.message !== "string") continue;
+    const key = Array.isArray(item.path)
+      ? item.path.join(".")
+      : typeof item.path === "string"
+        ? item.path
+        : "";
+    if (key && !errors[key]) errors[key] = item.message;
+  }
+  return errors;
+}
+
+export function AppDataProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AppState>(() => createEmptyState());
+  const [hydrated, setHydrated] = useState(false);
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setStatus("loading");
+    setLoadError(null);
+
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setState(normalizeState(JSON.parse(raw) as Partial<MockState>));
-    } catch {
-      // A corrupt preview payload should never block the UI.
+      await api.auth.csrf().catch(() => undefined);
+      const me = await api.auth.me();
+
+      if (me.user.status === "pending_verification") {
+        setState({
+          ...createEmptyState(),
+          profile: me.profile ? toProfile(me.profile) : { ...EMPTY_PROFILE },
+          appearance: me.profile?.appearance ?? createEmptyState().appearance,
+          account: toAccount(me.user),
+        });
+        setStatus("pending");
+        return;
+      }
+
+      const [links, categories, account, sessions] = await Promise.all([
+        api.links.list(),
+        api.categories.list(),
+        api.account.get(),
+        api.account.sessions(),
+      ]);
+
+      setState({
+        profile: me.profile ? toProfile(me.profile) : { ...EMPTY_PROFILE },
+        appearance: me.profile?.appearance ?? createEmptyState().appearance,
+        account: toAccount(account),
+        categories,
+        links,
+        sessions,
+      });
+      setStatus("authenticated");
+    } catch (error) {
+      const apiError = normalizeError(error, "Could not load your account.");
+      if (apiError.status === 401) {
+        setState(createEmptyState());
+        setStatus("anonymous");
+      } else if (
+        apiError.status === 403 &&
+        apiError.code === "EMAIL_NOT_VERIFIED"
+      ) {
+        setStatus("pending");
+      } else {
+        setLoadError(apiError.message);
+        setStatus("error");
+      }
     } finally {
       setHydrated(true);
     }
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    void load();
+  }, [load]);
+
+  const failMutation = useCallback(
+    (error: unknown, fallback: string, notify = true): MutationResult => {
+      const apiError = normalizeError(error, fallback);
+      if (apiError.status === 401) {
+        setState(createEmptyState());
+        setStatus("anonymous");
+        if (notify) toast.error("Your session expired. Sign in again.");
+      } else if (notify) {
+        toast.error(apiError.message);
+      }
+      return { ok: false, error: apiError };
+    },
+    [],
+  );
+
+  const refresh = useCallback(async () => {
+    await load();
+  }, [load]);
+
+  const login = useCallback(
+    async (input: { email: string; password: string; remember?: boolean }) => {
+      try {
+        await api.auth.login(input);
+        await load();
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Sign in failed.", false);
+      }
+    },
+    [failMutation, load],
+  );
+
+  const logout = useCallback(async () => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      await api.auth.logout();
     } catch {
-      // Ignore quota/private-mode failures in the preview.
+      // The local state is cleared even if the API is unreachable.
     }
-  }, [state, hydrated]);
-
-  const addLink = useCallback((values: LinkFormValues) => {
-    const link: MockLink = {
-      id: createId("a"),
-      title: values.title,
-      url: values.url,
-      description: values.description,
-      categoryId: values.categoryId,
-      icon: values.icon,
-      isActive: values.isActive,
-      sortOrder: 0,
-      createdAt: new Date().toISOString(),
-      baseWeight: 0,
-    };
-    setState((current) => {
-      if (current.links.length >= LIMITS.maxLinks) return current;
-      const next = withSortOrder([...current.links, link]);
-      return { ...current, links: next };
-    });
-    return link;
+    invalidateAnalyticsCache();
+    setState(createEmptyState());
+    setStatus("anonymous");
+    setHydrated(true);
   }, []);
 
-  const updateLink = useCallback((id: string, values: LinkFormValues) => {
-    setState((current) => ({
-      ...current,
-      links: current.links.map((link) => (link.id === id ? { ...link, ...values } : link)),
-    }));
-  }, []);
+  const addLink = useCallback(
+    async (values: LinkFormValues) => {
+      const temporary: Link = {
+        id: crypto.randomUUID(),
+        title: values.title,
+        url: values.url,
+        description: values.description,
+        categoryId: values.categoryId,
+        icon: values.icon,
+        isActive: values.isActive,
+        sortOrder: state.links.length,
+        createdAt: new Date().toISOString(),
+      };
 
-  const deleteLink = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      links: withSortOrder(current.links.filter((link) => link.id !== id)),
-    }));
-  }, []);
+      setState((current) => ({
+        ...current,
+        links: [...current.links, temporary],
+      }));
 
-  const toggleLink = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      links: current.links.map((link) =>
-        link.id === id ? { ...link, isActive: !link.isActive } : link,
-      ),
-    }));
-  }, []);
+      try {
+        const created = await api.links.create(values);
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) =>
+            link.id === temporary.id ? created : link,
+          ),
+        }));
+        invalidateAnalyticsCache();
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          links: current.links.filter((link) => link.id !== temporary.id),
+        }));
+        failMutation(error, "Could not add the link.");
+        return false;
+      }
+    },
+    [failMutation, state.links.length],
+  );
 
-  const reorderLinks = useCallback((activeId: string, overId: string) => {
-    setState((current) => {
-      const next = moveItem(current.links, activeId, overId);
-      return next === current.links ? current : { ...current, links: withSortOrder(next) };
-    });
-  }, []);
+  const updateLink = useCallback(
+    async (id: string, values: LinkFormValues) => {
+      const previous = state.links.find((link) => link.id === id);
+      if (!previous) return false;
 
-  const addCategory = useCallback((values: CategoryFormValues) => {
-    const category: Category = {
-      id: createId("c"),
-      name: values.name,
-      description: values.description,
-      color: values.color,
-      icon: values.icon,
-      isVisible: values.isVisible,
-      sortOrder: 0,
-    };
-    setState((current) => {
-      if (current.categories.length >= LIMITS.maxCategories) return current;
-      return { ...current, categories: withSortOrder([...current.categories, category]) };
-    });
-    return category;
-  }, []);
+      setState((current) => ({
+        ...current,
+        links: current.links.map((link) =>
+          link.id === id ? { ...link, ...values } : link,
+        ),
+      }));
 
-  const updateCategory = useCallback((id: string, values: CategoryFormValues) => {
-    setState((current) => ({
-      ...current,
-      categories: current.categories.map((category) =>
-        category.id === id ? { ...category, ...values } : category,
-      ),
-    }));
-  }, []);
+      try {
+        const updated = await api.links.update(id, values);
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) => (link.id === id ? updated : link)),
+        }));
+        invalidateAnalyticsCache();
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) =>
+            link.id === id ? previous : link,
+          ),
+        }));
+        failMutation(error, "Could not update the link.");
+        return false;
+      }
+    },
+    [failMutation, state.links],
+  );
 
-  const deleteCategory = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      categories: withSortOrder(current.categories.filter((category) => category.id !== id)),
-      links: current.links.map((link) =>
-        link.categoryId === id ? { ...link, categoryId: null } : link,
-      ),
-    }));
-  }, []);
+  const deleteLink = useCallback(
+    async (id: string) => {
+      const previous = state.links.find((link) => link.id === id);
+      if (!previous) return false;
 
-  const toggleCategory = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      categories: current.categories.map((category) =>
-        category.id === id ? { ...category, isVisible: !category.isVisible } : category,
-      ),
-    }));
-  }, []);
+      setState((current) => ({
+        ...current,
+        links: current.links.filter((link) => link.id !== id),
+      }));
 
-  const reorderCategories = useCallback((activeId: string, overId: string) => {
-    setState((current) => {
-      const next = moveItem(current.categories, activeId, overId);
-      return next === current.categories
-        ? current
-        : { ...current, categories: withSortOrder(next) };
-    });
-  }, []);
+      try {
+        await api.links.remove(id);
+        invalidateAnalyticsCache();
+        return true;
+      } catch (error) {
+        setState((current) => {
+          if (current.links.some((link) => link.id === id)) return current;
+          const next = [...current.links, previous].sort(
+            (left, right) => left.sortOrder - right.sortOrder,
+          );
+          return { ...current, links: withSortOrder(next) };
+        });
+        failMutation(error, "Could not delete the link.");
+        return false;
+      }
+    },
+    [failMutation, state.links],
+  );
 
-  const updateProfile = useCallback((values: ProfileInput) => {
-    setState((current) => ({
-      ...current,
-      profile: {
-        ...current.profile,
-        displayName: values.displayName,
-        headline: values.headline,
-        username: values.username,
-        bio: values.bio,
-        avatarUrl: values.avatarUrl,
-        socials: values.socials,
-        isPublished: values.isPublished,
-      },
-    }));
-  }, []);
+  const toggleLink = useCallback(
+    async (id: string) => {
+      const previous = state.links.find((link) => link.id === id);
+      if (!previous) return false;
 
-  const setAppearance = useCallback((appearance: AppearanceSettings) => {
-    setState((current) => ({ ...current, appearance }));
-  }, []);
+      setState((current) => ({
+        ...current,
+        links: current.links.map((link) =>
+          link.id === id ? { ...link, isActive: !link.isActive } : link,
+        ),
+      }));
 
-  const resetAppearance = useCallback(() => {
-    setState((current) => ({ ...current, appearance: createEmptyState().appearance }));
-  }, []);
+      try {
+        const updated = await api.links.setStatus(id, !previous.isActive);
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) => (link.id === id ? updated : link)),
+        }));
+        invalidateAnalyticsCache();
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) => (link.id === id ? previous : link)),
+        }));
+        failMutation(error, "Could not change the link status.");
+        return false;
+      }
+    },
+    [failMutation, state.links],
+  );
 
-  const setPendingEmail = useCallback((email: string) => {
-    setState((current) => ({
-      ...current,
-      account: { ...current.account, pendingEmail: email },
-    }));
-  }, []);
+  const reorderLinks = useCallback(
+    async (activeId: string, overId: string) => {
+      const previousLinks = state.links;
+      const moved = moveItem(previousLinks, activeId, overId);
+      if (moved === previousLinks) return true;
+      const nextLinks = withSortOrder(moved);
 
-  const cancelPendingEmail = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      account: { ...current.account, pendingEmail: null },
-    }));
-  }, []);
+      setState((current) => ({ ...current, links: nextLinks }));
 
-  const removeSession = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      sessions: current.sessions.filter((session) => session.id !== id || session.current),
-    }));
-  }, []);
+      try {
+        await api.links.reorder(nextLinks.map((link) => link.id));
+        invalidateAnalyticsCache();
+        return true;
+      } catch (error) {
+        setState((current) => ({ ...current, links: previousLinks }));
+        failMutation(error, "Could not save the new order.");
+        return false;
+      }
+    },
+    [failMutation, state.links],
+  );
 
-  const removeOtherSessions = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      sessions: current.sessions.filter((session) => session.current),
-    }));
-  }, []);
+  const addCategory = useCallback(
+    async (values: CategoryFormValues) => {
+      const temporary: Category = {
+        id: crypto.randomUUID(),
+        name: values.name,
+        description: values.description,
+        color: values.color,
+        icon: values.icon,
+        isVisible: values.isVisible,
+        sortOrder: state.categories.length,
+      };
 
-  const scheduleDeletion = useCallback(() => {
-    const deletionDate = new Date();
-    deletionDate.setUTCDate(deletionDate.getUTCDate() + LIMITS.deleteGraceDays);
-    setState((current) => ({
-      ...current,
-      account: { ...current.account, deletionScheduledFor: deletionDate.toISOString() },
-      profile: { ...current.profile, isPublished: false },
-    }));
-  }, []);
+      setState((current) => ({
+        ...current,
+        categories: [...current.categories, temporary],
+      }));
 
-  const restoreAccount = useCallback(() => {
-    setState((current) => ({
-      ...current,
-      account: { ...current.account, deletionScheduledFor: null },
-    }));
-  }, []);
+      try {
+        const created = await api.categories.create(values);
+        setState((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === temporary.id ? created : category,
+          ),
+        }));
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          categories: current.categories.filter(
+            (category) => category.id !== temporary.id,
+          ),
+        }));
+        failMutation(error, "Could not add the category.");
+        return false;
+      }
+    },
+    [failMutation, state.categories.length],
+  );
 
-  const resetDemoData = useCallback(() => {
-    const fresh = createEmptyState();
-    setState(fresh);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-  }, []);
+  const updateCategory = useCallback(
+    async (id: string, values: CategoryFormValues) => {
+      const previous = state.categories.find((category) => category.id === id);
+      if (!previous) return false;
 
-  const value = useMemo<MockDataContextValue>(
+      setState((current) => ({
+        ...current,
+        categories: current.categories.map((category) =>
+          category.id === id ? { ...category, ...values } : category,
+        ),
+      }));
+
+      try {
+        const updated = await api.categories.update(id, values);
+        setState((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === id ? updated : category,
+          ),
+        }));
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === id ? previous : category,
+          ),
+        }));
+        failMutation(error, "Could not update the category.");
+        return false;
+      }
+    },
+    [failMutation, state.categories],
+  );
+
+  const deleteCategory = useCallback(
+    async (id: string) => {
+      const previous = state;
+      if (!previous.categories.some((category) => category.id === id)) return false;
+
+      setState((current) => ({
+        ...current,
+        categories: withSortOrder(
+          current.categories.filter((category) => category.id !== id),
+        ),
+        links: current.links.map((link) =>
+          link.categoryId === id ? { ...link, categoryId: null } : link,
+        ),
+      }));
+
+      try {
+        await api.categories.remove(id);
+        return true;
+      } catch (error) {
+        setState(previous);
+        failMutation(error, "Could not delete the category.");
+        return false;
+      }
+    },
+    [failMutation, state],
+  );
+
+  const toggleCategory = useCallback(
+    async (id: string) => {
+      const previous = state.categories.find((category) => category.id === id);
+      if (!previous) return false;
+
+      setState((current) => ({
+        ...current,
+        categories: current.categories.map((category) =>
+          category.id === id
+            ? { ...category, isVisible: !category.isVisible }
+            : category,
+        ),
+      }));
+
+      try {
+        const updated = await api.categories.update(id, {
+          isVisible: !previous.isVisible,
+        });
+        setState((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === id ? updated : category,
+          ),
+        }));
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === id ? previous : category,
+          ),
+        }));
+        failMutation(error, "Could not change the category visibility.");
+        return false;
+      }
+    },
+    [failMutation, state.categories],
+  );
+
+  const reorderCategories = useCallback(
+    async (activeId: string, overId: string) => {
+      const previousCategories = state.categories;
+      const moved = moveItem(previousCategories, activeId, overId);
+      if (moved === previousCategories) return true;
+      const nextCategories = withSortOrder(moved);
+
+      setState((current) => ({ ...current, categories: nextCategories }));
+
+      try {
+        await api.categories.reorder(nextCategories.map((category) => category.id));
+        return true;
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          categories: previousCategories,
+        }));
+        failMutation(error, "Could not save the category order.");
+        return false;
+      }
+    },
+    [failMutation, state.categories],
+  );
+
+  const updateProfile = useCallback(
+    async (values: ProfileInput) => {
+      const previous = state;
+      const { isPublished, ...fields } = values;
+
+      setState((current) => ({
+        ...current,
+        profile: { ...current.profile, ...values },
+      }));
+
+      try {
+        let updated = await api.profile.update(fields);
+        setState((current) => applyProfile(current, updated));
+
+        if (isPublished !== previous.profile.isPublished) {
+          try {
+            updated = isPublished
+              ? await api.profile.publish()
+              : await api.profile.unpublish();
+            setState((current) => applyProfile(current, updated));
+          } catch (error) {
+            return failMutation(error, "Profile saved, but publishing failed.", false);
+          }
+        }
+
+        return { ok: true };
+      } catch (error) {
+        setState(previous);
+        return failMutation(error, "Could not save your profile.", false);
+      }
+    },
+    [failMutation, state],
+  );
+
+  const setPublished = useCallback(
+    async (published: boolean) => {
+      const previous = state;
+      setState((current) => ({
+        ...current,
+        profile: { ...current.profile, isPublished: published },
+      }));
+
+      try {
+        const updated = published
+          ? await api.profile.publish()
+          : await api.profile.unpublish();
+        setState((current) => applyProfile(current, updated));
+        return true;
+      } catch (error) {
+        setState(previous);
+        failMutation(error, "Could not change the published state.");
+        return false;
+      }
+    },
+    [failMutation, state],
+  );
+
+  const setAppearance = useCallback(
+    async (appearance: AppearanceSettings) => {
+      const previous = state;
+      setState((current) => ({ ...current, appearance }));
+
+      try {
+        const updated = await api.profile.update({ appearance });
+        setState((current) => applyProfile(current, updated));
+        return true;
+      } catch (error) {
+        setState(previous);
+        failMutation(error, "Could not save your appearance.");
+        return false;
+      }
+    },
+    [failMutation, state],
+  );
+
+  const requestEmailChange = useCallback(
+    async (email: string, currentPassword: string) => {
+      try {
+        await api.account.changeEmail(email, currentPassword);
+        const account = await api.account.get().catch(() => null);
+        if (account) {
+          setState((current) => ({
+            ...current,
+            account: toAccount(account),
+          }));
+        }
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Could not request an email change.", false);
+      }
+    },
+    [failMutation],
+  );
+
+  const cancelPendingEmail = useCallback(async () => {
+    try {
+      await api.account.cancelEmailChange();
+      setState((current) => ({
+        ...current,
+        account: { ...current.account, pendingEmail: null },
+      }));
+      return true;
+    } catch (error) {
+      failMutation(error, "Could not cancel the email change.");
+      return false;
+    }
+  }, [failMutation]);
+
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      try {
+        await api.account.changePassword(currentPassword, newPassword);
+        const sessions = await api.account.sessions().catch(() => null);
+        if (sessions) {
+          setState((current) => ({ ...current, sessions }));
+        }
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Could not update your password.", false);
+      }
+    },
+    [failMutation],
+  );
+
+  const removeSession = useCallback(
+    async (id: string) => {
+      try {
+        await api.account.revokeSession(id);
+        setState((current) => ({
+          ...current,
+          sessions: current.sessions.filter(
+            (session) => session.id !== id || session.current,
+          ),
+        }));
+        return true;
+      } catch (error) {
+        failMutation(error, "Could not sign out that session.");
+        return false;
+      }
+    },
+    [failMutation],
+  );
+
+  const removeOtherSessions = useCallback(async () => {
+    try {
+      await api.account.revokeOtherSessions();
+      setState((current) => ({
+        ...current,
+        sessions: current.sessions.filter((session) => session.current),
+      }));
+      return true;
+    } catch (error) {
+      failMutation(error, "Could not sign out other sessions.");
+      return false;
+    }
+  }, [failMutation]);
+
+  const scheduleDeletion = useCallback(
+    async (password: string, confirmUsername: string) => {
+      try {
+        const result = await api.account.scheduleDeletion(password, confirmUsername);
+        setState((current) => ({
+          ...current,
+          account: {
+            ...current.account,
+            deletionScheduledFor: result.deletionScheduledFor,
+          },
+          profile: { ...current.profile, isPublished: false },
+        }));
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Could not schedule account deletion.", false);
+      }
+    },
+    [failMutation],
+  );
+
+  const restoreAccount = useCallback(async () => {
+    try {
+      await api.account.cancelDeletion();
+      setState((current) => ({
+        ...current,
+        account: { ...current.account, deletionScheduledFor: null },
+      }));
+      return true;
+    } catch (error) {
+      failMutation(error, "Could not restore your account.");
+      return false;
+    }
+  }, [failMutation]);
+
+  const value = useMemo<AppDataContextValue>(
     () => ({
       state,
       hydrated,
+      status,
+      loadError,
+      refresh,
+      login,
+      logout,
       addLink,
       updateLink,
       deleteLink,
@@ -301,19 +804,24 @@ export function MockDataProvider({ children }: { children: ReactNode }) {
       toggleCategory,
       reorderCategories,
       updateProfile,
+      setPublished,
       setAppearance,
-      resetAppearance,
-      setPendingEmail,
+      requestEmailChange,
       cancelPendingEmail,
+      changePassword,
       removeSession,
       removeOtherSessions,
       scheduleDeletion,
       restoreAccount,
-      resetDemoData,
     }),
     [
       state,
       hydrated,
+      status,
+      loadError,
+      refresh,
+      login,
+      logout,
       addLink,
       updateLink,
       deleteLink,
@@ -325,27 +833,31 @@ export function MockDataProvider({ children }: { children: ReactNode }) {
       toggleCategory,
       reorderCategories,
       updateProfile,
+      setPublished,
       setAppearance,
-      resetAppearance,
-      setPendingEmail,
+      requestEmailChange,
       cancelPendingEmail,
+      changePassword,
       removeSession,
       removeOtherSessions,
       scheduleDeletion,
       restoreAccount,
-      resetDemoData,
     ],
   );
 
-  return <MockDataContext.Provider value={value}>{children}</MockDataContext.Provider>;
+  return (
+    <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
+  );
 }
 
-export function useMockData(): MockDataContextValue {
-  const context = useContext(MockDataContext);
-  if (!context) throw new Error("useMockData must be used inside MockDataProvider");
+export function useAppData(): AppDataContextValue {
+  const context = useContext(AppDataContext);
+  if (!context) throw new Error("useAppData must be used inside AppDataProvider");
   return context;
 }
 
-export function useMockState(): MockState {
-  return useMockData().state;
+export function useAppState(): AppState {
+  return useAppData().state;
 }
+
+export { EMPTY_ACCOUNT, EMPTY_PROFILE, formatFieldErrors, LIMITS };

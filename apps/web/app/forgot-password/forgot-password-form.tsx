@@ -7,12 +7,12 @@ import { forgotPasswordSchema } from "@linkhub/shared";
 import { AuthLayout, EnvelopeIllustration } from "@/components/auth/auth-layout";
 import { AuthAlert, SubmitButton } from "@/components/auth/auth-form";
 import { Input, Label, FieldError } from "@/components/ui/input";
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { ApiError, api } from "@/lib/api-client";
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -30,24 +30,43 @@ export function ForgotPasswordForm() {
     }, 1000);
   };
 
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const send = async () => {
     setError("");
+    setFormError("");
     const parsed = forgotPasswordSchema.safeParse({ email });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Enter a valid email address.");
       return;
     }
+
     setLoading(true);
-    await wait(750);
-    setLoading(false);
-    setSent(true);
-    startCooldown();
+    try {
+      await api.auth.forgotPassword(parsed.data.email);
+      setSent(true);
+      startCooldown();
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        setFormError(
+          caught.status === 429
+            ? "Too many reset requests. Wait a few minutes and try again."
+            : caught.message,
+        );
+      } else {
+        setFormError("Could not send the reset link. Try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await send();
   };
 
   const resend = () => {
-    if (cooldown > 0) return;
-    startCooldown();
+    if (cooldown > 0 || loading) return;
+    void send();
   };
 
   return (
@@ -74,13 +93,18 @@ export function ForgotPasswordForm() {
             sent a reset link. It expires in 1 hour.
           </p>
           <p className="mt-2 text-sm text-zinc-600">Can&apos;t find it? Check your spam or promotions folder.</p>
+          <AuthAlert>{formError}</AuthAlert>
           <button
             type="button"
             onClick={resend}
-            disabled={cooldown > 0}
+            disabled={cooldown > 0 || loading}
             className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-lg border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-900 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-500"
           >
-            {cooldown > 0 ? `Resend link in ${cooldown}s` : "Resend link"}
+            {loading
+              ? "Sending…"
+              : cooldown > 0
+                ? `Resend link in ${cooldown}s`
+                : "Resend link"}
           </button>
           <p className="mt-6 text-center text-sm">
             <Link href="/login" className="font-semibold text-violet-800 hover:underline">
@@ -119,7 +143,7 @@ export function ForgotPasswordForm() {
               </div>
               <FieldError>{error ? <span id="email-error">{error}</span> : null}</FieldError>
             </div>
-            <AuthAlert>{error ? "" : ""}</AuthAlert>
+            <AuthAlert>{formError}</AuthAlert>
             <SubmitButton loading={loading}>{loading ? "Sending…" : "Send reset link"}</SubmitButton>
           </form>
           <p className="mt-6 text-center text-sm">

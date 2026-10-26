@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, Clipboard, Download, FileJson, FileSpreadsheet, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
-import type { Profile } from "@linkhub/shared";
+import type { DailyPoint, Profile } from "@linkhub/shared";
 import { APP_NAME, LIMITS } from "@linkhub/shared";
 import { PageHeader } from "@/components/page-header";
 import { DashboardFrame } from "@/components/dashboard-frame";
@@ -11,14 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/input";
-import { getDailyRows } from "@/lib/analytics";
-import { COUNTRIES } from "@/lib/analytics";
-import type { MockState } from "@/lib/mock-data";
-import { useMockData } from "@/lib/store";
+import { sumSeries, useAnalytics } from "@/lib/analytics";
+import { api, type ExportFormat, type ExportSection } from "@/lib/api-client";
+import type { AppState } from "@/lib/app-state";
+import { useAppData } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type ExportFormat = "json" | "csv" | "profile";
-type IncludeKey = "profile" | "links" | "categories" | "analytics";
+type IncludeKey = ExportSection;
 
 const FORMATS: Array<{
   id: ExportFormat;
@@ -108,7 +107,7 @@ function publicProfile(profile: Profile) {
   };
 }
 
-function publicLinks(state: MockState) {
+function publicLinks(state: AppState) {
   const categories = new Map(state.categories.map((category) => [category.id, category]));
   const hidden = new Set(
     state.categories.filter((category) => !category.isVisible).map((category) => category.id),
@@ -126,9 +125,10 @@ function publicLinks(state: MockState) {
 }
 
 function buildJson(
-  state: MockState,
+  state: AppState,
   include: Record<IncludeKey, boolean>,
   format: ExportFormat,
+  previewSeries: DailyPoint[],
 ) {
   const exportedAt = new Date().toISOString();
 
@@ -143,15 +143,11 @@ function buildJson(
   }
 
   const categories = new Map(state.categories.map((category) => [category.id, category]));
-  const dailyRows = include.analytics ? getDailyRows(state, LIMITS.analyticsHistoryDays) : [];
-  const daily = new Map<string, number>();
-  for (const row of dailyRows) {
-    daily.set(row.date, (daily.get(row.date) ?? 0) + row.count);
-  }
 
   return {
     schemaVersion: 2,
     exportedAt,
+    preview: true,
     ...(include.profile
       ? { profile: publicProfile(state.profile), appearance: state.appearance }
       : {}),
@@ -166,13 +162,6 @@ function buildJson(
             icon: link.icon,
             isActive: link.isActive,
             createdAt: link.createdAt,
-            ...(include.analytics
-              ? {
-                  clicksLast365Days: dailyRows
-                    .filter((row) => row.linkId === link.id)
-                    .reduce((total, row) => total + row.count, 0),
-                }
-              : {}),
           })),
         }
       : {}),
@@ -191,12 +180,10 @@ function buildJson(
     ...(include.analytics
       ? {
           analytics: {
-            note: "Recorded clicks are estimates; known bots and rapid repeat taps are filtered out. Days are UTC.",
+            note: "Preview uses your current dashboard range. The downloaded export contains the full 365-day history.",
             historyDays: LIMITS.analyticsHistoryDays,
-            totalClicks: Array.from(daily.values()).reduce((total, count) => total + count, 0),
-            daily: Array.from(daily.entries())
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([date, count]) => ({ date, clicks: count })),
+            totalClicks: sumSeries(previewSeries),
+            daily: previewSeries,
           },
         }
       : {}),
@@ -204,16 +191,11 @@ function buildJson(
 }
 
 function buildCsvFiles(
-  state: MockState,
+  state: AppState,
   include: Record<IncludeKey, boolean>,
+  previewSeries: DailyPoint[],
 ): Record<string, string> {
   const categories = new Map(state.categories.map((category) => [category.id, category]));
-  const dailyRows = include.analytics ? getDailyRows(state, LIMITS.analyticsHistoryDays) : [];
-  const clicksByLink = new Map<string, number>();
-  for (const row of dailyRows) {
-    clicksByLink.set(row.linkId, (clicksByLink.get(row.linkId) ?? 0) + row.count);
-  }
-
   const files: Record<string, string> = {};
 
   if (include.profile) {
@@ -275,7 +257,7 @@ function buildCsvFiles(
           link.icon,
           link.isActive,
           link.createdAt,
-          ...(include.analytics ? [clicksByLink.get(link.id) ?? 0] : []),
+          ...(include.analytics ? [""] : []),
         ]),
       ),
     ].join("\n");
@@ -300,40 +282,18 @@ function buildCsvFiles(
   if (include.analytics) {
     files["daily_stats.csv"] = [
       csvRow(["date", "link_id", "link_title", "clicks"]),
-      ...dailyRows.map((row) => csvRow([row.date, row.linkId, row.linkTitle, row.count])),
+      ...previewSeries.map((point) =>
+        csvRow([point.date, "", "All links", point.count]),
+      ),
     ].join("\n");
 
-    const byDate = new Map<string, { date: string; linkId: string; title: string; count: number }>();
-    for (const row of dailyRows) {
-      const key = `${row.date}|${row.linkId}`;
-      byDate.set(key, {
-        date: row.date,
-        linkId: row.linkId,
-        title: row.linkTitle,
-        count: row.count,
-      });
-    }
-    const breakdownRows: string[] = [
-      csvRow(["date", "link_id", "dimension", "value", "clicks"]),
-    ];
-    for (const row of Array.from(byDate.values()).sort(
-      (a, b) =>
-        a.date.localeCompare(b.date) ||
-        a.linkId.localeCompare(b.linkId) ||
-        a.title.localeCompare(b.title),
-    )) {
-      const allocations = COUNTRIES.map((country) => ({
-        value: country.key,
-        count: Math.round(row.count * country.share),
-      }));
-      for (const allocation of allocations) {
-        if (allocation.count === 0) continue;
-        breakdownRows.push(
-          csvRow([row.date, row.linkId, "country", allocation.value, allocation.count]),
-        );
-      }
-    }
-    files["daily_breakdowns.csv"] = breakdownRows.join("\n");
+    files["daily_breakdowns.csv"] = csvRow([
+      "date",
+      "link_id",
+      "dimension",
+      "value",
+      "clicks",
+    ]);
   }
 
   return files;
@@ -357,7 +317,8 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export function ExportView() {
-  const { state } = useMockData();
+  const { state } = useAppData();
+  const { data: overview } = useAnalytics(30);
   const [format, setFormat] = useState<ExportFormat>("json");
   const [include, setInclude] = useState<Record<IncludeKey, boolean>>({
     profile: true,
@@ -368,6 +329,7 @@ export function ExportView() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const previewSeries = overview?.series ?? [];
   const isProfileOnly = format === "profile";
   const effectiveInclude = isProfileOnly
     ? { profile: true, links: true, categories: false, analytics: false }
@@ -376,7 +338,7 @@ export function ExportView() {
 
   const preview = useMemo(() => {
     if (format === "csv") {
-      const files = buildCsvFiles(state, effectiveInclude);
+      const files = buildCsvFiles(state, effectiveInclude, previewSeries);
       const names = Object.keys(files);
       if (names.length === 0) return "# nothing selected";
       const listing = [
@@ -390,8 +352,8 @@ export function ExportView() {
       ];
       return listing.join("\n");
     }
-    return JSON.stringify(buildJson(state, effectiveInclude, format), null, 2);
-  }, [state, format, effectiveInclude]);
+    return JSON.stringify(buildJson(state, effectiveInclude, format, previewSeries), null, 2);
+  }, [state, format, effectiveInclude, previewSeries]);
 
   const previewText =
     preview.length > 6000 ? `${preview.slice(0, 6000)}\n… (preview truncated; the download has everything)` : preview;
@@ -405,15 +367,15 @@ export function ExportView() {
 
   const sizeLabel = useMemo(() => {
     if (format === "csv") {
-      const files = buildCsvFiles(state, effectiveInclude);
+      const files = buildCsvFiles(state, effectiveInclude, previewSeries);
       const total = Object.values(files).reduce(
         (sum, content) => sum + new TextEncoder().encode(content).length,
         0,
       );
-      return `${formatBytes(total)} uncompressed`;
+      return `${formatBytes(total)} estimated`;
     }
     return formatBytes(new TextEncoder().encode(preview).length);
-  }, [state, format, effectiveInclude, preview]);
+  }, [state, format, effectiveInclude, preview, previewSeries]);
 
   const toggleInclude = (key: IncludeKey) => {
     setInclude((current) => ({ ...current, [key]: !current[key] }));
@@ -434,22 +396,21 @@ export function ExportView() {
     if (nothingSelected) return;
     setBusy(true);
     try {
-      if (format === "csv") {
-        const { default: JSZip } = await import("jszip");
-        const zip = new JSZip();
-        const files = buildCsvFiles(state, effectiveInclude);
-        for (const [name, content] of Object.entries(files)) {
-          zip.file(name, content);
-        }
-        const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-        downloadBlob(blob, filename);
-      } else {
-        const content = JSON.stringify(buildJson(state, effectiveInclude, format), null, 2);
-        downloadBlob(new Blob([content], { type: "application/json" }), filename);
-      }
-      toast.success(`Downloaded ${filename}`);
-    } catch {
-      toast.error("The export could not be created. Try again.");
+      const selected = (Object.keys(effectiveInclude) as IncludeKey[]).filter(
+        (key) => effectiveInclude[key],
+      );
+      const artifact = await api.export.download(
+        format,
+        isProfileOnly ? undefined : selected,
+      );
+      downloadBlob(artifact.blob, artifact.filename);
+      toast.success(`Downloaded ${artifact.filename}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "The export could not be created. Try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -556,7 +517,7 @@ export function ExportView() {
           ) : null}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button onClick={download} disabled={busy || nothingSelected}>
+            <Button onClick={() => void download()} disabled={busy || nothingSelected}>
               <Download aria-hidden="true" className="size-4" />
               {busy ? "Preparing…" : `Download ${filename}`}
             </Button>
@@ -575,7 +536,7 @@ export function ExportView() {
             <Button
               variant="outline"
               size="icon-sm"
-              onClick={copyPreview}
+              onClick={() => void copyPreview()}
               aria-label={copied ? "Preview copied" : "Copy preview"}
             >
               {copied ? (
@@ -592,9 +553,18 @@ export function ExportView() {
           >
             {previewText}
           </pre>
+          <p className="mt-2 text-xs text-zinc-600">
+            The preview uses your last 30 days of dashboard data. The downloaded file is generated
+            by the API with the full 365-day history.
+          </p>
           {format === "csv" ? (
-            <p className="mt-2 text-xs text-zinc-600">
-              The zip contains five CSVs: {CSV_FILES.join(", ")}.
+            <p className="mt-1 text-xs text-zinc-600">
+              The zip contains {effectiveInclude.analytics ? "five" : "three"} CSVs:{" "}
+              {CSV_FILES.filter((name) =>
+                name === "daily_stats.csv" || name === "daily_breakdowns.csv"
+                  ? effectiveInclude.analytics
+                  : true,
+              ).join(", ")}.
             </p>
           ) : null}
         </Card>

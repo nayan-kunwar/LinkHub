@@ -13,9 +13,8 @@ import {
   SubmitButton,
 } from "@/components/auth/auth-form";
 import { Input, Label, FieldError, FieldHint } from "@/components/ui/input";
-import { useMockData } from "@/lib/store";
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { ApiError, api } from "@/lib/api-client";
+import { formatFieldErrors } from "@/lib/store";
 
 const COMMON_PASSWORDS = [
   "password",
@@ -39,7 +38,9 @@ type FieldKey = "displayName" | "username" | "email" | "password" | "confirmPass
 
 export function SignupForm() {
   const router = useRouter();
-  const { state } = useMockData();
+  const [availability, setAvailability] = useState<
+    "idle" | "checking" | "available" | "taken" | "reserved"
+  >("idle");
   const [values, setValues] = useState({
     displayName: "",
     username: "",
@@ -57,15 +58,53 @@ export function SignupForm() {
   }, [allowSignup, router]);
 
   const normalizedUsername = values.username.trim().toLowerCase();
+  const usernameReserved = (RESERVED_USERNAMES as readonly string[]).includes(
+    normalizedUsername,
+  );
   const usernameLooksValid =
     normalizedUsername.length >= 3 &&
     normalizedUsername.length <= 30 &&
     USERNAME_REGEX.test(normalizedUsername) &&
-    !(RESERVED_USERNAMES as readonly string[]).includes(normalizedUsername);
+    !usernameReserved;
   const usernameTaken =
-    normalizedUsername.length > 0 &&
-    (normalizedUsername === state.profile.username || normalizedUsername === "taken");
-  const usernameAvailable = usernameLooksValid && !usernameTaken;
+    availability === "taken" || availability === "reserved";
+  const usernameAvailable = availability === "available";
+
+  useEffect(() => {
+    if (usernameReserved) {
+      setAvailability("reserved");
+      return;
+    }
+    if (!usernameLooksValid) {
+      setAvailability("idle");
+      return;
+    }
+
+    setAvailability("checking");
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api.usernames
+        .availability(normalizedUsername)
+        .then((result) => {
+          if (cancelled) return;
+          setAvailability(
+            result.available
+              ? "available"
+              : result.reason === "reserved"
+                ? "reserved"
+                : "taken",
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setAvailability("idle");
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [normalizedUsername, usernameLooksValid, usernameReserved]);
 
   const rules = useMemo(
     () => [
@@ -110,16 +149,50 @@ export function SignupForm() {
       return;
     }
 
-    if (usernameTaken) {
+    if (availability === "taken") {
       setErrors({ username: "That username is already taken." });
+      return;
+    }
+    if (availability === "reserved") {
+      setErrors({ username: "That username is reserved." });
       return;
     }
 
     setLoading(true);
-    await wait(900);
-    router.push(
-      `/check-inbox?email=${encodeURIComponent(parsed.data.email)}&username=${encodeURIComponent(parsed.data.username)}`,
-    );
+    try {
+      await api.auth.register(parsed.data);
+      router.push(
+        `/check-inbox?email=${encodeURIComponent(parsed.data.email)}&username=${encodeURIComponent(parsed.data.username)}`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.code === "USERNAME_TAKEN" || error.code === "USERNAME_RESERVED") {
+          setErrors({ username: error.message });
+          setAvailability(
+            error.code === "USERNAME_RESERVED" ? "reserved" : "taken",
+          );
+        } else if (error.code === "VALIDATION_ERROR") {
+          const fields = formatFieldErrors(error.details) as Partial<
+            Record<FieldKey, string>
+          >;
+          setErrors(fields);
+          if (Object.keys(fields).length > 0) {
+            const first = Object.keys(fields)[0];
+            document.getElementById(first)?.focus();
+          }
+        } else if (error.code === "SIGNUP_DISABLED") {
+          setFormError(error.message);
+        } else if (error.status === 429) {
+          setFormError("Too many sign-up attempts. Try again later.");
+        } else {
+          setFormError(error.message);
+        }
+      } else {
+        setFormError("Could not create your account. Try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -199,8 +272,13 @@ export function SignupForm() {
             </span>
           </FieldHint>
           <FieldError>
-            {errors.username || (usernameTaken ? "That username is already taken." : null) ? (
-              <span id="username-error">{errors.username ?? "That username is already taken."}</span>
+            {errors.username || usernameTaken ? (
+              <span id="username-error">
+                {errors.username ??
+                  (availability === "reserved"
+                    ? "That username is reserved."
+                    : "That username is already taken.")}
+              </span>
             ) : null}
           </FieldError>
         </div>

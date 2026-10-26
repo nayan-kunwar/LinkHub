@@ -2,31 +2,18 @@
 
 import Link from "next/link";
 import { ArrowRight, Link2Off } from "lucide-react";
+import type {
+  Category,
+  CategoryIconId,
+  Link as LinkRecord,
+  LinkIconId,
+  Profile,
+} from "@linkhub/shared";
 import { ProfileView } from "@/components/profile-view";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
-import { useMockData } from "@/lib/store";
-
-function ProfileSkeleton() {
-  return (
-    <div className="min-h-screen bg-[#f7f5ff]">
-      <div className="mx-auto flex min-h-screen max-w-xl flex-col items-center px-5 py-16">
-        <div className="size-24 animate-pulse rounded-full bg-violet-200" aria-hidden="true" />
-        <div className="mt-4 h-5 w-40 animate-pulse rounded bg-violet-200" aria-hidden="true" />
-        <div className="mt-2 h-4 w-28 animate-pulse rounded bg-violet-100" aria-hidden="true" />
-        <div className="mt-8 w-full space-y-3">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="h-14 animate-pulse rounded-2xl bg-white/80" aria-hidden="true" />
-          ))}
-        </div>
-        <p className="sr-only" role="status">
-          Loading profile
-        </p>
-      </div>
-    </div>
-  );
-}
+import type { PublicProfileData } from "@/lib/public-profile";
 
 function ProfileUnavailable({ username }: { username: string }) {
   return (
@@ -68,24 +55,69 @@ function ProfileUnavailable({ username }: { username: string }) {
   );
 }
 
-export function PublicProfile({ username }: { username: string }) {
-  const { state, hydrated } = useMockData();
+function beaconClick(linkId: string) {
+  const body: { linkId: string; referrer?: string } = { linkId };
+  if (document.referrer) body.referrer = document.referrer.slice(0, 2048);
 
-  if (!hydrated) return <ProfileSkeleton />;
+  void fetch("/api/v1/analytics/clicks", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+    keepalive: true,
+  }).catch(() => undefined);
+}
 
-  const normalized = username.toLowerCase();
-  const available =
-    normalized === state.profile.username.toLowerCase() && state.profile.isPublished;
+export function PublicProfile({
+  username,
+  data,
+}: {
+  username: string;
+  data: PublicProfileData | null;
+}) {
+  if (!data) return <ProfileUnavailable username={username} />;
 
-  if (!available) return <ProfileUnavailable username={username} />;
+  const profile: Profile = {
+    id: `public:${data.profile.username}`,
+    username: data.profile.username,
+    displayName: data.profile.displayName,
+    headline: data.profile.headline,
+    bio: data.profile.bio,
+    avatarUrl: data.profile.avatarUrl,
+    socials: data.profile.socials,
+    isPublished: true,
+  };
+
+  const categories: Category[] = data.categories.map((category) => ({
+    id: category.id,
+    name: category.name,
+    description: category.description,
+    color: category.color,
+    icon: category.icon as CategoryIconId,
+    isVisible: true,
+    sortOrder: category.sortOrder,
+  }));
+
+  const links: LinkRecord[] = data.links.map((link) => ({
+    id: link.id,
+    title: link.title,
+    url: link.url,
+    description: link.description,
+    categoryId: link.categoryId,
+    icon: link.icon as LinkIconId,
+    isActive: true,
+    sortOrder: link.sortOrder,
+    createdAt: "",
+  }));
 
   return (
     <ProfileView
-      profile={state.profile}
-      categories={state.categories}
-      links={state.links}
-      appearance={state.appearance}
+      profile={profile}
+      categories={categories}
+      links={links}
+      appearance={data.appearance}
       variant="page"
+      onLinkClick={(link) => beaconClick(link.id)}
     />
   );
 }

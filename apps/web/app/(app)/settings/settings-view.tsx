@@ -29,7 +29,7 @@ import { Card } from "@/components/ui/card";
 import { FieldError, FieldHint, Input, Label } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMockData } from "@/lib/store";
+import { formatFieldErrors, useAppData } from "@/lib/store";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en-IN", {
@@ -132,10 +132,11 @@ export function SettingsView() {
     state,
     removeSession,
     removeOtherSessions,
-    setPendingEmail,
+    requestEmailChange,
     cancelPendingEmail,
+    changePassword,
     restoreAccount,
-  } = useMockData();
+  } = useAppData();
 
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
@@ -155,7 +156,7 @@ export function SettingsView() {
   const scheduledFor = state.account.deletionScheduledFor;
   const otherSessions = state.sessions.filter((session) => !session.current);
 
-  const submitEmail = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitEmail = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const parsed = changeEmailSchema.safeParse({ email, currentPassword: emailPassword });
     const nextErrors: { email?: string; currentPassword?: string } = {};
@@ -168,26 +169,44 @@ export function SettingsView() {
     if (email.trim().toLowerCase() === state.account.email.toLowerCase()) {
       nextErrors.email = "That is already your email.";
     }
-    if (emailPassword === "wrong") {
-      nextErrors.currentPassword = "Incorrect password.";
-    }
     setEmailErrors(nextErrors);
     setEmailStatus("");
     if (Object.keys(nextErrors).length > 0) {
       document.getElementById(nextErrors.email ? "settings-email" : "settings-email-password")?.focus();
       return;
     }
+    if (!parsed.success) return;
 
-    setPendingEmail(parsed.success ? parsed.data.email : email.trim());
+    const result = await requestEmailChange(parsed.data.email, parsed.data.currentPassword);
+    if (!result.ok) {
+      const error = result.error;
+      const fieldErrors =
+        error?.code === "VALIDATION_ERROR" ? formatFieldErrors(error.details) : {};
+      if (error?.code === "INVALID_CREDENTIALS") {
+        fieldErrors.currentPassword = error.message;
+      }
+      setEmailErrors(fieldErrors);
+      if (Object.keys(fieldErrors).length > 0) {
+        document
+          .getElementById(
+            fieldErrors.email ? "settings-email" : "settings-email-password",
+          )
+          ?.focus();
+      } else {
+        toast.error(error?.message ?? "Could not request an email change.");
+      }
+      return;
+    }
+
     setEmail("");
     setEmailPassword("");
     setEmailStatus(
-      `Verification link sent. Your email stays ${state.account.email} until you confirm the new address.`,
+      `If that address is available, a verification link is on its way. Your email stays ${state.account.email} until you confirm the new address.`,
     );
-    toast.success("Verification link sent");
+    toast.success("Email change requested");
   };
 
-  const submitPassword = (event: React.FormEvent<HTMLFormElement>) => {
+  const submitPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const parsed = changePasswordSchema.safeParse({
       currentPassword,
@@ -205,9 +224,6 @@ export function SettingsView() {
         if (!nextErrors[key]) nextErrors[key] = issue.message;
       }
     }
-    if (currentPassword === "wrong") {
-      nextErrors.currentPassword = "Incorrect password.";
-    }
     if (newPassword && newPassword === currentPassword) {
       nextErrors.newPassword = "New password must differ from the current one.";
     }
@@ -221,17 +237,34 @@ export function SettingsView() {
       document.getElementById(id)?.focus();
       return;
     }
+    if (!parsed.success) return;
 
-    removeOtherSessions();
+    const result = await changePassword(parsed.data.currentPassword, parsed.data.newPassword);
+    if (!result.ok) {
+      const error = result.error;
+      const fieldErrors =
+        error?.code === "VALIDATION_ERROR" ? formatFieldErrors(error.details) : {};
+      if (error?.code === "INVALID_CREDENTIALS") {
+        fieldErrors.currentPassword = error.message;
+      }
+      setPasswordErrors(fieldErrors);
+      if (fieldErrors.currentPassword) {
+        document.getElementById("settings-current-password")?.focus();
+      } else {
+        toast.error(error?.message ?? "Could not update your password.");
+      }
+      return;
+    }
+
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
     toast.success("Password updated. Other sessions signed out.");
   };
 
-  const signOutSession = (id: string, label: string) => {
-    removeSession(id);
-    toast.success(`Signed out ${label}`);
+  const signOutSession = async (id: string, label: string) => {
+    const ok = await removeSession(id);
+    if (ok) toast.success(`Signed out ${label}`);
   };
 
   return (
@@ -256,9 +289,9 @@ export function SettingsView() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              restoreAccount();
-              toast.success("Account restored.");
+            onClick={async () => {
+              const ok = await restoreAccount();
+              if (ok) toast.success("Account restored.");
             }}
           >
             Restore account
@@ -298,10 +331,12 @@ export function SettingsView() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => {
-                    cancelPendingEmail();
-                    setEmailStatus("");
-                    toast.success("Email change cancelled");
+                  onClick={async () => {
+                    const ok = await cancelPendingEmail();
+                    if (ok) {
+                      setEmailStatus("");
+                      toast.success("Email change cancelled");
+                    }
                   }}
                 >
                   Cancel change
@@ -309,7 +344,13 @@ export function SettingsView() {
               </div>
             ) : null}
 
-            <form onSubmit={submitEmail} noValidate className="mt-3 grid gap-3 sm:grid-cols-2">
+            <form
+              onSubmit={(event) => {
+                void submitEmail(event);
+              }}
+              noValidate
+              className="mt-3 grid gap-3 sm:grid-cols-2"
+            >
               <div>
                 <Label htmlFor="settings-email">New email</Label>
                 <Input
@@ -361,7 +402,13 @@ export function SettingsView() {
 
           <Card className="p-5">
             <h2 className="font-bold text-zinc-900">Change password</h2>
-            <form onSubmit={submitPassword} noValidate className="mt-3 grid gap-3 sm:grid-cols-3">
+            <form
+              onSubmit={(event) => {
+                void submitPassword(event);
+              }}
+              noValidate
+              className="mt-3 grid gap-3 sm:grid-cols-3"
+            >
               <PasswordField
                 id="settings-current-password"
                 label="Current password"
@@ -451,9 +498,9 @@ export function SettingsView() {
                 variant="destructive"
                 size="sm"
                 disabled={otherSessions.length === 0}
-                onClick={() => {
-                  removeOtherSessions();
-                  toast.success("Signed out of all other sessions");
+                onClick={async () => {
+                  const ok = await removeOtherSessions();
+                  if (ok) toast.success("Signed out of all other sessions");
                 }}
               >
                 Sign out everywhere else
@@ -485,7 +532,9 @@ export function SettingsView() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => signOutSession(session.id, label)}
+                        onClick={() => {
+                          void signOutSession(session.id, label);
+                        }}
                         aria-label={`Sign out ${label}`}
                       >
                         Sign out

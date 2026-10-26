@@ -12,8 +12,8 @@ import {
   SubmitButton,
 } from "@/components/auth/auth-form";
 import { Label, FieldError } from "@/components/ui/input";
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { ApiError, api } from "@/lib/api-client";
+import { formatFieldErrors } from "@/lib/store";
 
 const COMMON_PASSWORDS = [
   "password1234",
@@ -32,6 +32,7 @@ type ViewState = "form" | "success" | "expired";
 
 export function ResetPasswordForm() {
   const [view, setView] = useState<ViewState>("form");
+  const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<{ password?: string; confirmPassword?: string; form?: string }>({});
@@ -39,11 +40,18 @@ export function ResetPasswordForm() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
+    const queryToken = params.get("token");
     const state = params.get("state");
-    if (state === "expired" || token === "expired" || token === "invalid") {
+    if (
+      state === "expired" ||
+      !queryToken ||
+      queryToken === "expired" ||
+      queryToken === "invalid"
+    ) {
       setView("expired");
+      return;
     }
+    setToken(queryToken);
   }, []);
 
   const rules = useMemo(
@@ -83,9 +91,33 @@ export function ResetPasswordForm() {
       return;
     }
     setLoading(true);
-    await wait(850);
-    setLoading(false);
-    setView("success");
+    try {
+      await api.auth.resetPassword(token, parsed.data.password);
+      setView("success");
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        if (caught.code === "TOKEN_INVALID" || caught.code === "TOKEN_EXPIRED") {
+          setView("expired");
+          return;
+        }
+        if (caught.code === "VALIDATION_ERROR") {
+          const fields = formatFieldErrors(caught.details);
+          setErrors({
+            password: fields.password,
+            confirmPassword: fields.confirmPassword,
+          });
+          if (!fields.password && !fields.confirmPassword) {
+            setErrors({ form: caught.message });
+          }
+        } else {
+          setErrors({ form: caught.message });
+        }
+      } else {
+        setErrors({ form: "Could not reset your password. Try again." });
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

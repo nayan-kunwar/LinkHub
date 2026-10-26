@@ -19,8 +19,13 @@ import { Sparkline } from "@/components/sparkline";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { buildLinkSeries, formatSeriesLabel, getAnalytics } from "@/lib/analytics";
-import { useMockData } from "@/lib/store";
+import {
+  formatSeriesLabel,
+  sumSeries,
+  useAnalytics,
+  useLinkSeries,
+} from "@/lib/analytics";
+import { useAppData } from "@/lib/store";
 import { useRange } from "@/lib/use-range";
 import { formatNumber } from "@/lib/utils";
 
@@ -48,7 +53,7 @@ export function AnalyticsFallback() {
 }
 
 export function AnalyticsView() {
-  const { state, hydrated } = useMockData();
+  const { state, hydrated } = useAppData();
   const searchParams = useSearchParams();
   const [range, setRange] = useRange(30);
   const linkId = searchParams.get("linkId") ?? searchParams.get("link") ?? "";
@@ -58,43 +63,42 @@ export function AnalyticsView() {
     [linkId, state.links],
   );
 
-  const scopedState = useMemo(
-    () => (linkFilter ? { ...state, links: [linkFilter] } : state),
-    [state, linkFilter],
-  );
+  const allAnalytics = useAnalytics(range);
+  const scopedAnalytics = useAnalytics(range, linkFilter?.id, Boolean(linkFilter));
+  const overview = linkFilter ? scopedAnalytics.data : allAnalytics.data;
+  const allOverview = linkFilter ? allAnalytics.data : overview;
+  const loading = allAnalytics.loading || (linkFilter ? scopedAnalytics.loading : false);
 
-  const overview = useMemo(() => getAnalytics(scopedState, range), [scopedState, range]);
-  const allOverview = useMemo(
-    () => (linkFilter ? getAnalytics(state, range) : overview),
-    [linkFilter, state, range, overview],
-  );
+  const { seriesById } = useLinkSeries(linkFilter ? [linkFilter] : state.links, range);
 
   const categoriesById = useMemo(
     () => new Map(state.categories.map((category) => [category.id, category])),
     [state.categories],
   );
 
+  const allTotal = allOverview?.total ?? 0;
   const linkRows = useMemo(() => {
     const rows = (linkFilter ? [linkFilter] : state.links).map((link) => {
-      const series = buildLinkSeries(link)
-        .slice(-range)
-        .map((point) => point.count);
-      const count = series.reduce((sum, value) => sum + value, 0);
+      const series = seriesById.get(link.id) ?? [];
+      const count = sumSeries(series);
       return {
         link,
         count,
-        series,
-        share: allOverview.total === 0 ? 0 : count / allOverview.total,
+        series: series.map((point) => point.count),
+        share: allTotal === 0 ? 0 : count / allTotal,
       };
     });
     return rows.sort((a, b) => b.count - a.count);
-  }, [linkFilter, state.links, range, allOverview.total]);
+  }, [linkFilter, state.links, seriesById, allTotal]);
 
-  const peakValue = overview.peakDay?.count ?? 0;
-  const peakLabel = overview.peakDay ? formatSeriesLabel(overview.peakDay.date) : "No clicks yet";
+  const peakDay = overview?.peakDay ?? null;
+  const peakValue = peakDay?.count ?? 0;
+  const peakLabel = peakDay ? formatSeriesLabel(peakDay.date) : "No clicks yet";
   const shareOfAll =
-    allOverview.total === 0 ? 0 : Math.round((overview.total / allOverview.total) * 100);
+    allTotal === 0 ? 0 : Math.round(((overview?.total ?? 0) / allTotal) * 100);
   const missingLink = hydrated && Boolean(linkId) && !linkFilter;
+
+  if (!hydrated || (loading && !overview)) return <AnalyticsFallback />;
 
   return (
     <DashboardFrame preview={<DashboardPreview />}>
@@ -130,31 +134,31 @@ export function AnalyticsView() {
       <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard
           label="Total recorded clicks"
-          value={formatNumber(overview.total)}
-          sub={<DeltaPill change={overview.change} />}
+          value={formatNumber(overview?.total ?? 0)}
+          sub={<DeltaPill change={overview?.change ?? null} />}
           icon={BarChart3}
           tip={CLICKS_TIP}
-          sparkline={overview.series.map((point) => point.count)}
+          sparkline={(overview?.series ?? []).map((point) => point.count)}
         />
         <StatCard
           label="Avg clicks / day"
-          value={overview.averagePerDay.toFixed(1)}
-          sub={<DeltaPill change={overview.change} />}
+          value={(overview?.averagePerDay ?? 0).toFixed(1)}
+          sub={<DeltaPill change={overview?.change ?? null} />}
           icon={Star}
-          sparkline={overview.series.map((point) => point.count)}
+          sparkline={(overview?.series ?? []).map((point) => point.count)}
         />
         {linkFilter ? (
           <StatCard
             label="Share of all clicks"
             value={`${shareOfAll}%`}
-            sub={`${formatNumber(allOverview.total)} total clicks`}
+            sub={`${formatNumber(allTotal)} total clicks`}
             icon={PieChart}
           />
         ) : (
           <StatCard
             label="Active links"
-            value={`${overview.activeLinks} / ${LIMITS.maxLinks}`}
-            sub={`${overview.totalLinks} total`}
+            value={`${overview?.activeLinks ?? 0} / ${LIMITS.maxLinks}`}
+            sub={`${overview?.totalLinks ?? 0} total`}
             icon={Link2}
           />
         )}
@@ -172,7 +176,7 @@ export function AnalyticsView() {
             <h2 className="font-bold text-zinc-900">Clicks over time</h2>
             <span className="text-xs text-zinc-500">UTC</span>
           </div>
-          <ClicksChart data={overview.series} rangeDays={range} height={224} />
+          <ClicksChart data={overview?.series ?? []} rangeDays={range} height={224} />
         </Card>
 
         <Card className="p-5">
@@ -180,13 +184,13 @@ export function AnalyticsView() {
           <p className="mb-2 text-xs text-zinc-600">Referrer domains</p>
           <div className="flex flex-col items-center gap-3">
             <DonutChart
-              data={overview.referrers}
-              centerValue={formatNumber(overview.total)}
+              data={overview?.referrers ?? []}
+              centerValue={formatNumber(overview?.total ?? 0)}
               centerLabel="clicks"
               height={128}
             />
             <ul className="w-full space-y-1.5 text-xs">
-              {overview.referrers.map((slice) => (
+              {(overview?.referrers ?? []).map((slice) => (
                 <li key={slice.key} className="flex items-center gap-2">
                   <span
                     aria-hidden="true"
@@ -210,13 +214,13 @@ export function AnalyticsView() {
           <h2 className="mb-3 font-bold text-zinc-900">Devices</h2>
           <div className="flex flex-col items-center gap-3">
             <DonutChart
-              data={overview.devices}
-              centerValue={formatNumber(overview.total)}
+              data={overview?.devices ?? []}
+              centerValue={formatNumber(overview?.total ?? 0)}
               centerLabel="clicks"
               height={112}
             />
             <ul className="w-full space-y-2 text-xs">
-              {overview.devices.map((slice) => (
+              {(overview?.devices ?? []).map((slice) => (
                 <li key={slice.key} className="flex items-center gap-2">
                   <span
                     aria-hidden="true"
@@ -237,7 +241,7 @@ export function AnalyticsView() {
         <Card className="p-5">
           <h2 className="mb-3 font-bold text-zinc-900">Top countries</h2>
           <ul className="space-y-2.5 text-xs">
-            {overview.countries.map((slice) => (
+            {(overview?.countries ?? []).map((slice) => (
               <li key={slice.key} className="flex items-center gap-2">
                 <span className="w-24 shrink-0 truncate text-zinc-700">{slice.label}</span>
                 <span className="h-2 flex-1 overflow-hidden rounded-full bg-violet-50">
@@ -262,10 +266,10 @@ export function AnalyticsView() {
             <span aria-hidden="true">💡</span> Insights
           </h2>
           <ul className="space-y-2 text-sm text-zinc-800">
-            {overview.insights.length === 0 ? (
+            {(overview?.insights ?? []).length === 0 ? (
               <li className="text-zinc-600">Not enough data yet.</li>
             ) : (
-              overview.insights.map((insight) => (
+              (overview?.insights ?? []).map((insight) => (
                 <li key={insight} className="flex gap-2">
                   <span
                     aria-hidden="true"

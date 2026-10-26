@@ -16,12 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Profile, ProfileInput, SocialKey } from "@linkhub/shared";
-import {
-  LIMITS,
-  RESERVED_USERNAMES,
-  profileSchema,
-  usernameSchema,
-} from "@linkhub/shared";
+import { LIMITS, profileSchema, usernameSchema } from "@linkhub/shared";
 import { Avatar } from "@/components/avatar";
 import { BrandIcon, isBrandName } from "@/components/brand-icons";
 import { DashboardFrame } from "@/components/dashboard-frame";
@@ -39,13 +34,11 @@ import {
 } from "@/components/ui/dialog";
 import { FieldError, FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { useMockData } from "@/lib/store";
+import { api } from "@/lib/api-client";
+import { formatFieldErrors, useAppData } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const PUBLIC_ORIGIN = "https://link.nayankunwar.com";
-
-/** Preview-only availability list; the API will answer this in production. */
-const MOCK_TAKEN = ["nayan", "john", "linkhub", "test", "demo"];
 
 const SOCIAL_FIELDS: Array<{
   key: SocialKey;
@@ -94,12 +87,13 @@ function formatDeletionDate(value: string): string {
 }
 
 export function ProfileEditor() {
-  const { state, hydrated, updateProfile, scheduleDeletion, restoreAccount } = useMockData();
+  const { state, hydrated, updateProfile, setPublished, scheduleDeletion, restoreAccount } =
+    useAppData();
   const [draft, setDraft] = useState<ProfileInput>(() => toInput(state.profile));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [availability, setAvailability] = useState<"idle" | "checking" | "available" | "taken">(
-    "idle",
-  );
+  const [availability, setAvailability] = useState<
+    "idle" | "checking" | "available" | "taken" | "reserved"
+  >("idle");
   const [origin, setOrigin] = useState(PUBLIC_ORIGIN);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
@@ -141,13 +135,28 @@ export function ProfileEditor() {
       return;
     }
     setAvailability("checking");
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      const taken =
-        MOCK_TAKEN.includes(draft.username) ||
-        (RESERVED_USERNAMES as readonly string[]).includes(draft.username);
-      setAvailability(taken ? "taken" : "available");
+      api.usernames
+        .availability(parsed.data)
+        .then((result) => {
+          if (cancelled) return;
+          setAvailability(
+            result.available
+              ? "available"
+              : result.reason === "reserved"
+                ? "reserved"
+                : "taken",
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setAvailability("idle");
+        });
     }, 450);
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [draft.username, state.profile.username]);
 
   const update = <Key extends keyof ProfileInput>(key: Key, value: ProfileInput[Key]) => {
@@ -171,7 +180,23 @@ export function ProfileEditor() {
     });
   };
 
-  const save = () => {
+  const focusError = (first: string) => {
+    const id =
+      first === "displayName"
+        ? "profile-display-name"
+        : first === "headline"
+          ? "profile-headline"
+          : first === "username"
+            ? "profile-username"
+            : first === "bio"
+              ? "profile-bio"
+              : first === "avatarUrl"
+                ? "profile-avatar"
+                : `social-${first.split(".")[1]}`;
+    document.getElementById(id)?.focus();
+  };
+
+  const save = async () => {
     const parsed = profileSchema.safeParse(draft);
     const nextErrors: Record<string, string> = {};
     if (!parsed.success) {
@@ -181,44 +206,59 @@ export function ProfileEditor() {
       }
     }
 
-    if (draft.username !== state.profile.username) {
-      const taken =
-        MOCK_TAKEN.includes(draft.username) ||
-        (RESERVED_USERNAMES as readonly string[]).includes(draft.username);
-      if (taken && !nextErrors.username) {
-        nextErrors.username = "That username is already taken.";
-      }
-    }
-
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      const first = Object.keys(nextErrors)[0];
-      const id =
-        first === "displayName"
-          ? "profile-display-name"
-          : first === "headline"
-            ? "profile-headline"
-            : first === "username"
-              ? "profile-username"
-              : first === "bio"
-                ? "profile-bio"
-                : first === "avatarUrl"
-                  ? "profile-avatar"
-                  : `social-${first.split(".")[1]}`;
-      document.getElementById(id)?.focus();
+      focusError(Object.keys(nextErrors)[0]);
       toast.error("Check the highlighted fields.");
       return;
     }
-
     if (!parsed.success) return;
-    updateProfile(parsed.data);
+
+    const usernameChanged = parsed.data.username !== state.profile.username;
+    if (usernameChanged) {
+      try {
+        const result = await api.usernames.availability(parsed.data.username);
+        if (!result.available) {
+          const message =
+            result.reason === "reserved"
+              ? "That username is reserved."
+              : "That username is already taken.";
+          setErrors({ username: message });
+          setAvailability(result.reason === "reserved" ? "reserved" : "taken");
+          document.getElementById("profile-username")?.focus();
+          return;
+        }
+        setAvailability("available");
+      } catch {
+        toast.error("Could not check username availability. Try again.");
+        return;
+      }
+    }
+
+    const result = await updateProfile(parsed.data);
+    if (!result.ok) {
+      const error = result.error;
+      const fieldErrors =
+        error?.code === "VALIDATION_ERROR" ? formatFieldErrors(error.details) : {};
+      if (error?.code === "USERNAME_TAKEN" || error?.code === "USERNAME_RESERVED") {
+        fieldErrors.username = error.message;
+      }
+      setErrors(fieldErrors);
+      if (Object.keys(fieldErrors).length > 0) {
+        focusError(Object.keys(fieldErrors)[0]);
+      }
+      toast.error(error?.message ?? "Could not save your profile.");
+      return;
+    }
+
     setDraft(parsed.data);
     setErrors({});
     toast.success("Profile saved");
   };
 
-  const togglePublished = (checked: boolean) => {
-    updateProfile({ ...toInput(state.profile), isPublished: checked });
+  const togglePublished = async (checked: boolean) => {
+    const ok = await setPublished(checked);
+    if (!ok) return;
     setDraft((current) => ({ ...current, isPublished: checked }));
     toast.success(checked ? "Profile published" : "Profile unpublished");
   };
@@ -242,11 +282,11 @@ export function ProfileEditor() {
     setDeleteOpen(true);
   };
 
-  const confirmDelete = (event: React.FormEvent<HTMLFormElement>) => {
+  const confirmDelete = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: { password?: string; confirm?: string } = {};
-    if (!deletePassword || deletePassword === "wrong") {
-      nextErrors.password = "Incorrect password.";
+    if (!deletePassword) {
+      nextErrors.password = "Enter your password.";
     }
     if (deleteConfirm !== state.profile.username) {
       nextErrors.confirm = "Username does not match.";
@@ -256,7 +296,23 @@ export function ProfileEditor() {
       document.getElementById(nextErrors.password ? "delete-password" : "delete-confirm")?.focus();
       return;
     }
-    scheduleDeletion();
+
+    const result = await scheduleDeletion(deletePassword, deleteConfirm);
+    if (!result.ok) {
+      const error = result.error;
+      if (error?.code === "INVALID_CREDENTIALS") {
+        setDeleteErrors({ password: error.message });
+        document.getElementById("delete-password")?.focus();
+      } else if (error?.code === "VALIDATION_ERROR") {
+        const fields = formatFieldErrors(error.details);
+        setDeleteErrors({ confirm: fields.confirmUsername ?? error.message });
+        document.getElementById("delete-confirm")?.focus();
+      } else {
+        toast.error(error?.message ?? "Could not schedule account deletion.");
+      }
+      return;
+    }
+
     setDeleteOpen(false);
     toast.success(
       `Account scheduled for deletion. You have ${LIMITS.deleteGraceDays} days to restore it.`,
@@ -311,9 +367,11 @@ export function ProfileEditor() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              restoreAccount();
-              toast.success("Account restored. Publish your profile when you're ready.");
+            onClick={async () => {
+              const ok = await restoreAccount();
+              if (ok) {
+                toast.success("Account restored. Publish your profile when you're ready.");
+              }
             }}
           >
             Restore account
@@ -325,7 +383,7 @@ export function ProfileEditor() {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          save();
+          void save();
         }}
         className="grid grid-cols-1 gap-4 xl:grid-cols-2"
       >
@@ -445,6 +503,10 @@ export function ProfileEditor() {
               ) : availability === "taken" ? (
                 <span className="inline-flex items-center gap-1 font-semibold text-red-700">
                   <X aria-hidden="true" className="size-3.5" /> Already taken
+                </span>
+              ) : availability === "reserved" ? (
+                <span className="inline-flex items-center gap-1 font-semibold text-red-700">
+                  <X aria-hidden="true" className="size-3.5" /> Reserved
                 </span>
               ) : draft.username === state.profile.username ? (
                 <span className="text-zinc-600">This is your current username.</span>
@@ -575,7 +637,9 @@ export function ProfileEditor() {
               </div>
               <Switch
                 checked={state.profile.isPublished}
-                onCheckedChange={togglePublished}
+                onCheckedChange={(checked) => {
+                  void togglePublished(checked);
+                }}
                 aria-labelledby="published-label"
                 aria-describedby="published-description"
               />
@@ -593,9 +657,9 @@ export function ProfileEditor() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => {
-                    restoreAccount();
-                    toast.success("Account restored.");
+                  onClick={async () => {
+                    const ok = await restoreAccount();
+                    if (ok) toast.success("Account restored.");
                   }}
                 >
                   Restore account
@@ -631,7 +695,12 @@ export function ProfileEditor() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={confirmDelete} noValidate>
+          <form
+            onSubmit={(event) => {
+              void confirmDelete(event);
+            }}
+            noValidate
+          >
             <div className="mb-3">
               <Label htmlFor="delete-password">Current password</Label>
               <div className="relative">

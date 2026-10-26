@@ -36,7 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { useMockData } from "@/lib/store";
+import { useAppData } from "@/lib/store";
 import { cn, hexToRgba, shadeHex } from "@/lib/utils";
 import { CategoryDialog } from "./category-dialog";
 
@@ -168,7 +168,7 @@ export function CategoriesView() {
     deleteCategory,
     toggleCategory,
     reorderCategories,
-  } = useMockData();
+  } = useAppData();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
@@ -220,27 +220,28 @@ export function CategoriesView() {
     if (!open) setEditing(null);
   };
 
-  const handleSubmit = (values: CategoryFormValues) => {
-    if (editing) {
-      updateCategory(editing.id, values);
-      toast.success(`${values.name} updated`);
-    } else {
-      addCategory(values);
-      toast.success(`${values.name} added`);
-    }
+  const handleSubmit = async (values: CategoryFormValues) => {
+    const ok = editing
+      ? await updateCategory(editing.id, values)
+      : await addCategory(values);
+    if (!ok) return;
+    toast.success(`${values.name} ${editing ? "updated" : "added"}`);
     setDialogOpen(false);
     setEditing(null);
   };
 
-  const handleToggle = (category: Category) => {
-    toggleCategory(category.id);
-    toast.success(`${category.name} is now ${category.isVisible ? "hidden" : "visible"}`);
+  const handleToggle = async (category: Category) => {
+    const ok = await toggleCategory(category.id);
+    if (ok) {
+      toast.success(`${category.name} is now ${category.isVisible ? "hidden" : "visible"}`);
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
     const affected = linkCounts.get(deleteTarget.id) ?? 0;
-    deleteCategory(deleteTarget.id);
+    const ok = await deleteCategory(deleteTarget.id);
+    if (!ok) return;
     toast.success(
       affected > 0
         ? `Category deleted; ${affected} link${affected === 1 ? "" : "s"} kept`
@@ -249,22 +250,24 @@ export function CategoriesView() {
     setDeleteTarget(null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const category = state.categories.find((item) => item.id === active.id);
     if (!category) return;
-    reorderCategories(String(active.id), String(over.id));
+    const ok = await reorderCategories(String(active.id), String(over.id));
+    if (!ok) return;
     setDragMessage(`${category.name} moved. Order saved.`);
     toast.success("Category order saved");
   };
 
-  const handleKeyboardMove = (category: Category, direction: -1 | 1) => {
+  const handleKeyboardMove = async (category: Category, direction: -1 | 1) => {
     const index = state.categories.findIndex((item) => item.id === category.id);
     if (index === -1) return;
     const target = state.categories[index + direction];
     if (!target) return;
-    reorderCategories(category.id, target.id);
+    const ok = await reorderCategories(category.id, target.id);
+    if (!ok) return;
     setDragMessage(
       `${category.name} moved to position ${index + direction + 1}. Order saved.`,
     );
@@ -321,7 +324,9 @@ export function CategoriesView() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+          onDragEnd={(event) => {
+            void handleDragEnd(event);
+          }}
         >
           <SortableContext
             items={state.categories.map((category) => category.id)}
@@ -334,10 +339,14 @@ export function CategoriesView() {
                   category={category}
                   linkCount={linkCounts.get(category.id) ?? 0}
                   canDrag={canDrag}
-                  onToggle={handleToggle}
+                  onToggle={(category) => {
+                    void handleToggle(category);
+                  }}
                   onEdit={openEdit}
                   onDelete={setDeleteTarget}
-                  onKeyboardMove={handleKeyboardMove}
+                  onKeyboardMove={(category, direction) => {
+                    void handleKeyboardMove(category, direction);
+                  }}
                 />
               ))}
             </ul>
@@ -358,7 +367,9 @@ export function CategoriesView() {
         category={editing}
         categories={state.categories}
         categoryCount={state.categories.length}
-        onSubmit={handleSubmit}
+        onSubmit={(values) => {
+          void handleSubmit(values);
+        }}
       />
 
       <Dialog
@@ -393,7 +404,12 @@ export function CategoriesView() {
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={confirmDelete}>
+            <Button
+              variant="danger"
+              onClick={() => {
+                void confirmDelete();
+              }}
+            >
               Delete category
             </Button>
           </DialogFooter>

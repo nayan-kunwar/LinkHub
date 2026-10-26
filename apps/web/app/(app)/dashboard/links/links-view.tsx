@@ -46,8 +46,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { getLinkClickCount, type RangeDays } from "@/lib/analytics";
-import { useMockData } from "@/lib/store";
+import { sumSeries, useLinkSeries, type RangeDays } from "@/lib/analytics";
+import { useAppData } from "@/lib/store";
 import { useRange } from "@/lib/use-range";
 import { cn, formatNumber } from "@/lib/utils";
 import { LinkDialog } from "./link-dialog";
@@ -221,7 +221,8 @@ function SortableLinkRow({
 }
 
 export function LinksView() {
-  const { state, hydrated, addLink, updateLink, deleteLink, toggleLink, reorderLinks } = useMockData();
+  const { state, hydrated, addLink, updateLink, deleteLink, toggleLink, reorderLinks } =
+    useAppData();
   const searchParams = useSearchParams();
   const [range] = useRange(30);
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
@@ -284,12 +285,13 @@ export function LinksView() {
     [state.categories],
   );
 
+  const { seriesById } = useLinkSeries(state.links, range);
   const counts = useMemo(
     () =>
       new Map(
-        state.links.map((link) => [link.id, getLinkClickCount(state, link, range)]),
+        state.links.map((link) => [link.id, sumSeries(seriesById.get(link.id))]),
       ),
-    [state, range],
+    [state.links, seriesById],
   );
 
   const visibleLinks = useMemo(() => {
@@ -350,46 +352,50 @@ export function LinksView() {
     if (!open) setEditing(null);
   };
 
-  const handleLinkSubmit = (values: LinkFormValues) => {
-    if (editing) {
-      updateLink(editing.id, values);
-      toast.success(`${values.title} updated`);
-    } else {
-      addLink(values);
-      toast.success(`${values.title} added`);
-    }
+  const handleLinkSubmit = async (values: LinkFormValues) => {
+    const ok = editing
+      ? await updateLink(editing.id, values)
+      : await addLink(values);
+    if (!ok) return;
+    toast.success(`${values.title} ${editing ? "updated" : "added"}`);
     setDialogOpen(false);
     setEditing(null);
   };
 
-  const handleToggle = (link: LinkRecord) => {
-    toggleLink(link.id);
-    toast.success(`${link.title} ${link.isActive ? "deactivated" : "activated"}`);
+  const handleToggle = async (link: LinkRecord) => {
+    const ok = await toggleLink(link.id);
+    if (ok) {
+      toast.success(`${link.title} ${link.isActive ? "deactivated" : "activated"}`);
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteLink(deleteTarget.id);
-    toast.success(`${deleteTarget.title} deleted`);
-    setDeleteTarget(null);
+    const ok = await deleteLink(deleteTarget.id);
+    if (ok) {
+      toast.success(`${deleteTarget.title} deleted`);
+      setDeleteTarget(null);
+    }
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const activeLink = state.links.find((link) => link.id === active.id);
     if (!activeLink) return;
-    reorderLinks(String(active.id), String(over.id));
+    const ok = await reorderLinks(String(active.id), String(over.id));
+    if (!ok) return;
     setDragMessage(`${activeLink.title} moved. Order saved.`);
     toast.success("Order saved");
   };
 
-  const handleKeyboardMove = (link: LinkRecord, direction: -1 | 1) => {
+  const handleKeyboardMove = async (link: LinkRecord, direction: -1 | 1) => {
     const index = state.links.findIndex((item) => item.id === link.id);
     if (index === -1) return;
     const target = state.links[index + direction];
     if (!target) return;
-    reorderLinks(link.id, target.id);
+    const ok = await reorderLinks(link.id, target.id);
+    if (!ok) return;
     setDragMessage(`${link.title} moved to position ${index + direction + 1}. Order saved.`);
     setFocusHandleId(link.id);
   };
@@ -522,7 +528,9 @@ export function LinksView() {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+          onDragEnd={(event) => {
+            void handleDragEnd(event);
+          }}
         >
           <SortableContext
             items={visibleLinks.map((link) => link.id)}
@@ -537,10 +545,14 @@ export function LinksView() {
                   count={counts.get(link.id) ?? 0}
                   range={range}
                   canDrag={canDrag}
-                  onToggle={handleToggle}
+                  onToggle={(link) => {
+                    void handleToggle(link);
+                  }}
                   onEdit={openEdit}
                   onDelete={setDeleteTarget}
-                  onKeyboardMove={handleKeyboardMove}
+                  onKeyboardMove={(link, direction) => {
+                    void handleKeyboardMove(link, direction);
+                  }}
                 />
               ))}
             </ul>
@@ -577,7 +589,9 @@ export function LinksView() {
         link={editing}
         categories={state.categories}
         linkCount={state.links.length}
-        onSubmit={handleLinkSubmit}
+        onSubmit={(values) => {
+          void handleLinkSubmit(values);
+        }}
       />
 
       <Dialog
@@ -602,7 +616,12 @@ export function LinksView() {
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={confirmDelete}>
+            <Button
+              variant="danger"
+              onClick={() => {
+                void confirmDelete();
+              }}
+            >
               Delete link
             </Button>
           </DialogFooter>

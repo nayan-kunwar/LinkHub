@@ -22,8 +22,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LIMITS } from "@linkhub/shared";
-import { useMockData } from "@/lib/store";
-import { endDemoSession } from "@/lib/auth";
+import { useAppData } from "@/lib/store";
 import { Avatar } from "./avatar";
 import { Logo } from "./logo";
 import { Button } from "./ui/button";
@@ -57,7 +56,7 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 function PlanCard() {
-  const { state } = useMockData();
+  const { state } = useAppData();
   const used = state.links.length;
   const percent = Math.min(100, Math.round((used / LIMITS.maxLinks) * 100));
 
@@ -129,19 +128,23 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const { state } = useMockData();
+  const { state, logout } = useAppData();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
 
-  const signOut = () => {
-    endDemoSession();
+  const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    await logout();
     router.push("/login");
+    router.refresh();
   };
 
   const submitSearch = (event: React.FormEvent<HTMLFormElement>) => {
@@ -231,7 +234,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={signOut} destructive>
+              <DropdownMenuItem
+                onSelect={() => {
+                  void signOut();
+                }}
+                destructive
+              >
                 <LogOut className="size-4" /> Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>

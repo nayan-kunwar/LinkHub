@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { AppearanceSettings, Category, Link as LinkRecord, Profile } from "@linkhub/shared";
@@ -17,6 +19,7 @@ interface ProfileViewProps {
   variant?: "phone" | "page";
   showUnpublishedNote?: boolean;
   className?: string;
+  onLinkClick?: (link: LinkRecord) => void;
 }
 
 function groupLinks(categories: Category[], links: LinkRecord[]) {
@@ -55,6 +58,7 @@ export function ProfileView({
   variant = "phone",
   showUnpublishedNote = false,
   className,
+  onLinkClick,
 }: ProfileViewProps) {
   const theme = themeFor(appearance);
   const groups = groupLinks(categories, links);
@@ -159,6 +163,7 @@ export function ProfileView({
                       href={link.url}
                       target={link.url.startsWith("mailto:") ? undefined : "_blank"}
                       rel={link.url.startsWith("mailto:") ? undefined : "noopener noreferrer"}
+                      onClick={() => onLinkClick?.(link)}
                       className={cn(
                         "group/link flex w-full items-center gap-2 font-semibold transition hover:-translate-y-px hover:brightness-[0.99] focus-visible:ring-4 focus-visible:ring-violet-300",
                         isPage ? "px-4 py-3 text-sm" : "px-3 py-2 text-xs",

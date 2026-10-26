@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import type { AppearanceSettings, Category, Link as LinkRecord, Profile } from "@linkhub/shared";
-import { useMockState } from "@/lib/store";
+import { useAppState } from "@/lib/store";
 import { PhoneFrame } from "./phone-frame";
 import { ProfileView } from "./profile-view";
 import { Card } from "./ui/card";
@@ -31,7 +31,7 @@ export function DashboardPreview({
   categoriesOverride?: Category[];
   linksOverride?: LinkRecord[];
 }) {
-  const state = useMockState();
+  const state = useAppState();
   const profile = profileOverride ?? state.profile;
   const appearance = appearanceOverride ?? state.appearance;
   const categories = categoriesOverride ?? state.categories;

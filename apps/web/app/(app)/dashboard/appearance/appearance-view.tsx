@@ -19,8 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { backgroundFor } from "@/lib/appearance";
-import { MOCK_APPEARANCE } from "@/lib/mock-data";
-import { useMockData } from "@/lib/store";
+import { DEFAULT_APPEARANCE } from "@/lib/app-state";
+import { useAppData } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const CARD_LABELS: Record<(typeof CARD_STYLES)[number], string> = {
@@ -56,11 +56,11 @@ const TOGGLES = [
 ] as const;
 
 function defaultAppearance(): AppearanceSettings {
-  return structuredClone(MOCK_APPEARANCE);
+  return structuredClone(DEFAULT_APPEARANCE);
 }
 
 export function AppearanceView() {
-  const { state, hydrated, setAppearance } = useMockData();
+  const { state, hydrated, setAppearance } = useAppData();
   const [draft, setDraft] = useState<AppearanceSettings>(() => structuredClone(state.appearance));
 
   useEffect(() => {
@@ -86,9 +86,9 @@ export function AppearanceView() {
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const saveDraft = () => {
-    setAppearance(draft);
-    toast.success("Appearance saved");
+  const saveDraft = async () => {
+    const ok = await setAppearance(draft);
+    if (ok) toast.success("Appearance saved");
   };
 
   const resetDraft = () => {
