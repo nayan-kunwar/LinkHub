@@ -1105,7 +1105,7 @@ Order:
 - [x] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
 - [ ] Error tracking and job-failure alerts configured; audit log path documented
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
-- [ ] Logs redact secrets and auth bodies
+- [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
 - [ ] Vendor ToS/quota reviewed (Vercel Hobby non-commercial, Render hours, Neon connections, Brevo daily limit)
 
 ---
