@@ -74,6 +74,9 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().default("Link Hub <no-reply@localhost>"),
   EMAIL_RESEND_API_KEY: z.string().optional(),
   EMAIL_BREVO_API_KEY: z.string().optional(),
+  // Escape hatch for intentionally running a production-like environment
+  // without an external mail provider. Never enable this on the public site.
+  ALLOW_CONSOLE_MAIL_IN_PRODUCTION: booleanString.default(false),
   EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 
@@ -96,8 +99,64 @@ export type Env = z.infer<typeof envSchema> & {
   directUrl: string;
 };
 
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    return true;
+  }
+  if (host === "::1" || host === "0:0:0:0:0:0:0:1" || host === "0.0.0.0") return true;
+
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!ipv4) return false;
+  const first = Number(ipv4[1]);
+  const second = Number(ipv4[2]);
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+function senderAddress(value: string): string {
+  const match = /<([^<>]+)>/.exec(value);
+  return (match?.[1] ?? value).trim().toLowerCase();
+}
+
 function assertProductionSecrets(env: z.infer<typeof envSchema>): void {
   if (env.NODE_ENV !== "production") return;
+
+  const appUrl = new URL(env.APP_URL);
+  if (appUrl.protocol !== "https:") {
+    throw new Error("APP_URL must use https in production.");
+  }
+  if (isLocalOrPrivateHost(appUrl.hostname)) {
+    throw new Error("APP_URL must not point at localhost or a private address in production.");
+  }
+
+  if (env.EMAIL_PROVIDER === "console" && !env.ALLOW_CONSOLE_MAIL_IN_PRODUCTION) {
+    throw new Error(
+      "EMAIL_PROVIDER=console is not allowed in production. Configure brevo or resend, or set ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true intentionally.",
+    );
+  }
+
+  const fromAddress = senderAddress(env.EMAIL_FROM);
+  const fromDomain = fromAddress.split("@")[1] ?? "";
+  if (
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fromAddress) ||
+    !fromDomain ||
+    isLocalOrPrivateHost(fromDomain)
+  ) {
+    throw new Error("EMAIL_FROM must use a deliverable, non-localhost address in production.");
+  }
+
+  if (env.TRUST_PROXY === false) {
+    throw new Error(
+      "TRUST_PROXY must be a positive hop count in production so client IPs and rate limits are correct.",
+    );
+  }
 
   const secrets: Array<[string, string]> = [
     ["SESSION_SECRET", env.SESSION_SECRET],

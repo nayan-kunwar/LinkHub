@@ -1,33 +1,48 @@
 import Link from "next/link";
 import { Logo } from "./logo";
 
-const COLUMNS = [
-  {
-    title: "Product",
-    links: [
-      { href: "/#features", label: "Features" },
-      { href: "/#how-it-works", label: "How it works" },
-      { href: "/preview", label: "Live demo" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { href: "/terms", label: "Terms" },
-      { href: "/privacy", label: "Privacy" },
-    ],
-  },
-  {
-    title: "Account",
-    links: [
-      { href: "/login", label: "Sign in" },
-      { href: "/signup", label: "Create your page" },
-      { href: "/forgot-password", label: "Reset password" },
-    ],
-  },
-];
+const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
 
-export function SiteFooter() {
+function columnsFor(allowSignup: boolean, showMarketing: boolean) {
+  return [
+    {
+      title: "Product",
+      links: showMarketing
+        ? [
+            { href: "/#features", label: "Features" },
+            { href: "/#how-it-works", label: "How it works" },
+            { href: "/nayan", label: "See a live profile" },
+          ]
+        : [{ href: "/", label: "Home" }],
+    },
+    {
+      title: "Legal",
+      links: [
+        { href: "/terms", label: "Terms" },
+        { href: "/privacy", label: "Privacy" },
+      ],
+    },
+    {
+      title: "Account",
+      links: [
+        { href: "/login", label: "Sign in" },
+        ...(allowSignup
+          ? [{ href: "/signup", label: "Create your page" }]
+          : []),
+        { href: "/forgot-password", label: "Reset password" },
+      ],
+    },
+  ];
+}
+
+interface SiteFooterProps {
+  /** Link to the landing-page sections instead of the profile home link. */
+  showMarketing?: boolean;
+}
+
+export function SiteFooter({ showMarketing = false }: SiteFooterProps = {}) {
+  const columns = columnsFor(signupEnabled, showMarketing);
+
   return (
     <footer className="border-t border-violet-100 bg-white">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
@@ -37,7 +52,7 @@ export function SiteFooter() {
             All your links in one beautiful page, with privacy-friendly analytics built in.
           </p>
         </div>
-        {COLUMNS.map((column) => (
+        {columns.map((column) => (
           <nav key={column.title} aria-label={column.title}>
             <h2 className="text-sm font-bold text-zinc-900">{column.title}</h2>
             <ul className="mt-3 space-y-2 text-sm text-zinc-600">

@@ -78,8 +78,16 @@ export async function setPublished(
   userId: string,
   isPublished: boolean,
 ): Promise<ProfileDto> {
-  const profile = await prisma.profile.findUnique({ where: { userId } });
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    include: { user: { select: { deletionScheduledFor: true } } },
+  });
   if (!profile) throw fail.notFound();
+  if (isPublished && profile.user.deletionScheduledFor) {
+    throw fail.conflict(
+      "This account is scheduled for deletion. Restore it before publishing your profile.",
+    );
+  }
   const updated = await prisma.profile.update({
     where: { userId },
     data: { isPublished },

@@ -198,6 +198,24 @@ export async function sendPasswordResetEmail(to: string, token: string): Promise
   });
 }
 
+export async function sendEmailChangedNotice(
+  oldEmail: string,
+  newEmail: string,
+): Promise<void> {
+  const resetLink = `${env.APP_URL.replace(/\/$/, "")}/forgot-password`;
+  await sendMail({
+    to: oldEmail,
+    subject: "Your Link Hub email address was changed",
+    text: [
+      `The email address for your Link Hub account was changed to ${newEmail}.`,
+      "",
+      "All sessions have been signed out. If you made this change, sign in again with the new address.",
+      "",
+      `If you did not make this change, reset the password immediately: ${resetLink}`,
+    ].join("\n"),
+  });
+}
+
 export async function sendAccountRestoreEmail(to: string, token: string): Promise<void> {
   const link = `${env.APP_URL.replace(/\/$/, "")}/restore-account?token=${encodeURIComponent(token)}`;
   await sendMail({

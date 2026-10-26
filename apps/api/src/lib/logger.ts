@@ -1,11 +1,13 @@
 import pino from "pino";
-import { env } from "../config/env";
 
+// Read logging settings directly from the process environment. Importing the
+// full env module here would force every consumer (including standalone jobs)
+// to satisfy production-only validation for secrets it never uses.
 export const logger = pino({
-  level: env.LOG_LEVEL,
+  level: process.env.LOG_LEVEL ?? "info",
   base: {
     service: "linkhub-api",
-    env: env.NODE_ENV,
+    env: process.env.NODE_ENV ?? "development",
   },
   redact: {
     paths: [

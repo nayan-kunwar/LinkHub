@@ -94,8 +94,10 @@ and the nightly analytics job runs from GitHub Actions.
    - Plan: Free
    - Health check: `/api/v1/health/live`
    - `TRUST_PROXY=1`
-4. If Brevo is not ready, set `EMAIL_PROVIDER=console` in the Render dashboard
-   for the first deploy. Switch it back to `brevo` once the API key is set.
+4. Keep `EMAIL_PROVIDER=brevo` for production. The API refuses to start with
+   the console mailer unless `ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true` is set
+   deliberately; do not enable that override on the public site. If Brevo is
+   not ready, finish the Brevo setup before the first public deploy.
 5. Deploy. The build runs `pnpm install`, `pnpm db:generate` and
    `pnpm api:build`.
 6. Copy the service URL, for example
@@ -220,12 +222,14 @@ domain authentication is incomplete.
 | `NEXT_PUBLIC_APP_URL` | `https://link.nayankunwar.com` |
 | `NEXT_PUBLIC_ALLOW_SIGNUP` | `false` |
 | `ALLOW_DEMO_PREVIEW` | `false` |
+| `ROOT_MODE` | `profile` (use `landing` for the marketing page at `/`) |
+| `DEFAULT_USERNAME` | `nayan` |
 | `REVALIDATE_SECRET` | same value as Render |
 | `INTERNAL_FETCH_TOKEN` | same value as Render |
 | `WEB_PROXY_SECRET` | same value as Render |
 
-`API_BASE_URL` is baked into the Next.js rewrites at build time. If the Render
-URL changes, update it and redeploy.
+`API_BASE_URL`, `ROOT_MODE` and `DEFAULT_USERNAME` are read at build time. If
+the Render URL or root mode changes, update it and redeploy.
 
 4. Deploy. The web app serves same-origin `/api/*` and rewrites it to Render.
 5. **Settings → Domains → Add** `link.nayankunwar.com`. Create the CNAME Vercel

@@ -15,6 +15,8 @@ import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import type { PublicProfileData } from "@/lib/public-profile";
 
+const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+
 function ProfileUnavailable({ username }: { username: string }) {
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f5ff]">
@@ -33,8 +35,9 @@ function ProfileUnavailable({ username }: { username: string }) {
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button asChild>
-              <Link href="/signup">
-                Create your page <ArrowRight aria-hidden="true" className="size-4" />
+              <Link href={signupEnabled ? "/signup" : "/login"}>
+                {signupEnabled ? "Create your page" : "Sign in"}{" "}
+                <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
             </Button>
             <Button asChild variant="secondary">

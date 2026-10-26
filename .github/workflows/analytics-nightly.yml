@@ -35,11 +35,7 @@ jobs:
         run: pnpm job:analytics
         env:
           NODE_ENV: production
-          APP_URL: https://link.nayankunwar.com
+          # The job only needs the direct database connection. Do not expose
+          # signing, proxy, or analytics secrets to a scheduled workflow.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
-          INTERNAL_FETCH_TOKEN: ${{ secrets.INTERNAL_FETCH_TOKEN }}
-          WEB_PROXY_SECRET: ${{ secrets.WEB_PROXY_SECRET }}
-          ANALYTICS_HASH_SECRET: ${{ secrets.ANALYTICS_HASH_SECRET }}

@@ -23,12 +23,58 @@ import {
   DEMO_LINKS,
   DEMO_PROFILE,
 } from "@/lib/demo-profile";
+import { getPublicProfile } from "@/lib/public-profile";
+import { PublicProfile } from "./[username]/public-profile";
 
-export const metadata: Metadata = {
+const landingMetadata: Metadata = {
   title: "All your links in one place",
   description:
     "Create a beautiful link-in-bio page with categories, themes, privacy-friendly analytics and data export. Free to start.",
 };
+
+const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+
+function rootMode(): "profile" | "landing" {
+  return process.env.ROOT_MODE === "landing" ? "landing" : "profile";
+}
+
+function defaultUsername(): string {
+  return (process.env.DEFAULT_USERNAME ?? "nayan").trim().toLowerCase();
+}
+
+export const revalidate = 300;
+
+export async function generateMetadata(): Promise<Metadata> {
+  if (rootMode() === "landing") return landingMetadata;
+
+  const username = defaultUsername();
+  try {
+    const data = await getPublicProfile(username);
+    if (!data) return landingMetadata;
+    const { profile } = data;
+    const description =
+      profile.headline || profile.bio || `Links, projects and updates from @${profile.username}.`;
+    const title = `${profile.displayName} (@${profile.username})`;
+    return {
+      title,
+      description,
+      alternates: { canonical: `/${profile.username}` },
+      openGraph: {
+        title,
+        description,
+        type: "profile",
+        url: `/${profile.username}`,
+      },
+      twitter: {
+        card: "summary",
+        title,
+        description,
+      },
+    };
+  } catch {
+    return landingMetadata;
+  }
+}
 
 const FEATURES = [
   {
@@ -107,10 +153,10 @@ const FAQS = [
   },
 ] as const;
 
-export default function HomePage() {
+function MarketingPage() {
   return (
     <div className="min-h-screen bg-white text-zinc-900">
-      <SiteHeader />
+      <SiteHeader showMarketingNav />
       <main id="main">
         <section className="relative overflow-hidden bg-[#f7f5ff]">
           <div
@@ -137,13 +183,13 @@ export default function HomePage() {
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Button asChild size="lg">
-                  <Link href="/signup">
-                    Create your free page
+                  <Link href={signupEnabled ? "/signup" : "/login"}>
+                    {signupEnabled ? "Create your free page" : "Sign in to your page"}
                     <ArrowRight aria-hidden="true" className="size-4" />
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="/nayankunwar">See a live profile</Link>
+                  <Link href="/nayan">See a live profile</Link>
                 </Button>
               </div>
               <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-zinc-700">
@@ -296,21 +342,37 @@ export default function HomePage() {
                   size="lg"
                   className="bg-white text-violet-900 shadow-sm hover:bg-violet-50"
                 >
-                  <Link href="/signup">Create your page</Link>
+                  <Link href={signupEnabled ? "/signup" : "/login"}>
+                    {signupEnabled ? "Create your page" : "Sign in"}
+                  </Link>
                 </Button>
                 <Button
                   asChild
                   size="lg"
                   className="border border-white/40 bg-white/10 text-white hover:bg-white/20"
                 >
-                  <Link href="/preview">Explore the demo</Link>
+                  <Link href="/nayan">See a live profile</Link>
                 </Button>
               </div>
             </div>
           </div>
         </section>
       </main>
-      <SiteFooter />
+      <SiteFooter showMarketing />
     </div>
   );
+}
+
+export default async function HomePage() {
+  if (rootMode() === "profile") {
+    const username = defaultUsername();
+    try {
+      const data = await getPublicProfile(username);
+      if (data) return <PublicProfile username={username} data={data} />;
+    } catch {
+      // Fall back to the marketing page if the API is unavailable during a
+      // build or revalidation; the next ISR pass will try again.
+    }
+  }
+  return <MarketingPage />;
 }

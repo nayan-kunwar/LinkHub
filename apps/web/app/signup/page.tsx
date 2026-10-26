@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { SignupForm } from "./signup-form";
 
 export const metadata: Metadata = {
@@ -7,5 +8,8 @@ export const metadata: Metadata = {
 };
 
 export default function SignupPage() {
+  if (process.env.NEXT_PUBLIC_ALLOW_SIGNUP !== "true") {
+    redirect("/login");
+  }
   return <SignupForm />;
 }

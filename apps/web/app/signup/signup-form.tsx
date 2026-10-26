@@ -51,7 +51,7 @@ export function SignupForm() {
   const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
-  const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP !== "false";
+  const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
 
   useEffect(() => {
     if (!allowSignup) router.replace("/login");

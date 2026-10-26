@@ -8,9 +8,11 @@ import { logger } from "../../lib/logger";
 import {
   sendAccountRestoreEmail,
   sendEmailChangeVerification,
+  sendEmailChangedNotice,
   sendPasswordResetEmail,
   sendVerificationEmail,
 } from "../../lib/mailer";
+import { enqueueMail } from "../../lib/mail-queue";
 import { dummyVerify, hashPassword, verifyPassword } from "../../lib/password";
 import { revalidateProfile } from "../../lib/revalidate";
 import { isReservedUsername } from "../../lib/validation";
@@ -61,6 +63,17 @@ async function issueToken(
   return raw;
 }
 
+/**
+ * Equalize the database work for branches that intentionally return early
+ * (unknown reset addresses, duplicate registrations, unavailable email
+ * changes) so response timing does not reveal whether an account exists.
+ */
+async function dummyTokenWork(): Promise<void> {
+  await prisma.verificationToken.deleteMany({
+    where: { tokenHash: sha256(randomToken(32)), usedAt: null },
+  });
+}
+
 async function consumeToken(raw: string, type: TokenType) {
   const tokenHash = sha256(raw);
   const token = await prisma.verificationToken.findUnique({ where: { tokenHash } });
@@ -98,7 +111,10 @@ export async function register(input: SignupInput) {
   if (usernameOwner) throw fail.usernameTaken();
 
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return GENERIC_REGISTER_RESPONSE;
+  if (existing) {
+    await dummyTokenWork();
+    return GENERIC_REGISTER_RESPONSE;
+  }
 
   let rawToken: string;
   try {
@@ -131,11 +147,7 @@ export async function register(input: SignupInput) {
     throw error;
   }
 
-  try {
-    await sendVerificationEmail(email, rawToken);
-  } catch (error) {
-    logger.error({ err: error, userId: undefined }, "verification email failed");
-  }
+  enqueueMail(() => sendVerificationEmail(email, rawToken));
 
   return GENERIC_REGISTER_RESPONSE;
 }
@@ -159,14 +171,18 @@ export async function login(input: LoginInput): Promise<User> {
     throw fail.suspended();
   }
 
-  if (user.deletionScheduledFor) {
-    return prisma.user.update({
-      where: { id: user.id },
-      data: { deletionScheduledFor: null },
-    });
-  }
-
   return user;
+}
+
+/**
+ * Called by the login route only after the new session has been persisted.
+ * If session creation fails, the deletion schedule must remain untouched.
+ */
+export async function restoreScheduledDeletion(userId: string): Promise<void> {
+  await prisma.user.updateMany({
+    where: { id: userId, deletionScheduledFor: { not: null } },
+    data: { deletionScheduledFor: null },
+  });
 }
 
 export async function getMe(userId: string): Promise<MeDto> {
@@ -199,7 +215,11 @@ export async function verifyEmailChange(rawToken: string): Promise<void> {
   const token = await consumeToken(rawToken, "email_change");
   const user = await prisma.user.findUnique({ where: { id: token.userId } });
   if (!user || !user.pendingEmail) throw fail.tokenInvalid();
+  if (user.status === "deleted" || user.deletedAt) throw fail.tokenInvalid();
+  if (user.status === "suspended") throw fail.suspended();
+  if (user.status !== "active") throw fail.tokenInvalid();
 
+  const previousEmail = user.email;
   const target = user.pendingEmail;
   const conflict = await prisma.user.findFirst({
     where: {
@@ -225,6 +245,12 @@ export async function verifyEmailChange(rawToken: string): Promise<void> {
     }
     throw error;
   }
+
+  // The old address must stop being a valid way back into the account. Force
+  // a fresh sign-in everywhere and tell the previous mailbox what happened.
+  await revokeAllSessions(user.id);
+  enqueueMail(() => sendEmailChangedNotice(previousEmail, target));
+  logger.info({ userId: user.id }, "account email changed");
 }
 
 export async function resendVerification(userId: string): Promise<void> {
@@ -234,28 +260,21 @@ export async function resendVerification(userId: string): Promise<void> {
   const rawToken = await prisma.$transaction((tx) =>
     issueToken(tx, user.id, "email_verification"),
   );
-  try {
-    await sendVerificationEmail(user.email, rawToken);
-  } catch (error) {
-    logger.error({ err: error, userId: user.id }, "resend verification email failed");
-  }
+  enqueueMail(() => sendVerificationEmail(user.email, rawToken));
 }
 
 export async function forgotPassword(emailInput: string) {
   const email = emailInput.trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || user.status !== "active" || user.deletedAt) {
+    await dummyTokenWork();
     return GENERIC_RESET_RESPONSE;
   }
 
   const rawToken = await prisma.$transaction((tx) =>
     issueToken(tx, user.id, "password_reset"),
   );
-  try {
-    await sendPasswordResetEmail(user.email, rawToken);
-  } catch (error) {
-    logger.error({ err: error, userId: user.id }, "password reset email failed");
-  }
+  enqueueMail(() => sendPasswordResetEmail(user.email, rawToken));
   return GENERIC_RESET_RESPONSE;
 }
 
@@ -285,6 +304,7 @@ export async function createSessionForUser(
   req: Request,
   userId: string,
   userAgent: string | undefined,
+  options: { remember?: boolean } = {},
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     req.session.regenerate((error) => (error ? reject(error) : resolve()));
@@ -294,6 +314,13 @@ export async function createSessionForUser(
   req.session.userAgent = (userAgent ?? "Unknown device").slice(0, 512);
   req.session.createdAt = now;
   req.session.lastSeenAt = now;
+
+  // The session middleware has no default maxAge. "Remember me" opts into a
+  // persistent seven-day cookie; otherwise the browser discards it on close.
+  if (options.remember) {
+    req.session.cookie.maxAge = env.sessionMaxAgeMs;
+  }
+
   await new Promise<void>((resolve, reject) => {
     req.session.save((error) => (error ? reject(error) : resolve()));
   });
@@ -373,8 +400,8 @@ export async function scheduleAccountDeletion(
   confirmUsername: string,
   currentSid: string,
 ): Promise<Date> {
-  if (user.deletionScheduledFor) return user.deletionScheduledFor;
-
+  // Always re-authenticate, even when deletion is already scheduled. The early
+  // return used to skip both the password and username confirmation.
   if (!user.passwordHash || !(await verifyPassword(user.passwordHash, password))) {
     throw fail.invalidCredentials("Password is incorrect.");
   }
@@ -386,6 +413,19 @@ export async function scheduleAccountDeletion(
   if (!profile) throw fail.conflict("Your profile is missing.");
   if (confirmUsername.trim().toLowerCase() !== profile.username.toLowerCase()) {
     throw fail.validation("Type your username exactly to confirm deletion.");
+  }
+
+  if (user.deletionScheduledFor) {
+    // A repeat request must restore the "unpublished immediately" invariant.
+    await prisma.$transaction(async (tx) => {
+      await tx.profile.update({
+        where: { userId: user.id },
+        data: { isPublished: false },
+      });
+      await tx.$executeRaw`DELETE FROM sessions WHERE sess->>'userId' = ${user.id} AND sid <> ${currentSid}`;
+    });
+    await revalidateProfile(profile.username);
+    return user.deletionScheduledFor;
   }
 
   const scheduledFor = new Date(
@@ -405,11 +445,7 @@ export async function scheduleAccountDeletion(
     return issueToken(tx, user.id, "account_restore");
   });
 
-  try {
-    await sendAccountRestoreEmail(user.email, rawToken);
-  } catch (error) {
-    logger.error({ err: error, userId: user.id }, "account restore email failed");
-  }
+  enqueueMail(() => sendAccountRestoreEmail(user.email, rawToken));
 
   // Unpublishing the profile changes the public page immediately.
   await revalidateProfile(profile.username);
@@ -462,7 +498,10 @@ export async function requestEmailChange(
     throw fail.invalidCredentials("Current password is incorrect.");
   }
 
-  if (email === user.email.toLowerCase()) return GENERIC_EMAIL_CHANGE_RESPONSE;
+  if (email === user.email.toLowerCase()) {
+    await dummyTokenWork();
+    return GENERIC_EMAIL_CHANGE_RESPONSE;
+  }
 
   const conflict = await prisma.user.findFirst({
     where: {
@@ -471,7 +510,10 @@ export async function requestEmailChange(
     },
     select: { id: true },
   });
-  if (conflict) return GENERIC_EMAIL_CHANGE_RESPONSE;
+  if (conflict) {
+    await dummyTokenWork();
+    return GENERIC_EMAIL_CHANGE_RESPONSE;
+  }
 
   let rawToken: string;
   try {
@@ -487,11 +529,7 @@ export async function requestEmailChange(
     throw error;
   }
 
-  try {
-    await sendEmailChangeVerification(email, rawToken);
-  } catch (error) {
-    logger.error({ err: error, userId }, "email change verification failed");
-  }
+  enqueueMail(() => sendEmailChangeVerification(email, rawToken));
   return GENERIC_EMAIL_CHANGE_RESPONSE;
 }
 

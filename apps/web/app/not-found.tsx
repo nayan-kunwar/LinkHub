@@ -4,6 +4,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 
+const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -32,16 +34,17 @@ export default function NotFound() {
           </div>
           <p className="mt-5 text-xs text-zinc-500">
             Looking for a public profile? Use the link the owner shared, for example{" "}
-            <Link href="/nayankunwar" className="font-semibold text-violet-800 underline">
-              /nayankunwar
+            <Link href="/nayan" className="font-semibold text-violet-800 underline">
+              /nayan
             </Link>
             .
           </p>
           <Link
-            href="/signup"
+            href={signupEnabled ? "/signup" : "/login"}
             className="mt-6 inline-flex items-center gap-1 text-sm font-semibold text-violet-800 underline"
           >
-            Create your own page <ArrowRight aria-hidden="true" className="size-4" />
+            {signupEnabled ? "Create your own page" : "Sign in to your page"}{" "}
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         </div>
       </main>

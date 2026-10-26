@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { sendData, sendNoContent } from "../../lib/http";
+import { sendData, sendNoContent, setPrivateNoStore } from "../../lib/http";
 import { fail } from "../../lib/errors";
 import { paramString } from "../../lib/validation";
 import { validateBody } from "../../middleware/validate";
@@ -30,6 +30,13 @@ import {
 } from "./account.schema";
 
 export const accountRouter = Router();
+
+// Account responses contain PII and session metadata. Apply no-store to every
+// account endpoint, including the public restore handler.
+accountRouter.use((_req, res, next) => {
+  setPrivateNoStore(res);
+  next();
+});
 
 accountRouter.post(
   "/restore",

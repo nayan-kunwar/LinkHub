@@ -9,7 +9,50 @@ try {
   // Root .env is optional; production and CI provide real environment variables.
 }
 
+const isDev = process.env.NODE_ENV === "development";
 const apiBaseUrl = process.env.API_BASE_URL?.replace(/\/$/, "");
+
+if (process.env.NODE_ENV === "production") {
+  if (process.env.ALLOW_DEMO_PREVIEW === "true") {
+    throw new Error("ALLOW_DEMO_PREVIEW must be false in production.");
+  }
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    throw new Error("NEXT_PUBLIC_APP_URL is required in production.");
+  }
+}
+
+// Static CSP without a per-request nonce. This keeps ISR/CDN caching intact for
+// public profiles while still restricting script, frame and form origins.
+// Next.js injects inline bootstrap scripts, so 'unsafe-inline' is required
+// unless the app is migrated to nonce-based dynamic rendering.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  ...(isDev ? [] : ["upgrade-insecure-requests"]),
+].join("; ");
+
+const globalHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+  },
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains",
+  },
+];
 
 const tokenPageHeaders = [
   { key: "Cache-Control", value: "no-store, max-age=0" },
@@ -19,12 +62,14 @@ const tokenPageHeaders = [
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@linkhub/shared"],
+  poweredByHeader: false,
   async rewrites() {
     if (!apiBaseUrl) return [];
     return [{ source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` }];
   },
   async headers() {
     return [
+      { source: "/(.*)", headers: globalHeaders },
       { source: "/verify-email", headers: tokenPageHeaders },
       { source: "/reset-password", headers: tokenPageHeaders },
       { source: "/restore-account", headers: tokenPageHeaders },

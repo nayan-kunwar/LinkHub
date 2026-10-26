@@ -22,7 +22,7 @@ export function LoginForm() {
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [deletionScheduledFor, setDeletionScheduledFor] = useState<string | null>(null);
-  const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP !== "false";
+  const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
 
   useEffect(() => {
     setDeletionScheduledFor(state.account.deletionScheduledFor);
@@ -77,10 +77,19 @@ export function LoginForm() {
       }
 
       const nextParam = new URLSearchParams(window.location.search).get("next");
-      const destination =
-        nextParam?.startsWith("/") && !nextParam.startsWith("//")
-          ? nextParam
-          : "/dashboard";
+      let destination = "/dashboard";
+      if (nextParam && !/[\u0000-\u001f\u007f\\]/.test(nextParam)) {
+        try {
+          // Resolve first, then compare origins. A prefix check alone lets
+          // encoded tabs/newlines and backslashes turn into an external URL.
+          const candidate = new URL(nextParam, window.location.origin);
+          if (candidate.origin === window.location.origin) {
+            destination = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+          }
+        } catch {
+          // Invalid URLs fall back to the dashboard.
+        }
+      }
       router.push(destination);
       router.refresh();
     } finally {
@@ -177,7 +186,7 @@ export function LoginForm() {
                 Remember me
               </Label>
               <p id="remember-hint" className="text-xs text-zinc-600">
-                Stay signed in for 7 days
+                Stay signed in for 7 days; leave unchecked to sign out on close
               </p>
             </div>
           </div>

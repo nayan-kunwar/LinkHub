@@ -38,7 +38,9 @@ import { api } from "@/lib/api-client";
 import { formatFieldErrors, useAppData } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-const PUBLIC_ORIGIN = "https://link.nayankunwar.com";
+const PUBLIC_ORIGIN = (
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://link.nayankunwar.com"
+).replace(/\/$/, "");
 
 const SOCIAL_FIELDS: Array<{
   key: SocialKey;

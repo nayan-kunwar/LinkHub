@@ -17,7 +17,12 @@ function cookiePairs(setCookies: string[]): string {
  * the API's own session and CSRF cookies so the browser is genuinely signed in.
  */
 export async function GET(request: NextRequest) {
-  if (process.env.ALLOW_DEMO_PREVIEW !== "true") {
+  // Never allow a real demo login to exist in production, even if the flag is
+  // set by mistake. The route is for local development only.
+  if (
+    (process.env.NODE_ENV as string) === "production" ||
+    process.env.ALLOW_DEMO_PREVIEW !== "true"
+  ) {
     return new NextResponse("Not found", { status: 404 });
   }
 

@@ -3,12 +3,17 @@ import { loadEnv } from "./env";
 
 const productionEnv = {
   NODE_ENV: "production",
+  APP_URL: "https://link.example.com",
   DATABASE_URL: "postgresql://linkhub:linkhub@db.example.com/linkhub",
   SESSION_SECRET: "a".repeat(40),
   REVALIDATE_SECRET: "b".repeat(40),
   INTERNAL_FETCH_TOKEN: "c".repeat(40),
   WEB_PROXY_SECRET: "d".repeat(40),
   ANALYTICS_HASH_SECRET: "e".repeat(40),
+  TRUST_PROXY: "1",
+  EMAIL_PROVIDER: "brevo",
+  EMAIL_FROM: "Link Hub <no-reply@example.com>",
+  EMAIL_BREVO_API_KEY: "xkeysib-test",
 } as NodeJS.ProcessEnv;
 
 describe("environment validation", () => {
@@ -57,7 +62,7 @@ describe("environment validation", () => {
 
   it("requires a Brevo API key in production when selected", () => {
     expect(() =>
-      loadEnv({ ...productionEnv, EMAIL_PROVIDER: "brevo" }),
+      loadEnv({ ...productionEnv, EMAIL_BREVO_API_KEY: undefined }),
     ).toThrow(/EMAIL_BREVO_API_KEY/);
 
     const env = loadEnv({
@@ -66,6 +71,43 @@ describe("environment validation", () => {
       EMAIL_BREVO_API_KEY: "xkeysib-test",
     });
     expect(env.EMAIL_PROVIDER).toBe("brevo");
+  });
+
+  it("rejects non-HTTPS and local production origins", () => {
+    expect(() =>
+      loadEnv({ ...productionEnv, APP_URL: "http://link.example.com" }),
+    ).toThrow(/https/);
+
+    expect(() =>
+      loadEnv({ ...productionEnv, APP_URL: "https://localhost:3000" }),
+    ).toThrow(/localhost/);
+
+    expect(() =>
+      loadEnv({ ...productionEnv, APP_URL: "https://192.168.1.10" }),
+    ).toThrow(/private/);
+  });
+
+  it("rejects the console mailer and local senders in production", () => {
+    expect(() =>
+      loadEnv({ ...productionEnv, EMAIL_PROVIDER: "console" }),
+    ).toThrow(/console/);
+
+    const allowed = loadEnv({
+      ...productionEnv,
+      EMAIL_PROVIDER: "console",
+      ALLOW_CONSOLE_MAIL_IN_PRODUCTION: "true",
+    });
+    expect(allowed.EMAIL_PROVIDER).toBe("console");
+
+    expect(() =>
+      loadEnv({ ...productionEnv, EMAIL_FROM: "Link Hub <no-reply@localhost>" }),
+    ).toThrow(/EMAIL_FROM/);
+  });
+
+  it("requires a positive proxy hop count in production", () => {
+    expect(() =>
+      loadEnv({ ...productionEnv, TRUST_PROXY: "false" }),
+    ).toThrow(/TRUST_PROXY/);
   });
 
   it("parses boolean flags", () => {

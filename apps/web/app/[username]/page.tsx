@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { getPublicProfile } from "@/lib/public-profile";
 import { PublicProfile } from "./public-profile";
 
@@ -26,6 +27,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description,
+    alternates: { canonical: `/${profile.username}` },
     openGraph: {
       title,
       description,
@@ -43,5 +45,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function PublicProfilePage({ params }: PageProps) {
   const { username } = await params;
   const data = await getPublicProfile(username);
+  if (!data) notFound();
   return <PublicProfile username={username} data={data} />;
 }

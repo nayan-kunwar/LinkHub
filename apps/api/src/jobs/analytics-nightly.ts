@@ -1,6 +1,6 @@
+import "dotenv/config";
 import pg from "pg";
 import type { Plan } from "@prisma/client";
-import { env } from "../config/env";
 import { entitlementsFor } from "../lib/entitlements";
 import { logger } from "../lib/logger";
 
@@ -280,8 +280,16 @@ async function prune(client: pg.Client): Promise<PruneCounts> {
 }
 
 async function main(): Promise<void> {
+  // This job is intentionally independent of the API env schema. It only needs
+  // a direct (non-pooled) database connection, so CI does not have to expose
+  // signing, proxy, or analytics secrets to the workflow.
+  const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DIRECT_URL or DATABASE_URL is required for the analytics job.");
+  }
+
   const client = new pg.Client({
-    connectionString: env.directUrl,
+    connectionString,
     application_name: "linkhub-analytics-nightly",
   });
   await client.connect();

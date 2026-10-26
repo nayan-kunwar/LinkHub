@@ -21,6 +21,7 @@ import {
   register,
   resendVerification,
   resetPassword,
+  restoreScheduledDeletion,
   verifyEmail,
   verifyEmailChange,
 } from "./auth.service";
@@ -45,8 +46,13 @@ authRouter.post(
   loginLimiter,
   validateBody(loginSchema),
   async (req, res) => {
-    const user = await login(req.body);
-    await createSessionForUser(req, user.id, req.header("user-agent"));
+    const { remember, ...credentials } = req.body;
+    const user = await login(credentials);
+    await createSessionForUser(req, user.id, req.header("user-agent"), {
+      remember,
+    });
+    // Only clear a scheduled deletion after the session is safely persisted.
+    await restoreScheduledDeletion(user.id);
     const me = await getMe(user.id);
     const csrfToken = issueCsrfToken(res);
     noStore(res);

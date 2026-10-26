@@ -1,6 +1,11 @@
 import "server-only";
 import { cache } from "react";
-import type { AppearanceSettings, SocialLinks } from "@linkhub/shared";
+import {
+  RESERVED_USERNAMES,
+  USERNAME_REGEX,
+  type AppearanceSettings,
+  type SocialLinks,
+} from "@linkhub/shared";
 
 export interface PublicProfileData {
   profile: {
@@ -44,7 +49,12 @@ async function fetchPublicProfileUncached(
   rawUsername: string,
 ): Promise<PublicProfileData | null> {
   const username = rawUsername.trim().toLowerCase();
-  if (!/^[a-z0-9-]{3,30}$/.test(username)) return null;
+  if (
+    !USERNAME_REGEX.test(username) ||
+    (RESERVED_USERNAMES as readonly string[]).includes(username)
+  ) {
+    return null;
+  }
 
   const baseUrl = process.env.API_BASE_URL?.replace(/\/$/, "");
   if (!baseUrl) {

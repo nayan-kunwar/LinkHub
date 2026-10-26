@@ -42,7 +42,9 @@ export const sessionMiddleware = session({
     secure: env.isProd,
     sameSite: "lax",
     path: "/",
-    maxAge: env.sessionMaxAgeMs,
+    // No default maxAge. createSessionForUser applies the seven-day expiry only
+    // when the user checks "Remember me"; otherwise the cookie is a browser
+    // session cookie. The store TTL still bounds abandoned sessions.
   },
 });
 

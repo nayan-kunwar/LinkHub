@@ -22,7 +22,7 @@ publicRouter.get(
       where: {
         username,
         isPublished: true,
-        user: { status: "active", deletedAt: null },
+        user: { status: "active", deletedAt: null, deletionScheduledFor: null },
       },
     });
     if (!profile) throw fail.notFound();
@@ -53,6 +53,37 @@ publicRouter.get(
       "public, s-maxage=300, stale-while-revalidate=60",
     );
     sendData(res, publicProfileDto(profile, categories, links));
+  },
+);
+
+// Sitemap feed: only published profiles whose owners are active and not
+// scheduled for deletion. Kept deliberately small so the web sitemap can be
+// regenerated without exposing profile content.
+publicRouter.get(
+  "/public/profiles",
+  publicProfileLimiter,
+  async (_req, res) => {
+    const profiles = await prisma.profile.findMany({
+      where: {
+        isPublished: true,
+        user: { status: "active", deletedAt: null, deletionScheduledFor: null },
+      },
+      select: { username: true, updatedAt: true },
+      orderBy: { updatedAt: "desc" },
+      take: 5_000,
+    });
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=3600, stale-while-revalidate=300",
+    );
+    sendData(
+      res,
+      profiles.map((profile) => ({
+        username: profile.username,
+        updatedAt: profile.updatedAt.toISOString(),
+      })),
+    );
   },
 );
 
