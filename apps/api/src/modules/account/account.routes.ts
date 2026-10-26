@@ -11,6 +11,7 @@ import {
   passwordChangeLimiter,
 } from "../../middleware/rateLimit";
 import {
+  cancelAccountDeletion,
   cancelPendingEmailChange,
   changePassword,
   deleteSession,
@@ -43,6 +44,16 @@ accountRouter.post(
 accountRouter.get("/", requireAuth, async (req, res) => {
   sendData(res, await getAccount(req.user!.id));
 });
+
+accountRouter.post(
+  "/cancel-deletion",
+  requireActiveUser,
+  accountRestoreLimiter,
+  async (req, res) => {
+    await cancelAccountDeletion(req.user!.id);
+    sendData(res, { deletionScheduledFor: null });
+  },
+);
 
 accountRouter.patch(
   "/email",

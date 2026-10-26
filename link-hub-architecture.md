@@ -998,7 +998,7 @@ Order:
 
 1. `DELETE /account` requires the current password and the exact username. It sets `deletion_scheduled_for = now() + 30 days`, sets `is_published = false`, revokes all sessions except the current one, and sends a restore link to the account email. The response returns `deletionScheduledFor`; repeated calls are idempotent.
 2. The public profile is hidden immediately (unpublished). The owner can still sign in, export, change settings or restore during the grace period.
-3. `POST /account/restore` consumes the single-use `account_restore` token (valid for the 30-day grace window, hashed at rest) and clears `deletion_scheduled_for`. A successful login also clears it. Restoring never republishes the profile; the owner must publish again.
+3. `POST /account/restore` consumes the single-use `account_restore` token (valid for the 30-day grace window, hashed at rest) and clears `deletion_scheduled_for`. An authenticated owner can also call `POST /account/cancel-deletion`, which clears the flag and invalidates any outstanding restore token. A successful login also clears it. Restoring never republishes the profile; the owner must publish again.
 4. The nightly prune hard-deletes users whose `deletion_scheduled_for` has passed, cascading profiles, categories, links, `click_events`, `click_daily_stats`, `click_daily_breakdowns` and tokens, and deleting sessions by `sess->>'userId'`. It sets `status=deleted` immediately before the hard delete for audit clarity.
 5. Audit-log scheduling, restore and purge. Deletion requests are not accepted by email once the self-serve flow ships; the contact address remains for abuse/privacy questions.
 

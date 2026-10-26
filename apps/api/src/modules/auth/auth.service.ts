@@ -12,6 +12,7 @@ import {
   sendVerificationEmail,
 } from "../../lib/mailer";
 import { dummyVerify, hashPassword, verifyPassword } from "../../lib/password";
+import { revalidateProfile } from "../../lib/revalidate";
 import { isReservedUsername } from "../../lib/validation";
 import { randomToken, sha256 } from "../../lib/crypto";
 import type { LoginInput, SignupInput } from "./auth.schema";
@@ -410,6 +411,9 @@ export async function scheduleAccountDeletion(
     logger.error({ err: error, userId: user.id }, "account restore email failed");
   }
 
+  // Unpublishing the profile changes the public page immediately.
+  await revalidateProfile(profile.username);
+
   return scheduledFor;
 }
 
@@ -418,6 +422,31 @@ export async function restoreAccount(rawToken: string): Promise<void> {
   await prisma.user.update({
     where: { id: token.userId },
     data: { deletionScheduledFor: null },
+  });
+}
+
+/**
+ * Authenticated restore for owners who are already signed in. Signing in also
+ * clears the deletion flag, but the settings/profile screens let an active
+ * session cancel it without a round-trip through email.
+ */
+export async function cancelAccountDeletion(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { deletionScheduledFor: true },
+  });
+  if (!user) throw fail.unauthenticated();
+  if (!user.deletionScheduledFor) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { deletionScheduledFor: null },
+    });
+    await tx.verificationToken.updateMany({
+      where: { userId, type: "account_restore", usedAt: null },
+      data: { usedAt: new Date() },
+    });
   });
 }
 
