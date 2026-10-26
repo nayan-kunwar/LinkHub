@@ -1135,7 +1135,8 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Reserved list reviewed against all current and planned routes (current web/API paths, Next metadata files, auth aliases, billing/admin placeholders; regression test added)
 - [x] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
 - [x] Accessibility: keyboard drag-and-drop (ArrowUp/Down + live region + focus restore), focus rings, contrast (placeholders raised to zinc-500), and decorative avatar alt text reviewed; a manual screen-reader pass is still recommended before public signup
-- [ ] Backups: Neon PITR confirmed; manual `pg_dump` taken before flip; restore tested once
+- [x] Manual logical backup taken and restore tested once (2026-10-27): `pg_dump --format=custom` from Neon restored into a local PostgreSQL 18 container; all 12 public tables, 40 indexes, 94 constraints and the `sessions_user_id_expr_idx` expression index matched, and every table's row count matched.
+- [ ] Neon PITR confirmed in the Neon console (dashboard/API access required); record the chosen restore point before the public flip.
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
 - [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier
