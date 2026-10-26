@@ -139,17 +139,20 @@ links/categories, analytics, export and the account lifecycle. The local
 
 ## Deployment
 
-1. Provision Neon (or another managed PostgreSQL 16) and set `DATABASE_URL`
-   (pooled) and `DIRECT_URL` (direct).
-2. Run `pnpm db:deploy` from a release step or one-off job.
-3. Build with `pnpm api:build` and start with `pnpm api:start`.
-4. Schedule `pnpm job:analytics` once daily (for example a Vercel Cron hitting a
-   secured endpoint, or a platform scheduled job). The job takes a PostgreSQL
-   advisory lock, so overlapping runs are safe.
-5. Point the web app's `/api/*` rewrite at this service, keep the web and API
-   `APP_URL` values aligned, and set `TRUST_PROXY` to the real proxy hop count.
-6. Put the API behind HTTPS. Cookies are `Secure` when `NODE_ENV=production`.
-7. Monitor `GET /api/v1/health`; it returns `503` when the database is down.
+See [`DEPLOYMENT.md`](../../DEPLOYMENT.md) for the full Neon + Render + Vercel
+runbook. The repository's `render.yaml` defines:
+
+- `linkhub-api`: Node web service in Singapore with
+  `preDeployCommand: pnpm db:deploy` and health check `/api/v1/health/live`.
+- `linkhub-analytics-nightly`: cron job at 03:00 UTC running
+  `pnpm job:analytics`. It takes a PostgreSQL advisory lock, so overlapping runs
+  are safe.
+
+Set `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Neon, keep the web
+and API `APP_URL` values aligned, and set `TRUST_PROXY` to the real proxy hop
+count. Put the API behind HTTPS; cookies are `Secure` when
+`NODE_ENV=production`. Monitor `GET /api/v1/health`; it returns `503` when the
+database is down.
    `/api/v1/health/live` stays `200` so the platform does not restart-loop on a
    database outage.
 

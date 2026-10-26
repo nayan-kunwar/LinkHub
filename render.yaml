@@ -1,0 +1,88 @@
+# Render Blueprint for the LinkHub API and nightly analytics job.
+# The web app is deployed separately on Vercel (root directory: apps/web).
+#
+# Secrets marked `sync: false` are prompted for when the Blueprint is created.
+# Generate five distinct values with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+# The same REVALIDATE_SECRET, INTERNAL_FETCH_TOKEN and WEB_PROXY_SECRET values
+# must be configured in the Vercel project.
+
+envVarGroups:
+  - name: linkhub-api-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: REVALIDATE_SECRET
+        sync: false
+      - key: INTERNAL_FETCH_TOKEN
+        sync: false
+      - key: WEB_PROXY_SECRET
+        sync: false
+      - key: ANALYTICS_HASH_SECRET
+        sync: false
+
+services:
+  - type: web
+    name: linkhub-api
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm api:build
+    preDeployCommand: pnpm db:deploy
+    startCommand: pnpm api:start
+    healthCheckPath: /api/v1/health/live
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: linkhub-api-shared
+      - key: APP_URL
+        value: https://link.nayankunwar.com
+      - key: WEB_INTERNAL_URL
+        value: https://link.nayankunwar.com
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DEFAULT_USERNAME
+        value: nayan
+      - key: ROOT_MODE
+        value: profile
+      - key: ALLOW_SIGNUP
+        value: "false"
+      - key: ACCOUNT_DELETION_GRACE_DAYS
+        value: "30"
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: EMAIL_FROM
+        value: "Link Hub <no-reply@nayankunwar.com>"
+      - key: EMAIL_BREVO_API_KEY
+        sync: false
+      - key: EMAIL_VERIFICATION_TTL_HOURS
+        value: "24"
+      - key: PASSWORD_RESET_TTL_MINUTES
+        value: "60"
+      - key: CLICK_DEDUPE_SECONDS
+        value: "30"
+      - key: LOG_LEVEL
+        value: info
+
+  - type: cron
+    name: linkhub-analytics-nightly
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    branch: main
+    schedule: "0 3 * * *"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate
+    startCommand: pnpm job:analytics
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: linkhub-api-shared
+      - key: APP_URL
+        value: https://link.nayankunwar.com
