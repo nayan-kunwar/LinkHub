@@ -1,6 +1,6 @@
 # Link Hub — Architecture & Implementation Specification
 
-**Version:** 2.4
+**Version:** 2.5
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
 **Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `linkhub-api-yphe.onrender.com` (reached by browsers only through the same-origin `/api/*` rewrite; a custom API domain is optional)
 **Status:** Owner-first, multi-tenant by design
@@ -8,6 +8,13 @@
 ---
 
 ## Changelog
+
+**v2.5 production monitoring, audit & free-tier review**
+
+- Added throttled owner email alerts for API 5xx responses. Alerts carry the request ID, route, status, code, error name and optional user ID; they exclude bodies, IPs, stacks, tokens and email addresses.
+- Added a `nightly-failure` GitHub issue when the analytics workflow fails, and structured `audit` events for registration, login/logout, email verification/change, password change/reset, session revocation, deletion scheduled/cancelled/restored/purged, profile publish/unpublish and username changes.
+- Documented the 2026-10-27 free-tier review (§18.1): Render 750 hours/5 GB and no production use, Vercel Hobby non-commercial, Neon Free 100 CU-hours and no full PITR, Brevo 300 emails/day.
+- Recorded the measured production database size and the vendor decision that must be made before `ALLOW_SIGNUP=true`.
 
 **v2.4 prototype parity, account lifecycle & breakdowns**
 
@@ -1155,7 +1162,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Accessibility: keyboard drag-and-drop (ArrowUp/Down + live region + focus restore), focus rings, contrast (placeholders raised to zinc-500), and decorative avatar alt text reviewed; a manual screen-reader pass is still recommended before public signup
 - [x] Manual logical backup taken and restore tested once (2026-10-27): `pg_dump --format=custom` from Neon restored into a local PostgreSQL 18 container; all 12 public tables, 40 indexes, 94 constraints and the `sessions_user_id_expr_idx` expression index matched, and every table's row count matched.
 - [ ] Neon PITR confirmed in the Neon console. **Blocked on Free:** Neon Free has no full PITR, only a 6-hour history window (1 GB limit) and one manual snapshot. The logical backup is the recovery path; record its location and test restore again before the flip.
-- [x] Monitoring: UptimeRobot liveness monitor on `/api/v1/health/live`; API 5xx owner email alerts; nightly-workflow failure issues; structured audit events; log redaction reviewed (2026-10-27). Add a readiness monitor for `/api/v1/health`.
+- [x] Monitoring: UptimeRobot liveness monitor on `/api/v1/health/live`; API 5xx owner email alerts; nightly-workflow failure issues; structured audit events; log redaction reviewed (2026-10-27). The monitoring deploy (`461dbe5`) was verified with an owner login/logout through the Vercel rewrite, and manual nightly run `40398056360` succeeded with the failure step skipped. Add a readiness monitor for `/api/v1/health`.
 - [x] Load/quota check reviewed (2026-10-27): see §18.1. Database is 8.7 MB; Render 24/7 uses ~730 of 750 free hours; Neon has a 100 CU-hour cap and no PITR; Vercel Hobby is non-commercial; Brevo is 300/day. Owner must still check Render/Vercel/Brevo dashboards for actual usage.
 - [ ] Cold-start behavior tested for signup/login; consider moving API off free tier (UptimeRobot keep-warm monitor active; a true cold start was not observed)
 - [x] Vendor ToS reviewed (2026-10-27): Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR, Brevo Free is 300 emails/day. See §18.1.
