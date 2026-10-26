@@ -1128,7 +1128,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
 - [x] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
 - [x] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
-- [x] Abuse report path live (profile footer link → `/contact` → owner inbox; live API accepted the report and returned 200, CSRF/rewrite/rate limit verified)
+- [x] Abuse report path live (profile footer link → `/contact` → owner inbox via Brevo; live API accepted the report and returned 200, CSRF/rewrite/rate limit verified; inbox receipt awaiting owner confirmation)
 - [x] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
 - [x] Owner account confirmed: `role=owner`, `status=active`, `email_verified_at` set, `plan=free`
 - [x] Data migration idempotent (reviewed: `prisma/seed.ts` updates an existing owner in place and creates the profile only when missing; Prisma migrations are tracked/forward-only, and no separate one-off data backfill is required for this schema)
