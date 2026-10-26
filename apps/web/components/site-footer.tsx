@@ -3,7 +3,11 @@ import { Logo } from "./logo";
 
 const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
 
-function columnsFor(allowSignup: boolean, showMarketing: boolean) {
+function columnsFor(
+  allowSignup: boolean,
+  showMarketing: boolean,
+  profileUsername: string | undefined,
+) {
   return [
     {
       title: "Product",
@@ -11,7 +15,10 @@ function columnsFor(allowSignup: boolean, showMarketing: boolean) {
         ? [
             { href: "/#features", label: "Features" },
             { href: "/#how-it-works", label: "How it works" },
-            { href: "/nayan", label: "See a live profile" },
+            {
+              href: profileUsername ? `/${profileUsername}` : "/",
+              label: "See a live profile",
+            },
           ]
         : [{ href: "/", label: "Home" }],
     },
@@ -38,10 +45,15 @@ function columnsFor(allowSignup: boolean, showMarketing: boolean) {
 interface SiteFooterProps {
   /** Link to the landing-page sections instead of the profile home link. */
   showMarketing?: boolean;
+  /** Public profile used by the marketing footer link. */
+  profileUsername?: string;
 }
 
-export function SiteFooter({ showMarketing = false }: SiteFooterProps = {}) {
-  const columns = columnsFor(signupEnabled, showMarketing);
+export function SiteFooter({
+  showMarketing = false,
+  profileUsername,
+}: SiteFooterProps = {}) {
+  const columns = columnsFor(signupEnabled, showMarketing, profileUsername);
 
   return (
     <footer className="border-t border-violet-100 bg-white">

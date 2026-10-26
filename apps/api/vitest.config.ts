@@ -24,7 +24,7 @@ export default defineConfig({
       ALLOW_SIGNUP: "true",
       EMAIL_PROVIDER: "console",
       EMAIL_FROM: "Link Hub <no-reply@test.local>",
-      DEFAULT_USERNAME: "nayan",
+      DEFAULT_USERNAME: "nayankunwar",
       SEED_OWNER_NAME: "Nayan Kunwar",
     },
   },

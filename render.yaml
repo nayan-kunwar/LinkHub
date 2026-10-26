@@ -59,7 +59,7 @@ services:
       - key: TRUST_PROXY
         value: "1"
       - key: DEFAULT_USERNAME
-        value: nayan
+        value: nayankunwar
       - key: ROOT_MODE
         value: profile
       - key: ALLOW_SIGNUP

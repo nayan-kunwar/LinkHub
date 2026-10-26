@@ -39,7 +39,7 @@ function rootMode(): "profile" | "landing" {
 }
 
 function defaultUsername(): string {
-  return (process.env.DEFAULT_USERNAME ?? "nayan").trim().toLowerCase();
+  return (process.env.DEFAULT_USERNAME ?? "nayankunwar").trim().toLowerCase();
 }
 
 export const revalidate = 300;
@@ -189,7 +189,7 @@ function MarketingPage() {
                   </Link>
                 </Button>
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="/nayan">See a live profile</Link>
+                  <Link href={`/${defaultUsername()}`}>See a live profile</Link>
                 </Button>
               </div>
               <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-zinc-700">
@@ -351,14 +351,14 @@ function MarketingPage() {
                   size="lg"
                   className="border border-white/40 bg-white/10 text-white hover:bg-white/20"
                 >
-                  <Link href="/nayan">See a live profile</Link>
+                  <Link href={`/${defaultUsername()}`}>See a live profile</Link>
                 </Button>
               </div>
             </div>
           </div>
         </section>
       </main>
-      <SiteFooter showMarketing />
+      <SiteFooter showMarketing profileUsername={defaultUsername()} />
     </div>
   );
 }

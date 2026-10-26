@@ -64,7 +64,7 @@ pnpm db:deploy
 pnpm db:seed
 ```
 
-The seed creates the `nayan` owner, marks the email verified, and publishes an
+The seed creates the `nayankunwar` owner, marks the email verified, and publishes an
 empty profile. It creates no demo links or categories. Store the owner password
 in your password manager.
 
@@ -223,7 +223,7 @@ domain authentication is incomplete.
 | `NEXT_PUBLIC_ALLOW_SIGNUP` | `false` |
 | `ALLOW_DEMO_PREVIEW` | `false` |
 | `ROOT_MODE` | `profile` (use `landing` for the marketing page at `/`) |
-| `DEFAULT_USERNAME` | `nayan` |
+| `DEFAULT_USERNAME` | `nayankunwar` |
 | `REVALIDATE_SECRET` | same value as Render |
 | `INTERNAL_FETCH_TOKEN` | same value as Render |
 | `WEB_PROXY_SECRET` | same value as Render |

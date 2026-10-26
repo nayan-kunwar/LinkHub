@@ -5,6 +5,11 @@ import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 
 const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+const exampleUsername = (
+  process.env.DEFAULT_USERNAME ?? "nayankunwar"
+)
+  .trim()
+  .toLowerCase();
 
 export default function NotFound() {
   return (
@@ -34,8 +39,11 @@ export default function NotFound() {
           </div>
           <p className="mt-5 text-xs text-zinc-500">
             Looking for a public profile? Use the link the owner shared, for example{" "}
-            <Link href="/nayan" className="font-semibold text-violet-800 underline">
-              /nayan
+            <Link
+              href={`/${exampleUsername}`}
+              className="font-semibold text-violet-800 underline"
+            >
+              /{exampleUsername}
             </Link>
             .
           </p>

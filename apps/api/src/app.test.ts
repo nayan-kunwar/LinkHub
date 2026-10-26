@@ -57,6 +57,17 @@ describe("app assembly", () => {
     expect(response.body.error.code).toBe("CSRF_INVALID");
   });
 
+  it("marks account responses private and non-cacheable", async () => {
+    const account = await request(app).get("/api/v1/account");
+    expect(account.status).toBe(401);
+    expect(account.headers["cache-control"]).toBe("no-store");
+    expect(account.headers.vary).toContain("Cookie");
+
+    const sessions = await request(app).get("/api/v1/account/sessions");
+    expect(sessions.status).toBe(401);
+    expect(sessions.headers["cache-control"]).toBe("no-store");
+  });
+
   it("returns the envelope for unknown routes", async () => {
     const response = await request(app).get("/api/v1/does-not-exist");
 

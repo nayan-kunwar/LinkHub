@@ -65,7 +65,7 @@ const envSchema = z.object({
   INTERNAL_FETCH_TOKEN: z.string().min(32, "INTERNAL_FETCH_TOKEN must be at least 32 characters."),
   WEB_PROXY_SECRET: z.string().min(32, "WEB_PROXY_SECRET must be at least 32 characters."),
 
-  DEFAULT_USERNAME: z.string().default("nayan"),
+  DEFAULT_USERNAME: z.string().default("nayankunwar"),
   ROOT_MODE: z.enum(["profile", "landing"]).default("profile"),
   ALLOW_SIGNUP: booleanString.default(false),
   ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().positive().max(365).default(30),
