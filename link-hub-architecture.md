@@ -86,7 +86,7 @@ It is built and used by the owner first, but the schema, authorization model and
 2. **Build the seams, defer the features** — billing, OAuth, custom domains and advanced moderation are not built until explicitly approved.
 3. **Direct links only** — anchors point at the original URL. No shortening, link/redirect slugs, redirect endpoints or QR codes.
 4. **Best-effort, privacy-conscious analytics** — never on the navigation path; no raw IPs.
-5. **Fast public pages** — ISR-cached and tag-revalidated; survive API cold starts.
+5. **Fast public pages** — profile data is cached and tag-revalidated; the route re-renders per request without normally waiting on the API, so it survives API cold starts.
 6. **Simple, type-safe, free-tier friendly** — modular monolith, shared Zod schemas, minimal abstraction.
 
 ### Feature Tier Legend
@@ -175,7 +175,7 @@ Auth.js/NextAuth is **not** used. The Express API is the single identity authori
 
 ```mermaid
 flowchart LR
-    V[Visitor] -->|GET /:username| W[Next.js on Vercel<br/>ISR profile pages]
+    V[Visitor] -->|GET /:username| W[Next.js on Vercel<br/>profile pages, cached data]
     U[Registered user] -->|/dashboard no-store| W
     W -->|rewrite /api/* same-origin| A[Express API<br/>api.nayankunwar.com]
     V -.->|sendBeacon text/plain<br/>POST /api/v1/analytics/clicks| W
@@ -195,7 +195,7 @@ flowchart LR
 | Path | Type | Caching | Tier |
 |---|---|---|---|
 | `/` | Static/ISR | `ROOT_MODE=profile` → renders `DEFAULT_USERNAME` profile; `landing` → marketing page | MVP / Public launch |
-| `/:username` | Dynamic `[username]` ISR | `revalidate=300` + tag `profile:<username>` | MVP |
+| `/:username` | Dynamic `[username]` | Cached fetch (`revalidate=300`) + tag `profile:<username>`; HTML `no-store` | MVP |
 | `/login`, `/signup`, `/verify-email`, `/reset-password`, `/forgot-password`, `/check-inbox` | Static | default | MVP (signup/verify/reset UI: Public launch) |
 | `/restore-account` | Static | default; reads `?token=` client-side | MVP |
 | `/dashboard/**`, `/settings/**` | Dynamic | `no-store`, `dynamic = 'force-dynamic'`; `proxy.ts` redirects when `lh.sid` is absent | MVP |
@@ -269,7 +269,7 @@ link-hub/
 │   ├── web/
 │   │   ├── app/
 │   │   │   ├── page.tsx                 # root (ROOT_MODE)
-│   │   │   ├── [username]/page.tsx      # public profile (ISR)
+│   │   │   ├── [username]/page.tsx      # public profile (cached data, dynamic HTML)
 │   │   │   ├── dashboard/…              # no-store
 │   │   │   ├── settings/…               # no-store
 │   │   │   ├── login/ signup/ verify-email/ reset-password/ forgot-password/ check-inbox/
@@ -1048,13 +1048,13 @@ Order:
 
 ### Acceptance Criteria
 
-- Owner logs in and manages everything; public page at `/nayankunwar` (and `/` in `ROOT_MODE=profile`) serves from ISR during API cold start.
+- Owner logs in and manages everything; public page at `/nayankunwar` (and `/` in `ROOT_MODE=profile`) renders from cached profile data during API cold start.
 - Registered, verified users manage only their own data; all cross-tenant tests pass.
 - Signup is impossible while `ALLOW_SIGNUP=false`.
 - Login/register/forgot/reset reject missing/invalid CSRF or Origin; public profile responses never carry `Set-Cookie`.
 - Unverified/suspended/deleted users are blocked per §7.3.
 - Clicks recorded via beacon without affecting navigation; bots and repeats ignored; `referrer_host` reflects the external source, not the profile page.
-- Revalidation only accepts signed, fresh requests; profile edits become visible within the documented ISR behavior; public pages remain cacheable.
+- Revalidation only accepts signed, fresh requests; profile edits become visible after tag revalidation; the profile data fetch remains cacheable.
 - Public profile responses expose no account internals; CSV exports are formula-safe and contain the five v2 files.
 - Analytics totals and country/device/referrer breakdowns are identical before/after purge and hash clearing; the nightly job is single-run and first-run safe.
 - Account deletion hides the profile immediately, restore works via login or the emailed link during the 30-day grace period, and the purge hard-deletes only expired accounts.
@@ -1066,8 +1066,8 @@ Order:
 
 | Component | Host | Notes |
 |---|---|---|
-| Web | Vercel Hobby (or Cloudflare Pages) | ISR, `/api/*` rewrite, `/internal/revalidate`; Hobby is non-commercial — verify the plan fits a public multi-tenant service |
-| API | Render free | Cold starts ~30–60 s; public pages unaffected (ISR); auth/dashboard requests can exceed the Vercel proxy timeout; upgrade for always-on |
+| Web | Vercel Hobby (or Cloudflare Pages) | Root ISR, cached profile data, `/api/*` rewrite, `/internal/revalidate`; Hobby is non-commercial — verify the plan fits a public multi-tenant service |
+| API | Render free | Cold starts ~30–60 s; repeat profile requests use cached data, but a cache miss waits for the API; auth/dashboard requests can exceed the Vercel proxy timeout; upgrade for always-on |
 | DB | Neon free | Pooled `DATABASE_URL`, `DIRECT_URL` for migrations; PITR window per plan; set a small `connection_limit` so Prisma + sessions do not exhaust connections |
 | Email | Brevo free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
 | Jobs | GitHub Actions schedule | One nightly job (§11.3) at 03:00 UTC; Render's free plan has no cron jobs |
@@ -1075,7 +1075,7 @@ Order:
 
 **Scaling path (Later):** stateless API → multiple instances → Redis for rate limits/sessions → queue for click ingestion → partition `click_events` → custom domains via edge middleware.
 
-**Cold starts and proxy timeouts:** ISR protects public pages, but login/register/dashboard calls go through the Vercel rewrite to Render. A Render free cold start (~30–60 s) can exceed the Vercel proxy/function timeout, so the first auth request after idle may fail. Keep the API warm with a 5-minute uptime ping, move to a paid always-on instance, or implement an explicit retry/loading UX. Do not rely on ISR for authenticated flows.
+**Cold starts and proxy timeouts:** Cached profile data protects repeat public requests, but a cache miss still waits for the API, and login/register/dashboard calls go through the Vercel rewrite to Render. A Render free cold start (~30–60 s) can exceed the Vercel proxy/function timeout, so the first auth request after idle may fail. Keep the API warm with a 5-minute uptime ping, move to a paid always-on instance, or implement an explicit retry/loading UX. Do not rely on the cache for authenticated flows.
 
 **Vendor limits:** Vercel Hobby is intended for personal, non-commercial use; confirm the plan fits a public multi-tenant service. Render's free plan has no cron jobs, so nightly analytics runs in GitHub Actions. Set `connection_limit` on `DATABASE_URL` and a small `pg` pool for `connect-pg-simple` so Prisma + sessions do not exhaust Neon connections.
 
@@ -1083,10 +1083,10 @@ Order:
 
 ### Deployment Checklist (private phase)
 
-- [ ] Neon DB, `citext` extension, `prisma migrate deploy` in release step
-- [ ] Owner seeded (strong password), profile `DEFAULT_USERNAME` published
-- [ ] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET`, `WEB_PROXY_SECRET` ≥ 32 random bytes, distinct
-- [ ] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile`, `ALLOW_DEMO_PREVIEW=false`
+- [x] Neon DB, `citext` extension, `prisma migrate deploy` applied
+- [x] Owner seeded (strong password), profile `DEFAULT_USERNAME` published
+- [x] `SESSION_SECRET`, `REVALIDATE_SECRET`, `ANALYTICS_HASH_SECRET`, `WEB_PROXY_SECRET` ≥ 32 random bytes, distinct
+- [x] `ALLOW_SIGNUP=false`, `ROOT_MODE=profile` during the private phase, `ALLOW_DEMO_PREVIEW=false`
 - [ ] Web rewrite adds `X-Web-Proxy-Secret`; API stores country only when it matches; direct API country spoof is ignored
 - [ ] Account deletion/restore emails delivered; purge job scheduled and tested against a throwaway account; restore link and login both cancel deletion
 - [ ] Export verified as `schemaVersion: 2` with five CSVs and formula-safe cells
@@ -1098,10 +1098,10 @@ Order:
   4. Check logs for `express-rate-limit` validation warnings; fix before proceeding.
   5. Set `DEBUG_IP_ENDPOINT=false` and redeploy.
 - [ ] HTTPS enforced; Secure cookies; session table + `sess->>'userId'` expression index created by migration
-- [ ] Dashboard `no-store` verified; public profile API cache headers verified and ISR fetch sends `X-Internal-Token`
+- [x] Dashboard `no-store` verified; public profile API cache headers verified and the profile fetch sends `X-Internal-Token`
 - [ ] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
 - [ ] Cold-start behavior tested through the Vercel rewrite; keep-warm or paid API decision recorded
-- [ ] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
+- [x] Nightly analytics job scheduled; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
 - [ ] Error tracking and job-failure alerts configured; audit log path documented
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [ ] Logs redact secrets and auth bodies
@@ -1111,26 +1111,27 @@ Order:
 
 ## 18. Private → Public Release
 
-The private phase runs the same code with `ALLOW_SIGNUP=false` and `ROOT_MODE=profile`. Going public is a controlled flip.
+The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=profile` while testing the owner profile at `/`, then switch to `ROOT_MODE=landing` once the marketing page is ready. Going public is a controlled flip.
 
 ### Launch Checklist
 
 - [ ] All **Public launch** items in §2.1 complete and tested
-- [ ] Brevo domain verified (SPF/DKIM/DMARC); verification and reset emails delivered in production (incl. spam-folder check)
+- [x] Brevo domain verified (DKIM/DMARC; SPF optional); verification and reset emails delivered in production (incl. spam-folder check)
 - [ ] Account-status checks verified in production
 - [ ] Rate limits tuned and tested for register/login/forgot/resend/availability/clicks
 - [ ] CSRF/Origin enforced on login/register/forgot/reset; token race tests pass
-- [ ] Public profile DTO, cache headers, and ISR internal token verified
+- [ ] Public profile DTO, cache headers, and profile-fetch internal token verified
 - [ ] ToS and Privacy pages published and linked from signup; self-serve deletion/restore flow documented and tested
 - [ ] Account email change, password change and session revocation tested in production
 - [ ] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
 - [ ] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
-- [ ] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
+- [x] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
 - [ ] Abuse report path live (profile footer link → owner inbox)
-- [ ] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
-- [ ] Owner account migration: confirm `role=owner`, `status=active`, `email_verified_at` set, `plan=free`; data migration script idempotent
+- [x] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
+- [x] Owner account confirmed: `role=owner`, `status=active`, `email_verified_at` set, `plan=free`
+- [ ] Data migration script idempotent
 - [ ] Reserved list reviewed against all current and planned routes
-- [ ] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
+- [x] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
 - [ ] Accessibility: keyboard drag-and-drop, focus states, contrast, avatar alt text checked
 - [ ] Backups: Neon PITR confirmed; manual `pg_dump` taken before flip; restore tested once
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
@@ -1170,12 +1171,12 @@ ALLOW_DEMO_PREVIEW=false                 # true only for the local UI-first demo
 
 # --- Shared (API + Web) ---
 REVALIDATE_SECRET=change-me-32-bytes-min # signs /internal/revalidate, server-only
-INTERNAL_FETCH_TOKEN=change-me-32-bytes-min # exempts ISR/build fetches from the public limiter
+INTERNAL_FETCH_TOKEN=change-me-32-bytes-min # exempts server-side profile/build fetches from the public limiter
 WEB_PROXY_SECRET=change-me-32-bytes-min  # web tier adds X-Web-Proxy-Secret; API trusts country header only with it
 
 # --- Tenancy & features ---
 DEFAULT_USERNAME=nayankunwar
-ROOT_MODE=profile                        # profile | landing
+ROOT_MODE=landing                        # profile | landing
 ALLOW_SIGNUP=false                       # true only at public launch
 ACCOUNT_DELETION_GRACE_DAYS=30           # keep in sync with shared LIMITS.deleteGraceDays
 
@@ -1206,7 +1207,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 1. **Foundation, schema, migrations, owner seed** — monorepo, shared package, full Prisma schema (incl. `verification_tokens`, `accounts`, `sessions`, `click_daily_stats`, `click_daily_breakdowns`, `deletion_scheduled_for`, `pending_email`), composite analytics FKs, analytics indexes, `citext`, `sessions` table + raw SQL expression index, seed, env validation, Express skeleton (request ID, logger, envelope, health/live), Next.js 16 with `/api/*` rewrite.
 2. **Auth, registration infrastructure, session security, tenant isolation** — sessions, argon2id, CSRF/Origin on all non-GET, rate limits (IPv6-normalized), `loadUser` + status checks, register/verify/resend/forgot/reset endpoints behind `ALLOW_SIGNUP`, atomic token consumption, email change (`pending_email` + `email_change` token), password change, session list/revoke, account deletion/restore with 30-day grace, mailer (console + Brevo), `scoped()` repositories, atomic entitlements, cross-tenant test harness.
 3. **Profiles, usernames, links, categories, dashboard** — username validation/availability/rename, profile headline/socials/appearance, link and category CRUD/reorder/status/icon, category description/color/visibility, search/filter, appearance/theme validation, export v2 with five CSVs and formula escaping, dashboard UI (`no-store`), settings UI, signup/verify/reset/check-inbox/restore-account pages.
-4. **Public pages, click analytics, cache revalidation** — `[username]` ISR, `ROOT_MODE`, beacon + `text/plain` endpoint with body referrer, trusted country header, bot filter, dedupe, always-204 handlers, analytics endpoints + breakdowns + Recharts, HMAC `/internal/revalidate`, ISR internal token/cache headers, run-level job lock, watermark backfill, totals → breakdowns → clear hashes → purge → prune, SEO metadata/sitemap/robots.
+4. **Public pages, click analytics, cache revalidation** — `[username]` cached profile data (dynamic HTML), `ROOT_MODE`, beacon + `text/plain` endpoint with body referrer, trusted country header, bot filter, dedupe, always-204 handlers, analytics endpoints + breakdowns + Recharts, HMAC `/internal/revalidate`, profile-fetch internal token/cache headers, run-level job lock, watermark backfill, totals → breakdowns → clear hashes → purge → prune, SEO metadata/sitemap/robots.
 5. **Testing, security review, deployment, public-launch readiness** — full test matrix (§16), Playwright E2E, accessibility check, security review, error tracking/audit, staging deploy, production deploy (private), ToS/Privacy, landing page, abuse report path, deletion/restore and email-change verification, launch checklist (§18).
 
 ---
@@ -1294,4 +1295,4 @@ The production web app lives in `apps/web`; `link-hub-ui/` is the visual referen
 - Mock auth accepts any email/password except `wrong`; signup is enabled by default through `NEXT_PUBLIC_ALLOW_SIGNUP`; the demo cookie is `lh.sid=demo-preview`.
 - `proxy.ts` guards `/dashboard/**` and `/settings/**` by cookie presence only; the API remains the identity authority.
 - Design language: Inter, violet primary (`#7c3aed`), rounded 2xl cards, soft violet surfaces, focus rings, `aria-live` status text, labelled controls, keyboard reorder and dialog focus management.
-- API wiring: replace `useMockData` reads with server queries/DTOs, keep the shared Zod schemas as the single validation contract, move export generation to `/export`, switch the public page to ISR, and remove the mock cookie/`/preview` before public launch.
+- API wiring: replace `useMockData` reads with server queries/DTOs, keep the shared Zod schemas as the single validation contract, move export generation to `/export`, switch the public page to cached server-side data (ISR HTML optional), and remove the mock cookie/`/preview` before public launch.

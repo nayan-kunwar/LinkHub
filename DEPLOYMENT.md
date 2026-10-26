@@ -127,7 +127,11 @@ Vercel proxy timeout. Options:
   the pings do not keep Neon awake and consume its free compute hours.
 - Upgrade the Render service to an always-on paid instance later.
 
-Public profile pages are cached, but a cache miss still waits for the API.
+Profile **data** is cached in Next's Data Cache for 300 seconds and is
+invalidated by the `profile:<username>` tag. Profile **HTML** is rendered per
+request (`Cache-Control: no-store`) and is not served from Vercel's HTML cache.
+Because the data fetch is cached, a profile request does not normally hit the
+API.
 
 ### Migrations
 
@@ -231,7 +235,7 @@ domain).
 | `NEXT_PUBLIC_APP_URL` | `https://link.nayankunwar.com` |
 | `NEXT_PUBLIC_ALLOW_SIGNUP` | `false` |
 | `ALLOW_DEMO_PREVIEW` | `false` |
-| `ROOT_MODE` | `profile` (use `landing` for the marketing page at `/`) |
+| `ROOT_MODE` | `landing` (marketing page at `/`; owner profile stays at `/nayankunwar`). Use `profile` only if `/` should serve the owner profile. |
 | `DEFAULT_USERNAME` | `nayankunwar` |
 | `REVALIDATE_SECRET` | same value as Render |
 | `INTERNAL_FETCH_TOKEN` | same value as Render |
@@ -257,14 +261,15 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 
 ## 6. Production smoke test
 
-1. `https://link.nayankunwar.com` loads the owner profile. The first request
-   after Render has been idle may take 30–60 seconds while the free instance
-   wakes.
+1. `https://link.nayankunwar.com` loads the marketing page; the owner profile
+   is at `/nayankunwar`. The first API-backed request after Render has been
+   idle may take 30–60 seconds while the free instance wakes.
 2. `/login` signs in as the seeded owner; the session cookie is
    `__Host-lh.sid` and `Secure`.
 3. Create a link, toggle it inactive, delete it.
-4. Rename the profile and confirm the public page updates immediately (ISR
-   revalidation).
+4. Rename the profile and confirm the public page updates immediately (the
+   `profile:<username>` tag is revalidated and the route re-renders with fresh
+   data).
 5. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
    reset.
 6. Open a public link and check `/dashboard/analytics` for the click.
