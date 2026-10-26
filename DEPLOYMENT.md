@@ -49,8 +49,9 @@ DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require&pgbouncer=true&co
 DIRECT_URL=postgresql://.../neondb?sslmode=require
 ```
 
-4. Apply migrations and seed the owner from your machine. Put the production
-   values in a gitignored `.env.deploy.local` first, then run:
+4. Apply migrations and seed the owner from your machine. Copy
+   `.env.deploy.example` to `.env.deploy.local` (gitignored), fill in the Neon
+   URLs and secrets, then run:
 
 ```bash
 # Load the production values into the current shell.
