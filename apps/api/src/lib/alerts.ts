@@ -1,4 +1,8 @@
 import { env } from "../config/env";
+import {
+  buildServerErrorAlert,
+  type ServerErrorAlert,
+} from "./alert-format";
 import { prisma } from "./db";
 import { logger } from "./logger";
 import { sendMail } from "./mailer";
@@ -23,16 +27,6 @@ async function ownerEmails(): Promise<string[]> {
   return emails;
 }
 
-export interface ServerErrorAlert {
-  requestId?: string;
-  method: string;
-  path: string;
-  status: number;
-  code: string;
-  userId?: string;
-  error: unknown;
-}
-
 /**
  * Send a throttled email when an API request fails with 5xx. The message
  * intentionally excludes the error text, stack, request body, and IP address;
@@ -54,25 +48,9 @@ export function notifyServerError(input: ServerErrorAlert): void {
       const recipients = await ownerEmails();
       if (recipients.length === 0) return;
 
-      const errorName = input.error instanceof Error ? input.error.name : "UnknownError";
-      const subject = `[Link Hub] API ${input.status} on ${input.path}`;
-      const text = [
-        `An API request failed at ${new Date().toISOString()}.`,
-        "",
-        `Request ID: ${input.requestId ?? "unknown"}`,
-        `Method: ${input.method}`,
-        `Path: ${input.path}`,
-        `Status: ${input.status}`,
-        `Code: ${input.code}`,
-        `Error: ${errorName}`,
-        ...(input.userId ? [`User ID: ${input.userId}`] : []),
-        "",
-        "Search the Render service logs for the request ID to see the stack trace.",
-        "Alerts are throttled to one per 15 minutes per API instance.",
-      ].join("\n");
-
+      const message = buildServerErrorAlert(input);
       const results = await Promise.allSettled(
-        recipients.map((to) => sendMail({ to, subject, text })),
+        recipients.map((to) => sendMail({ to, ...message })),
       );
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length === results.length) {
