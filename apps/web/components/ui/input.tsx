@@ -7,7 +7,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
       ref={ref}
       type={type}
       className={cn(
-        "h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 shadow-[0_1px_1px_rgba(24,24,27,0.02)] outline-none transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-500 aria-[invalid=true]:border-red-600 aria-[invalid=true]:focus:ring-red-100",
+        "h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 shadow-[0_1px_1px_rgba(24,24,27,0.02)] outline-none transition placeholder:text-zinc-500 hover:border-zinc-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-500 aria-[invalid=true]:border-red-600 aria-[invalid=true]:focus:ring-red-100",
         className,
       )}
       {...props}
@@ -21,7 +21,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttribu
     <textarea
       ref={ref}
       className={cn(
-        "min-h-24 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-zinc-50 aria-[invalid=true]:border-red-600 aria-[invalid=true]:focus:ring-red-100",
+        "min-h-24 w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-500 hover:border-zinc-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-zinc-50 aria-[invalid=true]:border-red-600 aria-[invalid=true]:focus:ring-red-100",
         className,
       )}
       {...props}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RESERVED_USERNAMES } from "@linkhub/shared";
 import { updateLinkApiSchema } from "../modules/links/links.schema";
 import { updateCategoryApiSchema } from "../modules/categories/categories.schema";
 import {
@@ -69,6 +70,54 @@ describe("API username validation", () => {
     expect(apiUsernameSchema.safeParse("-nayan").success).toBe(false);
     expect(apiUsernameSchema.safeParse("nayan-").success).toBe(false);
     expect(apiUsernameSchema.safeParse("nayan_kunwar").success).toBe(false);
+  });
+});
+
+describe("reserved username coverage", () => {
+  it("covers current and planned top-level routes", () => {
+    const routes = [
+      "api",
+      "dashboard",
+      "login",
+      "signin",
+      "sign-in",
+      "signup",
+      "sign-up",
+      "signout",
+      "sign-out",
+      "forgot-password",
+      "reset-password",
+      "verify-email",
+      "check-inbox",
+      "restore-account",
+      "delete-account",
+      "settings",
+      "account",
+      "internal",
+      "health",
+      "terms",
+      "privacy",
+      "contact",
+      "preview",
+      "sitemap.xml",
+      "robots.txt",
+      "billing",
+      "checkout",
+      "upgrade",
+      "plans",
+      "moderation",
+      "status",
+      "pricing",
+      "docs",
+      "blog",
+      "about",
+      "help",
+      "support",
+    ];
+
+    for (const route of routes) {
+      expect(RESERVED_USERNAMES).toContain(route);
+    }
   });
 });
 

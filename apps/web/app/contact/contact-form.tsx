@@ -145,6 +145,8 @@ export function ContactForm({
           id="contact-topic"
           value={topic}
           onChange={(event) => setTopic(event.target.value as ContactTopic)}
+          aria-invalid={errors.topic ? true : undefined}
+          aria-describedby={errors.topic ? "contact-topic-error" : undefined}
         >
           {TOPIC_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -152,7 +154,7 @@ export function ContactForm({
             </option>
           ))}
         </Select>
-        <FieldError>{errors.topic}</FieldError>
+        <FieldError id="contact-topic-error">{errors.topic}</FieldError>
       </div>
 
       <div>

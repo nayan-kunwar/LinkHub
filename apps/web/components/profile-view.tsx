@@ -226,7 +226,10 @@ export function ProfileView({
         )}
         style={{ color: theme.muted }}
       >
-        <Link href="/" className="transition hover:underline">
+        <Link
+          href="/"
+          className="rounded transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+        >
           Made with Link Hub
         </Link>
         {isPage ? (
@@ -234,7 +237,7 @@ export function ProfileView({
             <span aria-hidden="true">·</span>
             <Link
               href={`/contact?topic=abuse&username=${encodeURIComponent(profile.username)}`}
-              className="transition hover:underline"
+              className="rounded transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
             >
               Report this page
             </Link>

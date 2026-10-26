@@ -31,7 +31,10 @@ export function Logo({
     </>
   );
 
-  const classes = cn("inline-flex items-center gap-2 text-xl font-extrabold text-zinc-900", className);
+  const classes = cn(
+    "inline-flex items-center gap-2 rounded text-xl font-extrabold text-zinc-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200",
+    className,
+  );
   if (!href) return <span className={classes}>{content}</span>;
   return (
     <Link href={href} className={classes} aria-label="Link Hub home">

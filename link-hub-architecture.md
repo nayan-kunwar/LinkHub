@@ -1128,13 +1128,13 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Export `schemaVersion: 2` with five CSVs verified; formula-injection cells escaped
 - [x] Analytics country/device/referrer breakdowns match raw totals; `WEB_PROXY_SECRET` country trust verified
 - [x] `ALLOW_DEMO_PREVIEW=false` and `/preview` returns 404 in production
-- [ ] Abuse report path live (profile footer link → owner inbox)
+- [x] Abuse report path live (profile footer link → `/contact` → owner inbox; live API accepted the report and returned 200, CSRF/rewrite/rate limit verified)
 - [x] Landing page ready; set `ROOT_MODE=landing` and redeploy (build-time env); owner profile still at `/nayankunwar`
 - [x] Owner account confirmed: `role=owner`, `status=active`, `email_verified_at` set, `plan=free`
-- [ ] Data migration script idempotent
-- [ ] Reserved list reviewed against all current and planned routes
+- [x] Data migration idempotent (reviewed: `prisma/seed.ts` updates an existing owner in place and creates the profile only when missing; Prisma migrations are tracked/forward-only, and no separate one-off data backfill is required for this schema)
+- [x] Reserved list reviewed against all current and planned routes (current web/API paths, Next metadata files, auth aliases, billing/admin placeholders; regression test added)
 - [x] SEO: profile metadata/canonical/OG, `sitemap.xml`, `robots.txt` verified
-- [ ] Accessibility: keyboard drag-and-drop, focus states, contrast, avatar alt text checked
+- [x] Accessibility: keyboard drag-and-drop (ArrowUp/Down + live region + focus restore), focus rings, contrast (placeholders raised to zinc-500), and decorative avatar alt text reviewed; a manual screen-reader pass is still recommended before public signup
 - [ ] Backups: Neon PITR confirmed; manual `pg_dump` taken before flip; restore tested once
 - [ ] Monitoring: uptime on `/api/v1/health`, error tracking, job alerts, audit log, log review
 - [ ] Load/quota check: Neon storage & compute hours, Vercel bandwidth/ISR, Render hours, Brevo daily limit (300/day free) — confirm headroom
