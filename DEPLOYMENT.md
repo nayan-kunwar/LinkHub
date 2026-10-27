@@ -158,7 +158,9 @@ The free plan has no pre-deploy command, so this is a manual step.
 
 The workflow is `.github/workflows/analytics-nightly.yml`. A free
 **cron-job.org** job dispatches it every day at **03:17 UTC**; it can also be
-started manually from **Actions → Nightly analytics → Run workflow**.
+started manually from **Actions → Nightly analytics → Run workflow**. See
+[`docs/nightly-analytics-trigger.md`](docs/nightly-analytics-trigger.md) for the
+2026-10-27 trigger migration, verification evidence and PAT rotation.
 
 cron-job.org request:
 
@@ -171,10 +173,11 @@ cron-job.org request:
   `Content-Type: application/json`
 - Body: `{"ref":"main"}`
 
-A successful dispatch returns **204 No Content**. The PAT is fine-grained,
-scoped to this repository only, granted **Actions: Read and write**, and set to
-expire; store it only in cron-job.org and rotate it before expiry. Never commit
-it or paste it into an issue.
+A successful dispatch returns **204 No Content** or **200 OK** (GitHub has
+returned both). The PAT is fine-grained, scoped to this repository only,
+granted **Actions: Read and write**, and set to expire; store it only in
+cron-job.org and rotate it before expiry. Never commit it or paste it into an
+issue.
 
 GitHub's own `schedule` trigger is deliberately not used. On 2026-10-27 the
 03:00 UTC run never appeared (zero `schedule`-triggered runs through 04:20 UTC)
@@ -198,8 +201,9 @@ cannot: the job never started. If a run fails, the workflow opens or comments
 on a GitHub issue labeled `nightly-failure` with the run URL and commit SHA;
 cron-job.org also emails when the dispatch itself returns non-2xx.
 
-Verified 2026-10-27 with manual run `40463090302`: the job and `Ping heartbeat`
-steps succeeded and the failure step was skipped.
+Verified 2026-10-27 with manual run `40463090302` and cron-job.org test run
+`40467931426`: the job and `Ping heartbeat` steps succeeded and the failure
+step was skipped. The first automatic run is expected 2026-10-28 at 03:17 UTC.
 
 Recovery:
 
