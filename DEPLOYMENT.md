@@ -119,8 +119,11 @@ curl -fsS https://linkhub-api-yphe.onrender.com/api/v1/health/live
 ### Free-plan cold starts
 
 Free instances sleep after 15 minutes of inactivity and take roughly 30–60
-seconds to wake. The first login or dashboard request after idle can exceed the
-Vercel proxy timeout. Options:
+seconds to wake. Measured 2026-10-27: with both uptime monitors paused for about
+20 minutes, the first `GET /api/v1/health` through the Vercel rewrite took
+**57.1 s** and returned `200`; the next requests took 0.72 s (readiness) and
+0.37 s (liveness). A cold first login or dashboard request can therefore still
+exceed the Vercel proxy timeout. Options:
 
 - Add a free UptimeRobot monitor (or similar) pinging
   `https://linkhub-api-yphe.onrender.com/api/v1/health/live` every 5 minutes.
@@ -170,11 +173,14 @@ the Render service log; rerunning is safe.
 
 ### Monitoring and alerts
 
-- **Uptime:** UptimeRobot Free checks
-  `https://linkhub-api-yphe.onrender.com/api/v1/health/live` every 5 minutes to
-  keep the free instance warm. Add a second monitor for
+- **Uptime:** UptimeRobot Free runs two monitors.
+  `https://linkhub-api-yphe.onrender.com/api/v1/health/live` is checked every
+  5 minutes to keep the free instance warm; it does not query Postgres.
   `https://linkhub-api-yphe.onrender.com/api/v1/health` (readiness; checks
-  Postgres) so a database outage alerts you. The free plan allows 50 monitors.
+  Postgres) is checked every 30 minutes so a database outage alerts you. Do not
+  check readiness every 5 minutes: each check wakes Neon, and a 5-minute
+  interval would use roughly 182 CU-hours/month at 0.25 CU, exceeding the
+  100 CU-hour Free allowance. The free plan allows 50 monitors.
 - **API errors:** any 5xx sends a throttled email to active owner accounts (at
   most one per 15 minutes per API instance). The email contains the request ID,
   method, path, status, code, error name and user ID. It never contains request
@@ -199,13 +205,17 @@ the Render service log; rerunning is safe.
 | Vercel Hobby | 100 GB fast data transfer; 1M function invocations; 4 CPU-hours; 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 seconds. Hobby is non-commercial only; a public multi-tenant launch may require Pro or another host. |
 | Neon Free | 100 CU-hours/project/month; 1 GB storage; 6-hour history; one manual snapshot; no full PITR | Database is 8.7 MB. If revalidation or API traffic keeps compute awake, 100 CU-hours can run out before month-end. Monitor **Usage** in the Neon console. |
 | Brevo Free | 300 emails/day | Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
-| UptimeRobot Free | 50 monitors; 5-minute interval | One liveness monitor is active; add readiness. |
+| UptimeRobot Free | 50 monitors; 5-minute interval | Liveness `/health/live` every 5 minutes and readiness `/health` every 30 minutes are active. |
 | GitHub Actions | 2,000 minutes/month for private repos | Nightly job uses about 30 minutes/month. |
 
 The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
 8 links, 5 categories, 5 click events, 1 session and 5 verification tokens.
 Render, Vercel and Brevo dashboard usage still needs an owner review because
 those accounts have no API token configured here.
+
+A fresh logical dump was taken 2026-10-27 (`36,396` bytes, all 12 tables,
+verified with `pg_restore --list`) and stored off-machine with a metadata
+sidecar. See **Logical backups** below.
 
 > **Decision 2026-10-27:** stay private on the free tiers and keep
 > `ALLOW_SIGNUP=false` while the cold-start, recovery and vendor-policy items
@@ -214,6 +224,30 @@ those accounts have no API token configured here.
 > piece to a paid or commercial-friendly tier. Render free is documented as not
 > for production, Vercel Hobby is non-commercial only, and Neon Free has no full
 > PITR.
+
+### Logical backups (Neon Free has no full PITR)
+
+Neon Free provides only a 6-hour history window and one manual snapshot. Keep a
+current `pg_dump --format=custom` copy outside this repository and off the
+machine (for example the owner's cloud drive):
+
+```bash
+set -a; source .env.deploy.local; set +a
+mkdir -p "$HOME/LinkHub Backups"
+docker run --rm -e PGURL="$DIRECT_URL" postgres:18-alpine \
+  sh -c 'pg_dump --format=custom --no-owner --no-privileges --dbname="$PGURL"' \
+  > "$HOME/LinkHub Backups/linkhub-$(date -u +%Y%m%dT%H%M%SZ).dump"
+```
+
+Verify each dump before relying on it:
+
+```bash
+docker run --rm -i postgres:18-alpine pg_restore --list < path/to/linkhub-*.dump | head
+```
+
+Record the date, byte size and SHA-256 in the owner's local backup log; never
+commit the dump. Take a fresh dump before migrations and before the public flip,
+and test a restore into a throwaway database periodically.
 
 ### Optional: API custom domain
 
