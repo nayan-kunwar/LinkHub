@@ -123,7 +123,12 @@ seconds to wake. Measured 2026-10-27: with both uptime monitors paused for about
 20 minutes, the first `GET /api/v1/health` through the Vercel rewrite took
 **57.1 s** and returned `200`; the next requests took 0.72 s (readiness) and
 0.37 s (liveness). A cold first login or dashboard request can therefore still
-exceed the Vercel proxy timeout. Options:
+exceed the Vercel proxy timeout.
+
+Keep-warm verified 2026-10-27: after the cold-start test, the API was left
+alone from 02:27 UTC. At 02:46 UTC `uptime` was **1,356 s** and the response
+took 1.60 s, so the instance never slept — the 5-minute liveness monitor is
+active. Options:
 
 - Add a free UptimeRobot monitor (or similar) pinging
   `https://linkhub-api-yphe.onrender.com/api/v1/health/live` every 5 minutes.
