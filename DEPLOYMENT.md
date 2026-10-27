@@ -198,6 +198,9 @@ cannot: the job never started. If a run fails, the workflow opens or comments
 on a GitHub issue labeled `nightly-failure` with the run URL and commit SHA;
 cron-job.org also emails when the dispatch itself returns non-2xx.
 
+Verified 2026-10-27 with manual run `40463090302`: the job and `Ping heartbeat`
+steps succeeded and the failure step was skipped.
+
 Recovery:
 
 ```bash
