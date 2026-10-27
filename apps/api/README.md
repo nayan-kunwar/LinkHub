@@ -147,8 +147,9 @@ service in Singapore on Render's free plan with health check
 The free plan does not support `preDeployCommand` or cron jobs:
 
 - Run `pnpm db:deploy` manually before deploying schema-dependent changes.
-- Nightly analytics runs from `.github/workflows/analytics-nightly.yml` at
-  03:00 UTC. It takes a PostgreSQL advisory lock, so overlapping runs are safe.
+- Nightly analytics runs from `.github/workflows/analytics-nightly.yml`,
+  dispatched by cron-job.org every day at 03:17 UTC. It takes a PostgreSQL
+  advisory lock, so overlapping runs are safe.
 
 Set `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) from Neon, keep the web
 and API `APP_URL` values aligned, and set `TRUST_PROXY` to the real proxy hop

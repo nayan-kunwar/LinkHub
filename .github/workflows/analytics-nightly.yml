@@ -1,8 +1,9 @@
 name: Nightly analytics
 
 on:
-  schedule:
-    - cron: "0 3 * * *"
+  # Primary trigger: a free cron-job.org job dispatches this workflow daily at
+  # 03:17 UTC. GitHub's schedule trigger is best-effort and silently dropped the
+  # 2026-10-27 03:00 UTC run, so it is intentionally not used. See DEPLOYMENT.md.
   workflow_dispatch:
 
 permissions:
@@ -40,6 +41,20 @@ jobs:
           # signing, proxy, or analytics secrets to a scheduled workflow.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+      # Success-only dead-man's switch. If the job fails, this step is skipped
+      # and Healthchecks alerts in addition to the GitHub issue below. A failed
+      # ping must not mark an otherwise successful job as failed; the missing
+      # ping is itself the alert.
+      - name: Ping heartbeat
+        if: success()
+        continue-on-error: true
+        env:
+          HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
+        run: |
+          curl -fsS -m 10 --retry 3 -o /dev/null \
+            --data "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$HEARTBEAT_URL"
 
       - name: Open or update a failure issue
         if: failure()

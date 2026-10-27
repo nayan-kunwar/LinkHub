@@ -6,7 +6,7 @@ Production topology:
 |---|---|---|
 | Web (Next.js) | Vercel | `https://link.nayankunwar.com` |
 | API (Express) | Render | `https://linkhub-api-yphe.onrender.com` (or a custom API domain) |
-| Nightly analytics | GitHub Actions | 03:00 UTC |
+| Nightly analytics | cron-job.org → GitHub Actions | 03:17 UTC |
 | PostgreSQL | Neon | Singapore region |
 | Email | Brevo | `no-reply@nayankunwar.com` |
 
@@ -83,7 +83,7 @@ psql "$DIRECT_URL" -c "select username, is_published from profiles;"
 
 The repository contains `render.yaml` for the API web service. The free plan
 does not support `preDeployCommand` or cron jobs, so migrations are run manually
-and the nightly analytics job runs from GitHub Actions.
+and the nightly analytics job runs in GitHub Actions, dispatched by cron-job.org.
 
 1. In Render: **New → Blueprint**, connect the GitHub repository, and apply
    `render.yaml`.
@@ -156,25 +156,57 @@ The free plan has no pre-deploy command, so this is a manual step.
 
 ### Nightly analytics
 
-The workflow is `.github/workflows/analytics-nightly.yml`. It runs at **03:00
-UTC** daily and can be started manually from **Actions → Nightly analytics →
-Run workflow**.
+The workflow is `.github/workflows/analytics-nightly.yml`. A free
+**cron-job.org** job dispatches it every day at **03:17 UTC**; it can also be
+started manually from **Actions → Nightly analytics → Run workflow**.
 
-Add only these two repository secrets under **Settings → Secrets and variables
-→ Actions**:
+cron-job.org request:
+
+- URL:
+  `https://api.github.com/repos/nayan-kunwar/LinkHub/actions/workflows/396782571/dispatches`
+- Method: `POST`
+- Headers: `Accept: application/vnd.github+json`,
+  `Authorization: Bearer <fine-grained PAT>`,
+  `X-GitHub-Api-Version: 2026-03-10`,
+  `Content-Type: application/json`
+- Body: `{"ref":"main"}`
+
+A successful dispatch returns **204 No Content**. The PAT is fine-grained,
+scoped to this repository only, granted **Actions: Read and write**, and set to
+expire; store it only in cron-job.org and rotate it before expiry. Never commit
+it or paste it into an issue.
+
+GitHub's own `schedule` trigger is deliberately not used. On 2026-10-27 the
+03:00 UTC run never appeared (zero `schedule`-triggered runs through 04:20 UTC)
+while GitHub reported Actions operational; GitHub schedules are best-effort and
+can be delayed or dropped. The job is idempotent and takes an advisory lock, so
+a manual rerun is always safe.
+
+Add only these repository secrets under **Settings → Secrets and variables →
+Actions**:
 
 - `DATABASE_URL`
 - `DIRECT_URL`
+- `HEARTBEAT_URL` — Healthchecks.io ping URL for the dead-man's switch
 
 The workflow deliberately receives no signing, proxy, or analytics secrets.
-The job takes a PostgreSQL advisory lock, so overlapping runs are safe.
-Scheduled runs can be delayed during high load. GitHub only disables schedules
-after 60 days without repository activity in public repositories; this one is
-private, but re-enable the workflow if GitHub ever warns you.
 
-If a run fails, the workflow opens or comments on a GitHub issue labeled
-`nightly-failure` with the run URL and commit SHA. Check the job log first, then
-the Render service log; rerunning is safe.
+On success the workflow pings Healthchecks.io (`LinkHub nightly analytics`,
+daily at 03:17 UTC, 2-hour grace). If no ping arrives by about **05:17 UTC**,
+Healthchecks emails the owner. This catches the failure mode a GitHub issue
+cannot: the job never started. If a run fails, the workflow opens or comments
+on a GitHub issue labeled `nightly-failure` with the run URL and commit SHA;
+cron-job.org also emails when the dispatch itself returns non-2xx.
+
+Recovery:
+
+```bash
+gh workflow run analytics-nightly.yml -R nayan-kunwar/LinkHub
+```
+
+Check the job log first, then the Render service log; rerunning is safe. If
+cron-job.org reports a failure, check the PAT expiry and GitHub status, then
+dispatch manually.
 
 ### Monitoring and alerts
 
@@ -192,7 +224,9 @@ the Render service log; rerunning is safe.
   bodies, IP addresses, stack traces, tokens or email addresses. Look up the
   request ID in Render logs for the redacted stack.
 - **Nightly job:** a failed run opens or updates a `nightly-failure` GitHub
-  issue.
+  issue. A success-only ping to Healthchecks.io is the dead-man's switch: the
+  check alerts if no successful run is recorded by about 05:17 UTC, which also
+  catches a dropped trigger. cron-job.org emails on dispatch failures (non-2xx).
 - **Audit log:** security-relevant actions emit Pino lines with `"audit": true`
   (registration, login/logout, email verification/change, password change/reset,
   session revocation, deletion scheduled/cancelled/restored/purged, profile
@@ -212,6 +246,8 @@ the Render service log; rerunning is safe.
 | Brevo Free | 300 emails/day | Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
 | UptimeRobot Free | 50 monitors; 5-minute interval | Liveness `/health/live` every 5 minutes and readiness `/health` every 30 minutes are active. |
 | GitHub Actions | 2,000 minutes/month for private repos | Nightly job uses about 30 minutes/month. |
+| cron-job.org | Free; up to 60 executions/hour; 30 s request timeout | One dispatch per day at 03:17 UTC. The dispatch returns 204 immediately, so the timeout is not on the job's runtime. |
+| Healthchecks.io | Hobbyist: 20 checks; 100 log entries per check | One check for the nightly job. A daily ping keeps roughly three months of history. |
 
 The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
 8 links, 5 categories, 5 click events, 1 session and 5 verification tokens.
@@ -373,8 +409,9 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
    manager. A password change revokes every other session.
 
 Run the nightly job once from **GitHub → Actions → Nightly analytics → Run
-workflow** and confirm it exits successfully. A failed run should create or
-update a `nightly-failure` issue.
+workflow** and confirm it exits successfully, the `Ping heartbeat` step passes,
+and Healthchecks.io records the ping. A failed run should create or update a
+`nightly-failure` issue.
 
 ---
 
