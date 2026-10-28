@@ -91,7 +91,7 @@ It is built and used by the owner first, but the schema, authorization model and
 **Principles**
 
 1. **Tenant isolation is non-negotiable** — every owned row has `user_id`; every owned query is scoped in the repository layer; the client never supplies `user_id`.
-2. **Build the seams, defer the features** — billing, OAuth, custom domains and advanced moderation are not built until explicitly approved.
+2. **Build the seams, defer the features** — billing, OAuth providers beyond Google sign-in, custom domains and advanced moderation are not built until explicitly approved.
 3. **Direct links only** — anchors point at the original URL. No shortening, link/redirect slugs, redirect endpoints or QR codes.
 4. **Best-effort, privacy-conscious analytics** — never on the navigation path; no raw IPs.
 5. **Fast public pages** — profile data is cached and tag-revalidated; the route re-renders per request without normally waiting on the API, so it survives API cold starts.
@@ -141,7 +141,8 @@ It is built and used by the owner first, but the schema, authorization model and
 | ToS / Privacy pages, basic abuse report (email/form) | Public launch | |
 | Landing page | Public launch | |
 | Billing / paid plans | Later | Entitlements seam exists |
-| OAuth (Google/GitHub) | Later | `accounts` table exists |
+| Google sign-in (existing accounts) | Built, dark by default | GIS ID-token flow; explicit Settings linking; no Google signup or email auto-link |
+| OAuth (GitHub and other providers) | Later | `accounts` table supports provider rows |
 | Custom domains | Later | `custom_domains` table not migrated |
 | Advanced moderation / admin console | Later | `role=admin` reserved |
 | Safe Browsing URL screening | Later | |
@@ -384,7 +385,7 @@ Conventions: UUID PKs, `TIMESTAMPTZ`, snake_case, `created_at`/`updated_at`, sof
 ```mermaid
 erDiagram
     users ||--o| profiles : has
-    users ||--o{ accounts : "auth providers (Later)"
+    users ||--o{ accounts : "linked Google identity"
     users ||--o{ sessions : "via sess.userId"
     users ||--o{ verification_tokens : has
     users ||--o{ categories : owns
@@ -498,7 +499,7 @@ erDiagram
 
 ### 8.2 Indexes
 
-`links(user_id, sort_order)`, `links(user_id, category_id)`, `links(user_id, deleted_at)`, `categories(user_id, sort_order)`, `categories(user_id, deleted_at)`, `click_events(link_id, clicked_at)`, `click_events(user_id, clicked_at)`, `click_events(clicked_at)` (nightly rollup and hash clearing), partial `click_events(clicked_at) WHERE visitor_hash IS NOT NULL` (hash clearing), `click_daily_stats(user_id, day)`, `click_daily_breakdowns(user_id, day)`, unique `profiles(username)` (citext), unique `profiles(user_id)`, unique `users(email)`, unique `accounts(provider, provider_account_id)`, unique `verification_tokens(token_hash)`, `verification_tokens(user_id, type)`, `verification_tokens(expires_at)` (prune), `sessions(expire)`, partial `users(deletion_scheduled_for) WHERE deletion_scheduled_for IS NOT NULL` (purge scan), and the required expression index `sessions((sess->>'userId'))` via raw SQL migration for "log out everywhere". Add partial indexes for soft-delete scans (`links`, `categories`, `users` `WHERE deleted_at IS NULL`) in the same raw SQL migration; Prisma does not express partial indexes. A unique partial index on `users(pending_email) WHERE pending_email IS NOT NULL` prevents two accounts claiming the same pending address; the service still returns a generic conflict to avoid enumeration.
+`links(user_id, sort_order)`, `links(user_id, category_id)`, `links(user_id, deleted_at)`, `categories(user_id, sort_order)`, `categories(user_id, deleted_at)`, `click_events(link_id, clicked_at)`, `click_events(user_id, clicked_at)`, `click_events(clicked_at)` (nightly rollup and hash clearing), partial `click_events(clicked_at) WHERE visitor_hash IS NOT NULL` (hash clearing), `click_daily_stats(user_id, day)`, `click_daily_breakdowns(user_id, day)`, unique `profiles(username)` (citext), unique `profiles(user_id)`, unique `users(email)`, unique `accounts(provider, provider_account_id)`, unique `accounts(user_id, provider)`, unique `verification_tokens(token_hash)`, `verification_tokens(user_id, type)`, `verification_tokens(expires_at)` (prune), `sessions(expire)`, partial `users(deletion_scheduled_for) WHERE deletion_scheduled_for IS NOT NULL` (purge scan), and the required expression index `sessions((sess->>'userId'))` via raw SQL migration for "log out everywhere". Add partial indexes for soft-delete scans (`links`, `categories`, `users` `WHERE deleted_at IS NULL`) in the same raw SQL migration; Prisma does not express partial indexes. A unique partial index on `users(pending_email) WHERE pending_email IS NOT NULL` prevents two accounts claiming the same pending address; the service still returns a generic conflict to avoid enumeration.
 
 ### 8.3 Prisma Schema (core)
 
@@ -560,13 +561,14 @@ model User {
   @@map("users")
 }
 
-model Account {            // Later: OAuth. Table exists, unused in MVP.
+model Account {            // linked external identities; Google sign-in uses provider='google'
   id                String @id @default(uuid()) @db.Uuid
   userId            String @map("user_id") @db.Uuid
   provider          String
   providerAccountId String @map("provider_account_id")
   user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
   @@map("accounts")
 }
 
@@ -742,7 +744,10 @@ model ClickDailyBreakdown {
 | Session management | `GET /account/sessions` lists the current user's sessions from `sess` metadata; `DELETE /account/sessions/:sid` revokes one (non-current) session; `DELETE /account/sessions` revokes all others. Non-owned/non-existent SIDs → 404. | MVP |
 | Account deletion & restore | `DELETE /account` requires the current password and the exact username, sets `deletion_scheduled_for = now() + 30 days`, unpublishes the profile, revokes all other sessions and emails a restore link (`account_restore` token, 30-day window). `POST /account/restore` consumes the token and clears the schedule; a successful login also clears it. Restoring does not republish. The nightly prune hard-deletes expired accounts. | MVP |
 | Email transport | Brevo in prod (`EMAIL_PROVIDER=brevo`), console logger in dev/test; outbound timeout + retry/log; verification/reset/restore pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
-| OAuth | `accounts` table reserved | Later |
+| Google sign-in | Optional GIS ID-token flow for **existing** accounts. The API verifies the RS256 JWT with Google JWKS (issuer allowlist, exact `aud`, 15-minute max age, `email_verified=true`, optional `azp`). Login resolves only `accounts(provider='google', provider_account_id=sub)`; it never queries `users.email`, auto-links or creates a user. Linking is an explicit Settings action for an active, verified account; unlink is blocked when `password_hash` is null. Only the Google `sub` is stored. Disabled when `GOOGLE_CLIENT_ID` is unset. | Built, dark by default |
+| OAuth (GitHub and other providers) | `accounts` table supports additional providers; no implementation yet | Later |
+
+**Google sign-in details:** `POST /auth/google` shares the password-login completion path (session regeneration, audit, scheduled-deletion restore, CSRF rotation, `no-store`). `POST /auth/google/link` and `DELETE /auth/google` require an active session. The unique indexes `accounts(provider, provider_account_id)` and `accounts(user_id, provider)` prevent one Google subject from being linked to two users and one user from linking two Google accounts. Error codes are `GOOGLE_SIGN_IN_DISABLED` (503), `GOOGLE_TOKEN_INVALID` (401), `GOOGLE_EMAIL_UNVERIFIED`/`GOOGLE_NOT_LINKED` (403), and `GOOGLE_ALREADY_LINKED`/`LAST_SIGN_IN_METHOD` (409). The Google credential is redacted from logs and never persisted. CSP allows only the GIS script/style/frame/connect origins; COOP is `same-origin-allow-popups`. See [`docs/google-sign-in.md`](docs/google-sign-in.md).
 
 ---
 
@@ -758,6 +763,9 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 |---|---|---|---|
 | GET | `/auth/csrf` | – | MVP |
 | POST | `/auth/login` | – | MVP |
+| POST | `/auth/google` `{ credential, remember? }` | – (Google env) | Built, dark |
+| POST | `/auth/google/link` `{ credential }` | session (active) | Built, dark |
+| DELETE | `/auth/google` | session (active) | Built, dark |
 | POST | `/auth/logout` | session | MVP |
 | GET | `/auth/me` | session | MVP |
 | POST | `/auth/register` | – (flag) | MVP (flag-off) / Public launch |
@@ -773,7 +781,7 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 
 | Method | Path | Tier |
 |---|---|---|
-| GET | `/account` → email, `pendingEmail`, `emailVerified`, plan, createdAt, `deletionScheduledFor` | MVP |
+| GET | `/account` → email, `pendingEmail`, `emailVerified`, plan, createdAt, `deletionScheduledFor`, `connectedProviders`, `hasPassword` | MVP |
 | PATCH | `/account/email` `{ email, currentPassword }` | MVP |
 | DELETE | `/account/email` (cancel pending change) | MVP |
 | PATCH | `/account/password` `{ currentPassword, newPassword }` | MVP |
@@ -1036,6 +1044,7 @@ Order:
 | Validation | Vitest | URL schemes, username regex, reserved list (incl. every web route), Zod DTOs |
 | Entitlements | Vitest | `LIMIT_REACHED` at `maxLinks`; soft-deleted rows do not count; two concurrent creates cannot exceed the limit; raw/history retention used by jobs |
 | Auth | Supertest | login/logout, session regenerate, rate limit, CSRF required on login/register/forgot/reset; password length cap; unknown email performs dummy hash |
+| Google sign-in | Vitest/Supertest | valid/invalid ID tokens (issuer, audience, age, `email_verified`, `azp`, subject), linked login, unlinked login with no email lookup, explicit link, duplicate/foreign subject, unlink with/without a password, `connectedProviders`/`hasPassword` DTO, CSRF and unauthenticated routes |
 | Registration | Supertest | `ALLOW_SIGNUP=false` → 403; true → user `pending_verification`, unpublished profile, token row, mail sent (mock); duplicate email generic response; taken/reserved username 409 |
 | Verification | Supertest | valid → `active`; reused → 400; expired → 400; tampered → 400; resend invalidates old; two concurrent consumes → exactly one succeeds |
 | Password reset | Supertest | token flow, expiry, single-use, two concurrent consumes, all sessions revoked |
@@ -1253,7 +1262,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · OAuth (Google/GitHub) · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
+Billing/paid plans · Google sign-up · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 

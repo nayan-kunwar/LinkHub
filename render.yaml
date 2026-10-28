@@ -73,6 +73,10 @@ services:
         value: profile
       - key: ALLOW_SIGNUP
         value: "false"
+      # Optional. Leave empty to keep Google sign-in disabled. When set, use the
+      # same Web OAuth client ID as NEXT_PUBLIC_GOOGLE_CLIENT_ID on Vercel.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: ACCOUNT_DELETION_GRACE_DAYS
         value: "30"
       - key: EMAIL_PROVIDER

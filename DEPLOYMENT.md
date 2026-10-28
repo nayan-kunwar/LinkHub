@@ -98,6 +98,8 @@ the API. API, `packages/shared`, `prisma` and lockfile changes still deploy.
    - `DATABASE_URL` and `DIRECT_URL` from Neon
    - the five secrets from step 1
    - `EMAIL_BREVO_API_KEY` from Brevo
+   - optional: `GOOGLE_CLIENT_ID` for Google sign-in. Leave it empty to keep
+     the feature disabled; see **5.1 Google sign-in (optional)**.
 3. Confirm the service settings:
    - Region: Singapore
    - Plan: Free
@@ -380,6 +382,7 @@ domain).
 | `API_BASE_URL` | Render service URL, no trailing slash |
 | `NEXT_PUBLIC_APP_URL` | `https://link.nayankunwar.com` |
 | `NEXT_PUBLIC_ALLOW_SIGNUP` | `false` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional. Same Web OAuth client ID as Render's `GOOGLE_CLIENT_ID`; leave unset to hide Google sign-in. |
 | `ALLOW_DEMO_PREVIEW` | `false` |
 | `ROOT_MODE` | `landing` (marketing page at `/`; owner profile stays at `/nayankunwar`). Use `profile` only if `/` should serve the owner profile. |
 | `DEFAULT_USERNAME` | `nayankunwar` |
@@ -402,6 +405,40 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 
 > Vercel Hobby is for non-commercial use. A public, multi-tenant LinkHub needs
 > Vercel Pro.
+
+### 5.1 Google sign-in (optional)
+
+Google sign-in is built but dark until both client-ID variables are set. It
+works for **existing** accounts only; it never creates an account and never
+auto-links by email. The full design, error codes and security notes are in
+[`docs/google-sign-in.md`](docs/google-sign-in.md).
+
+1. Create a **Web application** OAuth client in Google Cloud Console:
+   - Authorized JavaScript origins: `https://link.nayankunwar.com` and
+     `http://localhost:3000`
+   - Scopes: `openid email` only
+   - No client secret and no redirect URI are needed.
+2. Set the same client ID in both places:
+   - Render: `GOOGLE_CLIENT_ID`
+   - Vercel: `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+3. Apply the new migration before or with the API deploy:
+
+   ```bash
+   set -a; source .env.deploy.local; set +a
+   pnpm db:deploy
+   ```
+
+4. Redeploy the API (env change) and the web app (the `NEXT_PUBLIC_*` value is
+   inlined at build time).
+5. Sign in with a password, open **Settings → Connected accounts**, connect
+   Google, sign out, then use **Sign in with Google**.
+6. To disable the feature without a code change, remove the Vercel variable and
+   redeploy the web app; remove the Render variable to make the API return
+   `503 GOOGLE_SIGN_IN_DISABLED`. Existing links remain in `accounts` and can
+   be removed from Settings.
+
+> The Google consent screen can stay in **Testing** mode with the owner as a
+> test user during the private phase. Publish it before public launch.
 
 ---
 
