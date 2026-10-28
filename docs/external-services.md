@@ -4,7 +4,7 @@ Status: active.
 
 Last updated: 2026-10-28.
 
-Last verified: 2026-10-28 (nightly trigger and production smoke checks).
+Last verified: 2026-10-28 (nightly trigger, production smoke checks and vendor usage review).
 
 This document is the single inventory of every external service and major
 technology LinkHub depends on. For each entry it records the role, the plan and
@@ -25,7 +25,7 @@ Browser
 Cloudflare edge (observed)
   │
   ▼
-Vercel (Next.js 16 web) ── /api/* rewrite ──► Render (Express 5 API) ──► Neon (PostgreSQL 16)
+Vercel (Next.js 16 web) ── /api/* rewrite ──► Render (Express 5 API) ──► Neon (PostgreSQL 18)
                                                         │
                                                         └──► Brevo (transactional email)
 
@@ -39,13 +39,32 @@ GitHub ──► Vercel and Render auto-deploy on `main`
 Owner  ──► OneDrive (pg_dump backups)
 ```
 
+## Dashboard links
+
+Direct links for the recurring checks. These are owner-only vendor consoles; no
+credentials are stored in this repository.
+
+| Service | Link | What to check |
+|---|---|---|
+| Render billing | `https://dashboard.render.com/billing#included-usage` | Free instance hours, bandwidth, services, custom domains, pipeline minutes |
+| Render service | `https://dashboard.render.com/web/srv-dbfgvptg1s2s73fpimkg` | Deploys, logs, environment, custom domains |
+| Render metrics | `https://dashboard.render.com/web/srv-dbfgvptg1s2s73fpimkg/metrics` | Network; memory/CPU are paid-only |
+| Vercel usage | `https://vercel.com/nayan-kunwars-projects/link-hub/usage` | Fast data/origin transfer, CDN requests, ISR reads/writes |
+| Neon console | `https://console.neon.tech/app/projects/damp-frost-53091995` | Compute hours, storage, history, PostgreSQL version |
+| Brevo | `https://app.brevo.com/` | Email quota, senders, domain authentication |
+| cron-job.org | `https://cron-job.org/en/members/jobs/` | Job `8732512`, execution history, next run |
+| Healthchecks.io | `https://healthchecks.io/` | `LinkHub nightly analytics` check, pings, grace period |
+| UptimeRobot | `https://dashboard.uptimerobot.com/` | Liveness and readiness monitors |
+| GitHub Actions | `https://github.com/nayan-kunwar/LinkHub/actions/workflows/analytics-nightly.yml` | Nightly runs and heartbeat step |
+| GitHub repository | `https://github.com/nayan-kunwar/LinkHub` | Code, issues, Actions secrets |
+
 ## Runtime services
 
 | Service | Role and purpose | Plan and limits | Configured in | If it fails |
 |---|---|---|---|---|
-| **Vercel** | Hosts the Next.js 16 web app at `link.nayankunwar.com`; serves the marketing page and public profiles with ISR/CDN caching; rewrites `/api/*` to the Render API; receives `/internal/revalidate` calls from the API | **Hobby:** 100 GB fast data transfer, 1M function invocations, 4 CPU-hours, 360 GB-hours per month. Hobby is **non-commercial only**. | Vercel project (`apps/web` root); env `API_BASE_URL`, `NEXT_PUBLIC_APP_URL`, `ROOT_MODE`, `NEXT_PUBLIC_ALLOW_SIGNUP`, and the three shared secrets | Site is down. The API is still reachable at its Render URL, but the browser app and same-origin `/api/*` calls fail. |
-| **Render** | Hosts the Express 5 API; runs schema-compatible code from `main`; exposes `/api/v1/health/live` as the Render health check; auto-deploys on commit | **Free:** 750 instance-hours/month, 5 GB outbound bandwidth, 512 MB RAM. Sleeps after 15 minutes idle; cold start measured at **57.1 s**; no cron jobs or pre-deploy commands. Render's free plan is **not documented for production**. | `render.yaml` plus Render dashboard env vars | API returns 502/timeout or cold-starts. Auth, dashboard, analytics, export and contact are unavailable. Cached public profiles may still render from Vercel. |
-| **Neon** | Managed PostgreSQL 16 in Singapore; stores users, profiles, links, categories, sessions, verification tokens, click events and rollups | **Free:** 100 CU-hours/project/month, 1 GB storage, 6-hour history window, one manual snapshot, **no full PITR**. Compute scales to zero after about 5 minutes idle. | Neon console; `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) on Render and in GitHub Actions secrets | Writes fail and readiness returns `503`. Cached public profiles may still render. Recovery is the latest off-machine `pg_dump`, not PITR. |
+| **Vercel** | Hosts the Next.js 16 web app at `link.nayankunwar.com`; serves the marketing page and public profiles with ISR/CDN caching; rewrites `/api/*` to the Render API; receives `/internal/revalidate` calls from the API | **Hobby:** 100 GB fast data transfer, 10 GB fast origin transfer, 1M CDN requests, 1 h CDN request CPU, 1M ISR reads, 200k ISR writes, 1M function invocations, 4 CPU-hours, 360 GB-hours per month. Hobby is **non-commercial only**. | Vercel project (`apps/web` root); env `API_BASE_URL`, `NEXT_PUBLIC_APP_URL`, `ROOT_MODE`, `NEXT_PUBLIC_ALLOW_SIGNUP`, and the three shared secrets | Site is down. The API is still reachable at its Render URL, but the browser app and same-origin `/api/*` calls fail. |
+| **Render** | Hosts the Express 5 API; runs schema-compatible code from `main`; exposes `/api/v1/health/live` as the Render health check; auto-deploys on commit | **Free:** 750 instance-hours/month **shared across the workspace**, 5 GB outbound bandwidth, 512 MB RAM, 0.15 CPU (service dashboard), 25 services, 2 custom domains, 500 pipeline minutes. Sleeps after 15 minutes idle; cold start measured at **57.1 s**; no cron jobs or pre-deploy commands. Memory/CPU metrics are paid-only. Render's free plan is **not documented for production**. | `render.yaml` plus Render dashboard env vars | API returns 502/timeout or cold-starts. Auth, dashboard, analytics, export and contact are unavailable. Cached public profiles may still render from Vercel. |
+| **Neon** | Managed PostgreSQL 18 in Singapore; stores users, profiles, links, categories, sessions, verification tokens, click events and rollups | **Free:** 100 CU-hours/project/month, 1 GB storage, 6-hour history window, one manual snapshot, **no full PITR**. Compute scales to zero after about 5 minutes idle. | Neon console; `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) on Render and in GitHub Actions secrets | Writes fail and readiness returns `503`. Cached public profiles may still render. Recovery is the latest off-machine `pg_dump`, not PITR. |
 | **Brevo** | Transactional email: signup verification, password reset, email-change verification, account-restore links, contact-form delivery to the owner, and throttled API 5xx alerts | **Free:** 300 emails/day, shared by all flows. | Render env `EMAIL_PROVIDER=brevo`, `EMAIL_BREVO_API_KEY`, `EMAIL_FROM`; domain authentication records in Hostinger DNS | Verification, reset, email change, restore, contact and 5xx alerts stop. Signup and recovery are effectively blocked. |
 | **Cloudflare** | Edge proxy observed in front of Render; part of the TLS and request path | Not configured in this repository. Treated as part of the upstream path. | Not in the repo. Verified indirectly with the `X-Forwarded-For` probe on 2026-10-26. | The proxy chain changes. `TRUST_PROXY=3` and the trusted country header (`WEB_PROXY_SECRET`) must be re-verified. |
 | **Hostinger** | Domain registration for `nayankunwar.com` and the authoritative DNS zone: `link` CNAME to Vercel, plus Brevo SPF, DKIM and DMARC records | Paid domain/DNS; not a free tier. | Hostinger → Domains → `nayankunwar.com` → DNS / DNS Zone | DNS resolution and HTTPS fail for `link.nayankunwar.com`; Brevo domain authentication breaks if the records are removed. |
@@ -73,7 +92,7 @@ start.
 | Styling and UI | Tailwind CSS 4, shadcn/ui, Radix UI primitives, Lucide icons, sonner | Design system, accessible dialogs/menus/tabs/tooltips, icons and toasts |
 | Interaction | dnd-kit, react-hook-form, Zod, Recharts | Link/category reordering, forms and validation, analytics charts |
 | API | Express 5, TypeScript, Zod | REST API, request validation and shared schemas |
-| Data | PostgreSQL 16, Prisma 6, `connect-pg-simple` | Persistence, typed queries/migrations, Postgres-backed sessions |
+| Data | PostgreSQL 18 on Neon (PostgreSQL 16 for local dev), Prisma 6, `connect-pg-simple` | Persistence, typed queries/migrations, Postgres-backed sessions |
 | Auth and security | `express-session`, argon2id, Helmet, `express-rate-limit`, CSRF/Origin checks | Sessions, password hashing, headers, throttling and mutation protection |
 | Logging | Pino, `pino-http` | Structured JSON logs, request IDs, redaction and audit events |
 | Export | JSZip | CSV export archive |
@@ -103,16 +122,63 @@ committed to this repository.
 
 | Vendor | Free limit | What to watch | Policy note |
 |---|---|---|---|
-| Render | 750 instance-hours/month, 5 GB outbound, 512 MB RAM | One always-on API uses about 730 hours, leaving ~20. A second free service would exceed the allowance. | Free instances are not documented for production. |
-| Vercel | 100 GB fast data transfer, 1M invocations, 4 CPU-hours, 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 s. | Hobby is non-commercial only. A public multi-tenant service likely needs Pro or another host. |
-| Neon | 100 CU-hours/project/month, 1 GB storage, 6-hour history, one snapshot | Readiness checks and traffic keep compute awake. 5-minute readiness checks would use ~182 CU-hours/month. | No full PITR. The off-machine logical dump is the recovery path. |
-| Brevo | 300 emails/day | Signup, verification, reset, email change, restore, contact and 5xx alerts share the quota. | Watch **Statistics** after any signup spike. |
+| Render | 750 instance-hours/month (workspace-wide), 5 GB outbound, 512 MB RAM, 25 services, 2 custom domains, 500 pipeline minutes | One always-on API uses about 730 hours. The workspace has **12 services**, so audit the other 11: any other free web service shares the same pool. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. | Free instances are not documented for production. |
+| Vercel | 100 GB fast data transfer, 10 GB fast origin transfer, 1M CDN requests, 1 h CDN CPU, 1M ISR reads, 200k ISR writes | Observed 2026-10-28: 49.24 MB fast data transfer and 6,034 CDN requests. Public profile HTML is rendered per request; profile data is cached for 300 s. | Hobby is non-commercial only. A public multi-tenant service likely needs Pro or another host. |
+| Neon | 100 CU-hours/project/month, 1 GB storage, 6-hour history, one snapshot | Observed 2026-10-28: 5.46 CU-hrs and 32.97 MB storage. Recheck after a week of normal traffic; 5-minute readiness checks would use ~182 CU-hours/month. | No full PITR. The off-machine logical dump is the recovery path. |
+| Brevo | 300 emails/day | Observed 2026-10-28: 300 available (0 used). Signup, verification, reset, email change, restore, contact and 5xx alerts share the quota. | Watch **Statistics** after any signup spike. |
 | UptimeRobot | 50 monitors, 5-minute interval | Two monitors: liveness every 5 min, readiness every 30 min. | Heartbeat monitoring is paid; Healthchecks.io covers that gap. |
 | GitHub Actions | 2,000 minutes/month for private repositories | Nightly job uses about 30 minutes/month. | A workflow failure opens or updates the `nightly-failure` issue. |
 | cron-job.org | 60 executions/hour, 30 s request timeout | One dispatch per day at 03:17 UTC. | The dispatch returns immediately; the timeout does not apply to the job runtime. |
 | Healthchecks.io | 20 checks, 100 log entries per check | One check for the nightly job. | A daily ping keeps roughly three months of history. |
 | Hostinger | Paid domain/DNS | Domain renewal and DNS records. | Not a free tier; losing the domain breaks web and email. |
 | OneDrive | Personal storage | Backup retention and sync status. | Not an application dependency, but it is the off-machine recovery copy. |
+
+## Usage snapshot — 2026-10-28
+
+Observed in the vendor dashboards. Vercel covers the last 30 days through
+2026-10-27; Render is the current calendar month; Neon is since project creation
+on 2026-10-26; Brevo is the current daily allowance.
+
+| Vendor | Metric | Observed | Limit | Used |
+|---|---|---|---|---|
+| Vercel | Fast data transfer | 49.24 MB | 100 GB | ~0.05% |
+| Vercel | Fast origin transfer | 21.96 MB | 10 GB | ~0.21% |
+| Vercel | CDN requests | 6,034 | 1,000,000 | ~0.60% |
+| Vercel | CDN request CPU | 3 s | 1 h | ~0.08% |
+| Vercel | ISR reads | 1,990 | 1,000,000 | ~0.20% |
+| Vercel | ISR writes | 373 | 200,000 | ~0.19% |
+| Vercel | Data cache | 140 reads / 65 writes | no published cap | — |
+| Render | Free instance hours | 231.83 h | 750 h/month | 30.9% |
+| Render | Bandwidth | 334 MB | 5 GB | 6.5% |
+| Render | Custom domains | 2 | 2 | 100% |
+| Render | Services | 12 | 25 | 48% |
+| Render | Pipeline minutes | 34 min | 500 min | 6.8% |
+| Neon | Compute | 5.46 CU-hrs | 100 CU-hrs/month | 5.5% |
+| Neon | Storage | 32.97 MB | 1 GB | 3.2% |
+| Neon | History | 4.25 MB | 1 GB | ~0.4% |
+| Neon | Network transfer | 5.19 MB | — | — |
+| Brevo | Emails available | 300 | 300/day | 0 used at capture |
+
+**Interpretation**
+
+- **Render instance hours are the binding constraint.** The 750-hour allowance
+  is workspace-wide, and the workspace has 12 services. Audit the other 11; any
+  other free web service shares the pool. A full 24/7 month at the current
+  keep-warm cadence is roughly 720-744 hours, leaving ~30 hours in November and
+  ~6 hours in December for LinkHub alone.
+- **Render bandwidth is 334 MB, not the 10 MB shown on the Metrics page.** The
+  billing page includes service-initiated traffic (314 MB) plus HTTP responses
+  (20 MB). Still 6.5% of 5 GB.
+- **Render custom domains are at 2/2.** A custom API domain would require
+  removing an existing domain or upgrading.
+- **Render Free does not expose memory or CPU metrics.** The 512 MB / 0.15 CPU
+  limits are enforced; watch restarts, 502s and slow responses instead.
+- **Neon compute projects to ~85 CU-hours/month** if the first 46 hours are
+  representative. That is probably inflated by migrations, seeding and the
+  2026-10-27 smoke tests; recheck after a week of normal traffic. Storage and
+  history are well under 1 GB.
+- **Vercel and Brevo have large headroom.** Brevo's 300/day is the first limit
+  to hit if public signup opens.
 
 ## Dormant or test-only integrations
 
@@ -137,11 +203,16 @@ dependencies. They are listed so they are not mistaken for live services.
 | 2026-10-27 | cron-job.org test dispatch | `200 OK`; created run `40467931426`, which succeeded and pinged the heartbeat |
 | 2026-10-28 | First automatic cron-job.org dispatch | Run `40625796861` started at **03:17:05 UTC** and succeeded; `Ping heartbeat` succeeded; failure step skipped |
 | 2026-10-28 | Production pages and API | `/`, `/nayankunwar`, `/login`, `/contact`, `/terms`, `/privacy`, `/robots.txt`, `/sitemap.xml` returned 200; API health returned 200 |
+| 2026-10-28 | Vendor usage review | Vercel, Render, Neon and Brevo within limits; Render workspace has 12 services and 2/2 custom domains; see **Usage snapshot** above |
 
-Still to confirm in the vendor dashboards:
+Vendor checks and open items:
 
+- [x] Vercel usage reviewed (2026-10-28): all metrics under 1% of Hobby limits.
+- [x] Neon compute/storage reviewed (2026-10-28): 5.46 CU-hrs, 32.97 MB.
+- [x] Brevo daily quota reviewed (2026-10-28): 300 available.
+- [x] Render billing reviewed (2026-10-28): 231.83 instance hours, 334 MB, 2/2 domains.
+- [ ] Render workspace audit: confirm the other 11 services do not consume free instance hours.
 - [ ] Healthchecks.io check uses Cron `17 3 * * *`, timezone UTC, 2-hour grace.
-- [ ] Render, Vercel, Neon and Brevo usage dashboards reviewed for the current month.
 - [ ] Cloudflare is documented as an observed edge rather than a configured service, unless the owner confirms otherwise.
 
 ## Maintenance

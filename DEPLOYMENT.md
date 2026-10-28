@@ -42,7 +42,7 @@ placeholder secrets.
 
 ## 2. Neon
 
-1. Create a project in **Singapore** with PostgreSQL 16.
+1. Create a project in **Singapore** with PostgreSQL 18 (Neon's current default; the production project reports version 18).
 2. Copy both connection strings from **Connect**:
    - **Pooled** → `DATABASE_URL`
    - **Direct** → `DIRECT_URL`
@@ -248,23 +248,24 @@ dispatch manually.
   production. Check Render logs for 5xx responses, `express-rate-limit`
   warnings, failed email delivery, and unexpected audit events.
 
-### Free-tier quota watch (reviewed 2026-10-27)
+### Free-tier quota watch (reviewed 2026-10-28)
 
 | Vendor | Free limit | Watch |
 |---|---|---|
-| Render | 750 instance hours/month; 5 GB outbound bandwidth; 512 MB RAM | One API service running 24/7 uses about 730 hours, leaving ~20. A second free Render service would exceed the hours. Render's free docs say free instances are not for production. |
-| Vercel Hobby | 100 GB fast data transfer; 1M function invocations; 4 CPU-hours; 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 seconds. Hobby is non-commercial only; a public multi-tenant launch may require Pro or another host. |
-| Neon Free | 100 CU-hours/project/month; 1 GB storage; 6-hour history; one manual snapshot; no full PITR | Database is 8.7 MB. If revalidation or API traffic keeps compute awake, 100 CU-hours can run out before month-end. Monitor **Usage** in the Neon console. |
-| Brevo Free | 300 emails/day | Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
+| Render | 750 instance hours/month (workspace-wide); 5 GB outbound bandwidth; 512 MB RAM; 25 services; 2 custom domains; 500 pipeline minutes | One API service running 24/7 uses about 730 hours. The workspace has **12 services**, so audit the other 11; any other free web service shares the pool. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. Render's free docs say free instances are not for production. |
+| Vercel Hobby | 100 GB fast data transfer; 10 GB fast origin transfer; 1M CDN requests; 1 h CDN CPU; 1M ISR reads; 200k ISR writes; 1M function invocations; 4 CPU-hours; 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 seconds. Observed 2026-10-28: 49.24 MB fast data transfer, 6,034 CDN requests. Hobby is non-commercial only; a public multi-tenant launch may require Pro or another host. |
+| Neon Free | 100 CU-hours/project/month; 1 GB storage; 6-hour history; one manual snapshot; no full PITR; PostgreSQL 18 | Observed 2026-10-28: 5.46 CU-hrs, 32.97 MB storage, 4.25 MB history. Recheck after a week of normal traffic; 5-minute readiness checks would use ~182 CU-hours/month. |
+| Brevo Free | 300 emails/day | Observed 2026-10-28: 300 available. Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
 | UptimeRobot Free | 50 monitors; 5-minute interval | Liveness `/health/live` every 5 minutes and readiness `/health` every 30 minutes are active. |
 | GitHub Actions | 2,000 minutes/month for private repos | Nightly job uses about 30 minutes/month. |
-| cron-job.org | Free; up to 60 executions/hour; 30 s request timeout | One dispatch per day at 03:17 UTC. The dispatch returns 204 immediately, so the timeout is not on the job's runtime. |
+| cron-job.org | Free; up to 60 executions/hour; 30 s request timeout | One dispatch per day at 03:17 UTC. The dispatch returns 200 or 204 immediately, so the timeout is not on the job's runtime. |
 | Healthchecks.io | Hobbyist: 20 checks; 100 log entries per check | One check for the nightly job. A daily ping keeps roughly three months of history. |
 
 The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
 8 links, 5 categories, 5 click events, 1 session and 5 verification tokens.
-Render, Vercel and Brevo dashboard usage still needs an owner review because
-those accounts have no API token configured here.
+Vendor usage was reviewed on 2026-10-28: Vercel, Render, Neon and Brevo are
+within their free limits. The remaining Render risk is workspace-wide instance
+hours: 12 services exist, so confirm the other 11 are not free web services.
 
 A fresh logical dump was taken 2026-10-27 (`36,396` bytes, all 12 tables,
 verified with `pg_restore --list`) and stored off-machine with a metadata

@@ -4,7 +4,7 @@ Express 5 API for LinkHub v2.4. It serves the JSON API consumed by the Next.js
 web app in `apps/web` and is the only process that talks to PostgreSQL.
 
 - **Runtime:** Node.js 22, TypeScript, Express 5
-- **Data:** PostgreSQL 16 (Neon in production) through Prisma 6
+- **Data:** PostgreSQL 18 on Neon in production (PostgreSQL 16 for the local Docker example) through Prisma 6
 - **Sessions:** `express-session` + `connect-pg-simple` (`lh.sid`, HttpOnly)
 - **Passwords:** argon2id
 - **Validation:** Zod 4 schemas in each module plus `@linkhub/shared`
@@ -14,7 +14,7 @@ web app in `apps/web` and is the only process that talks to PostgreSQL.
 
 ## Local setup
 
-Prerequisites: Node 22, pnpm 11, Docker Desktop (or any PostgreSQL 16 server).
+Prerequisites: Node 22, pnpm 11, Docker Desktop (or any PostgreSQL 16+ server).
 
 ```bash
 pnpm install
