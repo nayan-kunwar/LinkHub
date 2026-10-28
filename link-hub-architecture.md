@@ -177,6 +177,9 @@ It is built and used by the owner first, but the schema, authorization model and
 
 Auth.js/NextAuth is **not** used. The Express API is the single identity authority.
 
+The full inventory of external services, free-tier limits and failure impact is
+in [`docs/external-services.md`](docs/external-services.md).
+
 ---
 
 ## 4. System Architecture
@@ -1084,6 +1087,9 @@ Order:
 | Jobs | cron-job.org → GitHub Actions | One nightly job (§11.3) at 03:17 UTC; Render's free plan has no cron jobs, and GitHub's own `schedule` trigger is not used because it can silently drop runs |
 | DNS | `link.nayankunwar.com` → Vercel; API uses the Render `onrender.com` hostname (a custom API domain is optional) | |
 
+See [`docs/external-services.md`](docs/external-services.md) for each service's
+role, free-tier limits, failure impact and the secrets register.
+
 **Scaling path (Later):** stateless API → multiple instances → Redis for rate limits/sessions → queue for click ingestion → partition `click_events` → custom domains via edge middleware.
 
 **Cold starts and proxy timeouts:** Cached profile data protects repeat public requests, but a cache miss still waits for the API, and login/register/dashboard calls go through the Vercel rewrite to Render. A Render free cold start (~30–60 s) can exceed the Vercel proxy/function timeout, so the first auth request after idle may fail. Keep the API warm with a 5-minute uptime ping, move to a paid always-on instance, or implement an explicit retry/loading UX. Do not rely on the cache for authenticated flows.
@@ -1113,7 +1119,7 @@ Order:
 - [x] `INTERNAL_FETCH_TOKEN` set, distinct from other secrets; internal fetch exempt from the public limiter
 - [x] Cold-start behavior tested through the Vercel rewrite (2026-10-27): with both uptime monitors paused for about 20 minutes, the first `/api/v1/health` request took **57.1 s** and returned `200`; the next warm requests took 0.72 s (readiness) and 0.37 s (liveness). Keep-warm decision: `/health/live` every 5 minutes, readiness every 30 minutes. Verified 2026-10-27: with no manual requests from 02:27 to 02:46 UTC, `uptime` reached 1,356 s and the response took 1.60 s, so the 5-minute monitor kept Render awake.
 - [x] Nightly analytics job externally triggered and heartbeat-monitored (2026-10-27): cron-job.org dispatches the GitHub workflow daily at 03:17 UTC, and a success ping to Healthchecks.io alerts if the run is missed; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
-- [ ] First automatic cron-job.org run at 2026-10-28 03:17 UTC verified
+- [x] First automatic cron-job.org run verified: run `40625796861` started 2026-10-28 at 03:17:05 UTC, succeeded, and pinged the heartbeat
 - [x] Error tracking and job-failure alerts configured; audit log path documented (2026-10-27): throttled owner email on API 5xx, a `nightly-failure` GitHub issue on workflow failure, a Healthchecks.io dead-man's switch for missed runs, and structured `audit` events for security-relevant account/profile actions
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
@@ -1166,7 +1172,7 @@ The private phase runs the same code with `ALLOW_SIGNUP=false`; use `ROOT_MODE=p
 - [x] Accessibility: keyboard drag-and-drop (ArrowUp/Down + live region + focus restore), focus rings, contrast (placeholders raised to zinc-500), and decorative avatar alt text reviewed; a manual screen-reader pass is still recommended before public signup
 - [x] Manual logical backup taken and restore tested once (2026-10-27): `pg_dump --format=custom` from Neon restored into a local PostgreSQL 18 container; all 12 public tables, 40 indexes, 94 constraints and the `sessions_user_id_expr_idx` expression index matched, and every table's row count matched.
 - [ ] Neon PITR confirmed in the Neon console. **Blocked on Free:** Neon Free has no full PITR, only a 6-hour history window (1 GB limit) and one manual snapshot. The logical backup is the recovery path: a fresh dump was taken 2026-10-27 (`36,396` bytes, 12 tables, SHA-256 `5b03c377…`) and stored in the owner's off-machine OneDrive folder with a metadata sidecar; a full restore was verified earlier. Take another dump immediately before the flip.
-- [x] Monitoring: UptimeRobot liveness monitor on `/api/v1/health/live`; API 5xx owner email alerts; nightly-workflow failure issues plus a Healthchecks.io dead-man's switch; structured audit events; log redaction reviewed (2026-10-27). The monitoring deploy (`461dbe5`) was verified with an owner login/logout through the Vercel rewrite, and manual nightly run `40398056360` succeeded with the failure step skipped. Manual run `40463090302` and cron-job.org test run `40467931426` verified the `Ping heartbeat` step after the trigger change. Two UptimeRobot monitors are active: `/api/v1/health/live` every 5 minutes (keep-warm; no Postgres query) and `/api/v1/health` every 30 minutes (readiness). Do not use a 5-minute readiness interval: it would keep Neon compute awake almost continuously (~182 CU-hours/month at 0.25 CU), while 30 minutes uses roughly 30 CU-hours/month and leaves headroom for traffic and the nightly job.
+- [x] Monitoring: UptimeRobot liveness monitor on `/api/v1/health/live`; API 5xx owner email alerts; nightly-workflow failure issues plus a Healthchecks.io dead-man's switch; structured audit events; log redaction reviewed (2026-10-27). The monitoring deploy (`461dbe5`) was verified with an owner login/logout through the Vercel rewrite, and manual nightly run `40398056360` succeeded with the failure step skipped. Manual run `40463090302`, cron-job.org test run `40467931426` and the first automatic run `40625796861` (2026-10-28 03:17:05 UTC) verified the `Ping heartbeat` step after the trigger change. Two UptimeRobot monitors are active: `/api/v1/health/live` every 5 minutes (keep-warm; no Postgres query) and `/api/v1/health` every 30 minutes (readiness). Do not use a 5-minute readiness interval: it would keep Neon compute awake almost continuously (~182 CU-hours/month at 0.25 CU), while 30 minutes uses roughly 30 CU-hours/month and leaves headroom for traffic and the nightly job.
 - [x] Load/quota check reviewed (2026-10-27): see §18.1. Database is 8.7 MB; Render 24/7 uses ~730 of 750 free hours; Neon has a 100 CU-hour cap and no PITR; Vercel Hobby is non-commercial; Brevo is 300/day. Owner must still check Render/Vercel/Brevo dashboards for actual usage.
 - [x] Cold-start behavior tested for signup/login (2026-10-27): 57.1 s for the first request through the Vercel rewrite after about 20 minutes idle, then 0.72 s warm. The keep-warm monitor is active, but a cold first auth request can still exceed the Vercel proxy timeout; moving the API off the free tier remains a later hardening option.
 - [x] Vendor ToS reviewed (2026-10-27): Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR, Brevo Free is 300 emails/day. See §18.1.

@@ -12,6 +12,10 @@ Production topology:
 
 Deploy in this order: Neon → Render API → seed → Vercel → DNS → smoke tests.
 
+See [`docs/external-services.md`](docs/external-services.md) for the full
+inventory of external services, free-tier limits, failure impact and the secrets
+register.
+
 ---
 
 ## 1. Generate shared secrets
@@ -203,7 +207,8 @@ cron-job.org also emails when the dispatch itself returns non-2xx.
 
 Verified 2026-10-27 with manual run `40463090302` and cron-job.org test run
 `40467931426`: the job and `Ping heartbeat` steps succeeded and the failure
-step was skipped. The first automatic run is expected 2026-10-28 at 03:17 UTC.
+step was skipped. The first automatic run started on schedule on 2026-10-28 at
+03:17:05 UTC (run `40625796861`) and succeeded, including the heartbeat ping.
 
 Recovery:
 

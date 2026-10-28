@@ -1,8 +1,8 @@
 # Nightly analytics trigger
 
-Status: implemented; manual verification complete, first automatic run pending.
+Status: implemented; manual and first automatic runs verified.
 
-Last updated: 2026-10-27.
+Last updated: 2026-10-28.
 
 This document records the 2026-10-27 migration of the nightly analytics job
 from GitHub's `schedule` trigger to an external cron-job.org dispatch with a
@@ -112,7 +112,7 @@ first ping succeeded in run `40463090302`.
 | 2026-10-27 06:46 | Manual run `40463090302` | Success; `Ping heartbeat` succeeded |
 | 2026-10-27 07:34 | cron-job.org test run | `200 OK`; created run `40467931426` |
 | 2026-10-27 07:34 | Run `40467931426` | Success; `Ping heartbeat` succeeded; failure step skipped |
-| 2026-10-28 03:17 | First automatic cron-job.org run | Pending |
+| 2026-10-28 03:17 | First automatic cron-job.org run | Run `40625796861`; success; `Ping heartbeat` succeeded; failure step skipped |
 
 The cron-job.org test response included:
 
@@ -166,10 +166,11 @@ The cron-job.org test response included:
 
 ## Open items
 
-- [ ] Confirm the cron-job.org job is **enabled** and the next execution is
-      2026-10-28 03:17 UTC.
+- [x] Confirm the cron-job.org job is **enabled** and the next execution is
+      2026-10-28 03:17 UTC. Verified by the automatic run on 2026-10-28.
 - [ ] Confirm the Healthchecks check uses daily 03:17 UTC with 2 hours grace.
-- [ ] Verify the first automatic run on 2026-10-28 at 03:17 UTC.
+- [x] Verify the first automatic run on 2026-10-28 at 03:17 UTC: run
+      `40625796861` succeeded and pinged the heartbeat.
 - [ ] Rotate the PAT before 2027-01-25.
 
 ## Commits
@@ -180,6 +181,7 @@ The cron-job.org test response included:
 ## Related
 
 - [`DEPLOYMENT.md`](../DEPLOYMENT.md) — deployment runbook, nightly analytics and monitoring.
+- [`docs/external-services.md`](external-services.md) — inventory of vendors, free-tier limits and failure impact.
 - [`link-hub-architecture.md`](../link-hub-architecture.md) — §11.3 (job design) and §15 (observability).
 - [`.github/workflows/analytics-nightly.yml`](../.github/workflows/analytics-nightly.yml) — workflow definition.
 - [`apps/api/src/jobs/analytics-nightly.ts`](../apps/api/src/jobs/analytics-nightly.ts) — job implementation.
