@@ -210,6 +210,7 @@ dependencies. They are listed so they are not mistaken for live services.
 | 2026-10-28 | Production pages and API | `/`, `/nayankunwar`, `/login`, `/contact`, `/terms`, `/privacy`, `/robots.txt`, `/sitemap.xml` returned 200; API health returned 200 |
 | 2026-10-28 | Vendor usage review | Vercel, Render, Neon and Brevo within limits; Render workspace has 12 services and 2/2 custom domains; see **Usage snapshot** above |
 | 2026-10-28 | Edge and DNS check | `link.nayankunwar.com` and the apex return `server: Vercel` with no `cf-ray`; the Render API returns `server: cloudflare`, `cf-ray` and `x-render-origin-server: Render`. Nameservers are `nebula.dns-parking.com` / `aurora.dns-parking.com`. Cloudflare is Render's edge, not an owner-configured zone. |
+| 2026-10-28 | Render build filter | `render.yaml` now ignores `**/*.md`, `docs/**`, `apps/web/**` and `.github/**`. The blueprint sync restarted the API once (uptime reset at 12:04 UTC); a docs-only commit is used to confirm later commits do not restart it. |
 
 Vendor checks and open items:
 
