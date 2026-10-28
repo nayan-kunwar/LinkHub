@@ -7,6 +7,12 @@ export const ERROR_CODES = [
   "FORBIDDEN",
   "CSRF_INVALID",
   "SIGNUP_DISABLED",
+  "GOOGLE_SIGN_IN_DISABLED",
+  "GOOGLE_TOKEN_INVALID",
+  "GOOGLE_EMAIL_UNVERIFIED",
+  "GOOGLE_NOT_LINKED",
+  "GOOGLE_ALREADY_LINKED",
+  "LAST_SIGN_IN_METHOD",
   "EMAIL_NOT_VERIFIED",
   "ACCOUNT_SUSPENDED",
   "LIMIT_REACHED",
@@ -62,6 +68,21 @@ export const fail = {
     new AppError(403, "CSRF_INVALID", message),
   signupDisabled: (message = "Sign-ups are not open yet.") =>
     new AppError(403, "SIGNUP_DISABLED", message),
+  googleSignInDisabled: (message = "Google sign-in is not available right now.") =>
+    new AppError(503, "GOOGLE_SIGN_IN_DISABLED", message),
+  googleTokenInvalid: (message = "Google sign-in could not be verified. Try again.") =>
+    new AppError(401, "GOOGLE_TOKEN_INVALID", message),
+  googleEmailUnverified: (message = "Your Google email address must be verified to continue.") =>
+    new AppError(403, "GOOGLE_EMAIL_UNVERIFIED", message),
+  googleNotLinked: (
+    message = "This Google account is not linked. Sign in with your password, then connect Google in Settings.",
+  ) => new AppError(403, "GOOGLE_NOT_LINKED", message),
+  googleAlreadyLinked: (
+    message = "This Google account is already linked to a Link Hub account.",
+  ) => new AppError(409, "GOOGLE_ALREADY_LINKED", message),
+  lastSignInMethod: (
+    message = "Set a password before disconnecting your only sign-in method.",
+  ) => new AppError(409, "LAST_SIGN_IN_METHOD", message),
   emailNotVerified: (message = "Verify your email address to continue.") =>
     new AppError(403, "EMAIL_NOT_VERIFIED", message),
   suspended: (message = "This account is suspended.") =>

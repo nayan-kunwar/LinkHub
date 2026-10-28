@@ -5,6 +5,7 @@ import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/db";
 import { DEFAULT_APPEARANCE, meDto, type MeDto } from "../../lib/dto";
 import { fail } from "../../lib/errors";
+import { verifyGoogleCredential } from "../../lib/google";
 import {
   sendAccountRestoreEmail,
   sendEmailChangeVerification,
@@ -17,6 +18,7 @@ import { dummyVerify, hashPassword, verifyPassword } from "../../lib/password";
 import { revalidateProfile } from "../../lib/revalidate";
 import { isReservedUsername } from "../../lib/validation";
 import { randomToken, sha256 } from "../../lib/crypto";
+import { getConnectedProviders } from "../account/account.service";
 import type { LoginInput, SignupInput } from "./auth.schema";
 
 const GENERIC_REGISTER_RESPONSE = {
@@ -176,6 +178,103 @@ export async function login(input: LoginInput): Promise<User> {
   }
 
   return user;
+}
+
+/**
+ * Google sign-in resolves an existing link only. It never looks up a user by
+ * email, never auto-links by verified email, and never creates an account.
+ */
+export async function googleLogin(credential: string): Promise<User> {
+  const identity = await verifyGoogleCredential(credential);
+
+  const account = await prisma.account.findUnique({
+    where: {
+      provider_providerAccountId: {
+        provider: "google",
+        providerAccountId: identity.sub,
+      },
+    },
+    include: { user: true },
+  });
+  if (!account) throw fail.googleNotLinked();
+
+  const user = account.user;
+  if (user.status === "deleted" || user.deletedAt) throw fail.googleNotLinked();
+  if (user.status === "suspended") throw fail.suspended();
+  return user;
+}
+
+/**
+ * Linking is an explicit, authenticated action. It requires an active,
+ * verified account and refuses to move a Google identity between users.
+ */
+export async function linkGoogleAccount(
+  userId: string,
+  credential: string,
+): Promise<string[]> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { status: true, emailVerifiedAt: true, deletedAt: true },
+  });
+  if (!user || user.deletedAt || user.status === "deleted") {
+    throw fail.unauthenticated();
+  }
+  if (user.status !== "active" || !user.emailVerifiedAt) {
+    throw fail.emailNotVerified();
+  }
+
+  const identity = await verifyGoogleCredential(credential);
+
+  const [linkedToUser, linkedToProvider] = await Promise.all([
+    prisma.account.findUnique({
+      where: { userId_provider: { userId, provider: "google" } },
+      select: { id: true },
+    }),
+    prisma.account.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: "google",
+          providerAccountId: identity.sub,
+        },
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  if (linkedToUser || linkedToProvider) throw fail.googleAlreadyLinked();
+
+  try {
+    await prisma.account.create({
+      data: { userId, provider: "google", providerAccountId: identity.sub },
+    });
+  } catch (error) {
+    if (isUniqueError(error)) throw fail.googleAlreadyLinked();
+    throw error;
+  }
+
+  audit({ action: "account.google_linked", actorUserId: userId });
+  return getConnectedProviders(userId);
+}
+
+export async function unlinkGoogleAccount(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      passwordHash: true,
+      status: true,
+      deletedAt: true,
+      accounts: { where: { provider: "google" }, select: { id: true } },
+    },
+  });
+  if (!user || user.deletedAt || user.status === "deleted") {
+    throw fail.unauthenticated();
+  }
+  if (user.status !== "active") throw fail.emailNotVerified();
+  if (user.accounts.length === 0) throw fail.notFound("Google is not connected.");
+  if (!user.passwordHash) throw fail.lastSignInMethod();
+
+  await prisma.account.deleteMany({ where: { userId, provider: "google" } });
+  audit({ action: "account.google_unlinked", actorUserId: userId });
 }
 
 /**

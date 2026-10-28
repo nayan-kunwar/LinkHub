@@ -1,13 +1,17 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
+import type { User } from "@prisma/client";
 import { env } from "../../config/env";
 import { audit } from "../../lib/audit";
 import { sendData, sendNoContent, noStore } from "../../lib/http";
 import { fail } from "../../lib/errors";
 import { issueCsrfToken } from "../../middleware/csrf";
 import { validateBody } from "../../middleware/validate";
-import { requireAuth } from "../../middleware/requireAuth";
+import { requireActiveUser, requireAuth } from "../../middleware/requireAuth";
 import {
   forgotPasswordLimiter,
+  googleLinkLimiter,
+  googleLoginLimiter,
   loginLimiter,
   registerLimiter,
   resendVerificationLimiter,
@@ -18,16 +22,21 @@ import {
   destroySession,
   forgotPassword,
   getMe,
+  googleLogin,
+  linkGoogleAccount,
   login,
   register,
   resendVerification,
   resetPassword,
   restoreScheduledDeletion,
+  unlinkGoogleAccount,
   verifyEmail,
   verifyEmailChange,
 } from "./auth.service";
 import {
   forgotPasswordSchema,
+  googleAuthSchema,
+  googleLinkSchema,
   loginSchema,
   resetPasswordApiSchema,
   signupApiSchema,
@@ -35,6 +44,37 @@ import {
 } from "./auth.schema";
 
 export const authRouter = Router();
+
+async function completeLogin(
+  req: Request,
+  res: Response,
+  user: User,
+  remember: boolean | undefined,
+  method: "password" | "google",
+): Promise<void> {
+  await createSessionForUser(req, user.id, req.header("user-agent"), {
+    remember,
+  });
+  audit({ action: "auth.login", actorUserId: user.id, metadata: { method } });
+  // Only clear a scheduled deletion after the session is safely persisted.
+  await restoreScheduledDeletion(user.id);
+  const me = await getMe(user.id);
+  const csrfToken = issueCsrfToken(req, res);
+  noStore(res);
+  sendData(res, { ...me, csrfToken });
+}
+
+function googleConfigured(
+  _req: Request,
+  _res: Response,
+  next: NextFunction,
+): void {
+  if (!env.GOOGLE_CLIENT_ID) {
+    next(fail.googleSignInDisabled());
+    return;
+  }
+  next();
+}
 
 authRouter.get("/csrf", (req, res) => {
   noStore(res);
@@ -49,16 +89,45 @@ authRouter.post(
   async (req, res) => {
     const { remember, ...credentials } = req.body;
     const user = await login(credentials);
-    await createSessionForUser(req, user.id, req.header("user-agent"), {
-      remember,
-    });
-    audit({ action: "auth.login", actorUserId: user.id });
-    // Only clear a scheduled deletion after the session is safely persisted.
-    await restoreScheduledDeletion(user.id);
-    const me = await getMe(user.id);
-    const csrfToken = issueCsrfToken(req, res);
-    noStore(res);
-    sendData(res, { ...me, csrfToken });
+    await completeLogin(req, res, user, remember, "password");
+  },
+);
+
+authRouter.post(
+  "/google",
+  googleConfigured,
+  googleLoginLimiter,
+  validateBody(googleAuthSchema),
+  async (req, res) => {
+    const user = await googleLogin(req.body.credential);
+    await completeLogin(req, res, user, req.body.remember, "google");
+  },
+);
+
+authRouter.post(
+  "/google/link",
+  requireAuth,
+  requireActiveUser,
+  googleConfigured,
+  googleLinkLimiter,
+  validateBody(googleLinkSchema),
+  async (req, res) => {
+    const connectedProviders = await linkGoogleAccount(
+      req.user!.id,
+      req.body.credential,
+    );
+    sendData(res, { connectedProviders });
+  },
+);
+
+authRouter.delete(
+  "/google",
+  requireAuth,
+  requireActiveUser,
+  googleLinkLimiter,
+  async (req, res) => {
+    await unlinkGoogleAccount(req.user!.id);
+    sendNoContent(res);
   },
 );
 

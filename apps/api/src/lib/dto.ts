@@ -73,6 +73,22 @@ export function accountDto(user: Pick<
   };
 }
 
+export interface AccountDetailsDto extends AccountDto {
+  connectedProviders: string[];
+  hasPassword: boolean;
+}
+
+export function accountDetailsDto(
+  user: User,
+  connectedProviders: string[],
+): AccountDetailsDto {
+  return {
+    ...accountDto(user),
+    connectedProviders,
+    hasPassword: Boolean(user.passwordHash),
+  };
+}
+
 export interface ProfileDto {
   id: string;
   username: string;

@@ -129,4 +129,15 @@ describe("environment validation", () => {
     expect(disabled.ALLOW_SIGNUP).toBe(false);
     expect(disabled.DEBUG_IP_ENDPOINT).toBe(false);
   });
+
+  it("treats an empty Google client ID as disabled", () => {
+    const disabled = loadEnv({ ...productionEnv, GOOGLE_CLIENT_ID: "   " });
+    expect(disabled.GOOGLE_CLIENT_ID).toBeUndefined();
+
+    const enabled = loadEnv({
+      ...productionEnv,
+      GOOGLE_CLIENT_ID: "test.apps.googleusercontent.com",
+    });
+    expect(enabled.GOOGLE_CLIENT_ID).toBe("test.apps.googleusercontent.com");
+  });
 });

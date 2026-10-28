@@ -21,6 +21,11 @@ const booleanString = z
   .union([z.boolean(), z.enum(["true", "false", "1", "0", ""])])
   .transform((value) => value === true || value === "true" || value === "1");
 
+const optionalString = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().optional(),
+);
+
 const trustProxyValue = z
   .string()
   .default("false")
@@ -68,6 +73,9 @@ const envSchema = z.object({
   DEFAULT_USERNAME: z.string().default("nayankunwar"),
   ROOT_MODE: z.enum(["profile", "landing"]).default("profile"),
   ALLOW_SIGNUP: booleanString.default(false),
+  // Google sign-in is optional. When unset, the API returns
+  // GOOGLE_SIGN_IN_DISABLED and the web app hides the button.
+  GOOGLE_CLIENT_ID: optionalString,
   ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().positive().max(365).default(30),
 
   EMAIL_PROVIDER: z.enum(["console", "resend", "brevo"]).default("console"),

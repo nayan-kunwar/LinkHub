@@ -23,6 +23,8 @@ export const logger = pino({
       "*.password",
       "*.passwordHash",
       "*.token",
+      "*.credential",
+      "*.googleCredential",
       "*.csrfToken",
       "*.secret",
       "*.signature",

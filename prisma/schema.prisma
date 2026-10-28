@@ -65,7 +65,8 @@ model User {
   @@map("users")
 }
 
-// Later: OAuth. The table exists and is unused in the MVP.
+// Linked external identities. The API currently supports Google sign-in for
+// existing accounts only; the table still has no email or OAuth token columns.
 model Account {
   id                String @id @default(uuid()) @db.Uuid
   userId            String @map("user_id") @db.Uuid
@@ -75,6 +76,7 @@ model Account {
   user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
   @@map("accounts")
 }
 
