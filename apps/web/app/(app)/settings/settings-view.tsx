@@ -9,11 +9,13 @@ import {
   EyeOff,
   Globe2,
   Laptop,
+  Link2,
   Lock,
   Monitor,
   ShieldCheck,
   Smartphone,
   Tablet,
+  Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +25,7 @@ import {
 } from "@linkhub/shared";
 import { PageHeader } from "@/components/page-header";
 import { DashboardFrame } from "@/components/dashboard-frame";
+import { GoogleButton } from "@/components/auth/google-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -50,6 +53,29 @@ function formatDateTime(value: string): string {
     timeZone: "UTC",
     timeZoneName: "short",
   }).format(new Date(value));
+}
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5">
+      <path
+        fill="#4285F4"
+        d="M21.6 12.227c0-.709-.064-1.39-.182-2.045H12v3.868h5.382a4.6 4.6 0 0 1-1.996 3.018v2.51h3.232c1.891-1.742 2.982-4.305 2.982-7.35Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 22c2.7 0 4.964-.895 6.618-2.423l-3.232-2.509c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.598-4.123H3.06v2.59A9.996 9.996 0 0 0 12 22Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M6.402 13.9a6.01 6.01 0 0 1 0-3.8V7.51H3.06a10.01 10.01 0 0 0 0 8.98l3.342-2.59Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C16.96 2.99 14.695 2 12 2a9.996 9.996 0 0 0-8.94 5.51l3.342 2.59C7.19 7.737 9.395 5.977 12 5.977Z"
+      />
+    </svg>
+  );
 }
 
 function describeSession(userAgent: string): { label: string; icon: typeof Monitor } {
@@ -136,12 +162,15 @@ export function SettingsView() {
     cancelPendingEmail,
     changePassword,
     restoreAccount,
+    linkGoogle,
+    unlinkGoogle,
   } = useAppData();
 
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [emailErrors, setEmailErrors] = useState<{ email?: string; currentPassword?: string }>({});
   const [emailStatus, setEmailStatus] = useState("");
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -155,6 +184,32 @@ export function SettingsView() {
   const pendingEmail = state.account.pendingEmail;
   const scheduledFor = state.account.deletionScheduledFor;
   const otherSessions = state.sessions.filter((session) => !session.current);
+  const googleConnected = state.account.connectedProviders.includes("google");
+  const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
+
+  const connectGoogle = async (credential: string) => {
+    setGoogleBusy(true);
+    try {
+      const result = await linkGoogle(credential);
+      if (!result.ok) {
+        const error = result.error;
+        if (error?.status === 429) {
+          toast.error("Too many attempts. Try again later.");
+        } else {
+          toast.error(error?.message ?? "Could not connect Google.");
+        }
+        return;
+      }
+      toast.success("Google account connected");
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    const ok = await unlinkGoogle();
+    if (ok) toast.success("Google account disconnected");
+  };
 
   const submitEmail = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -399,6 +454,69 @@ export function SettingsView() {
               </p>
             ) : null}
           </Card>
+
+          {googleEnabled || googleConnected ? (
+            <Card className="p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-800">
+                    <Link2 aria-hidden="true" className="size-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-bold text-zinc-900">Connected accounts</h2>
+                    <p className="mt-1 text-sm text-zinc-700">
+                      Use Google to sign in to Link Hub. We store only Google&apos;s account
+                      identifier, never your Google password or access tokens.
+                    </p>
+                  </div>
+                </div>
+                <Badge variant={googleConnected ? "green" : "zinc"}>
+                  {googleConnected ? "Connected" : "Not connected"}
+                </Badge>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm">
+                  <GoogleMark />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-zinc-900">Google</p>
+                  <p className="text-xs text-zinc-600">
+                    {googleConnected
+                      ? "Linked to your Link Hub account."
+                      : "Link your Google account for faster sign-in."}
+                  </p>
+                </div>
+                {googleConnected ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!state.account.hasPassword}
+                    onClick={() => {
+                      void disconnectGoogle();
+                    }}
+                  >
+                    <Unplug aria-hidden="true" className="size-4" />
+                    Disconnect
+                  </Button>
+                ) : googleEnabled ? (
+                  <div className="w-full sm:w-[240px]">
+                    <GoogleButton
+                      onCredential={connectGoogle}
+                      disabled={googleBusy}
+                      text="continue_with"
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {googleConnected && !state.account.hasPassword ? (
+                <p className="mt-2 text-xs text-amber-800">
+                  Set a password before disconnecting Google so you can still sign in.
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
 
           <Card className="p-5">
             <h2 className="font-bold text-zinc-900">Change password</h2>

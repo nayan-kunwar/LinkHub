@@ -7,6 +7,7 @@ import { Mail } from "lucide-react";
 import { loginSchema } from "@linkhub/shared";
 import { AuthLayout, AuthPreviewCard } from "@/components/auth/auth-layout";
 import { AuthAlert, PasswordInput, SubmitButton } from "@/components/auth/auth-form";
+import { GoogleButton } from "@/components/auth/google-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Label, FieldError } from "@/components/ui/input";
 import { formatFieldErrors, useAppData } from "@/lib/store";
@@ -14,15 +15,17 @@ import { formatDate } from "@/lib/utils";
 
 export function LoginForm() {
   const router = useRouter();
-  const { state, login } = useAppData();
+  const { state, login, loginWithGoogle } = useAppData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [deletionScheduledFor, setDeletionScheduledFor] = useState<string | null>(null);
   const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+  const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
 
   useEffect(() => {
     setDeletionScheduledFor(state.account.deletionScheduledFor);
@@ -36,6 +39,25 @@ export function LoginForm() {
     const queryEmail = params.get("email");
     if (queryEmail) setEmail(queryEmail);
   }, []);
+
+  const goToNext = () => {
+    const nextParam = new URLSearchParams(window.location.search).get("next");
+    let destination = "/dashboard";
+    if (nextParam && !/[\u0000-\u001f\u007f\\]/.test(nextParam)) {
+      try {
+        // Resolve first, then compare origins. A prefix check alone lets
+        // encoded tabs/newlines and backslashes turn into an external URL.
+        const candidate = new URL(nextParam, window.location.origin);
+        if (candidate.origin === window.location.origin) {
+          destination = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+        }
+      } catch {
+        // Invalid URLs fall back to the dashboard.
+      }
+    }
+    router.push(destination);
+    router.refresh();
+  };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -76,24 +98,39 @@ export function LoginForm() {
         return;
       }
 
-      const nextParam = new URLSearchParams(window.location.search).get("next");
-      let destination = "/dashboard";
-      if (nextParam && !/[\u0000-\u001f\u007f\\]/.test(nextParam)) {
-        try {
-          // Resolve first, then compare origins. A prefix check alone lets
-          // encoded tabs/newlines and backslashes turn into an external URL.
-          const candidate = new URL(nextParam, window.location.origin);
-          if (candidate.origin === window.location.origin) {
-            destination = `${candidate.pathname}${candidate.search}${candidate.hash}`;
-          }
-        } catch {
-          // Invalid URLs fall back to the dashboard.
-        }
-      }
-      router.push(destination);
-      router.refresh();
+      goToNext();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setFormError("");
+    setErrors({});
+    setGoogleLoading(true);
+    try {
+      const result = await loginWithGoogle({ credential, remember });
+      if (!result.ok) {
+        const error = result.error;
+        if (error?.code === "GOOGLE_NOT_LINKED") {
+          setFormError(
+            "This Google account is not linked to a Link Hub account. Sign in with your password, then connect Google in Settings.",
+          );
+        } else if (error?.code === "GOOGLE_SIGN_IN_DISABLED") {
+          setFormError("Google sign-in is not available right now. Use your email and password.");
+        } else if (error?.code === "GOOGLE_EMAIL_UNVERIFIED") {
+          setFormError(error.message);
+        } else if (error?.status === 429) {
+          setFormError("Too many Google sign-in attempts. Wait a few minutes and try again.");
+        } else {
+          setFormError(error?.message ?? "Could not sign in with Google. Try again.");
+        }
+        return;
+      }
+
+      goToNext();
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -123,6 +160,27 @@ export function LoginForm() {
           </Link>
           .
         </AuthAlert>
+      ) : null}
+
+      {googleEnabled ? (
+        <div className="mb-5">
+          <GoogleButton
+            onCredential={handleGoogleCredential}
+            disabled={loading || googleLoading}
+            text="signin_with"
+          />
+          {googleLoading ? (
+            <p role="status" className="mt-2 text-center text-sm text-zinc-600">
+              Verifying your Google account…
+            </p>
+          ) : (
+            <div className="mt-4 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-zinc-500">
+              <span className="h-px flex-1 bg-zinc-200" />
+              or continue with email
+              <span className="h-px flex-1 bg-zinc-200" />
+            </div>
+          )}
+        </div>
       ) : null}
 
       <form onSubmit={submit} noValidate>
@@ -196,7 +254,9 @@ export function LoginForm() {
         </div>
 
         <AuthAlert>{formError}</AuthAlert>
-        <SubmitButton loading={loading}>{loading ? "Signing in…" : "Sign in"}</SubmitButton>
+        <SubmitButton loading={loading} disabled={googleLoading}>
+          {loading ? "Signing in…" : "Sign in"}
+        </SubmitButton>
       </form>
 
       {allowSignup ? (

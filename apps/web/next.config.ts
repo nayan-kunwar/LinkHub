@@ -27,11 +27,12 @@ if (process.env.NODE_ENV === "production") {
 // unless the app is migrated to nonce-based dynamic rendering.
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://accounts.google.com/gsi/",
+  "frame-src https://accounts.google.com/gsi/",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -41,6 +42,10 @@ const contentSecurityPolicy = [
 
 const globalHeaders = [
   { key: "Content-Security-Policy", value: contentSecurityPolicy },
+  // Google Identity Services opens a popup and posts the credential back to
+  // the opener. same-origin-allow-popups keeps the opener isolated from other
+  // origins while permitting that flow.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

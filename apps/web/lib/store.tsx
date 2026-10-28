@@ -58,6 +58,12 @@ interface AppDataContextValue {
     password: string;
     remember?: boolean;
   }) => Promise<MutationResult>;
+  loginWithGoogle: (input: {
+    credential: string;
+    remember?: boolean;
+  }) => Promise<MutationResult>;
+  linkGoogle: (credential: string) => Promise<MutationResult>;
+  unlinkGoogle: () => Promise<boolean>;
   logout: () => Promise<void>;
   addLink: (values: LinkFormValues) => Promise<boolean>;
   updateLink: (id: string, values: LinkFormValues) => Promise<boolean>;
@@ -107,6 +113,8 @@ function toAccount(account: ApiAccount): AppAccount {
     status: account.status,
     createdAt: account.createdAt,
     deletionScheduledFor: account.deletionScheduledFor,
+    connectedProviders: account.connectedProviders ?? [],
+    hasPassword: account.hasPassword ?? false,
   };
 }
 
@@ -229,7 +237,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const failMutation = useCallback(
     (error: unknown, fallback: string, notify = true): MutationResult => {
       const apiError = normalizeError(error, fallback);
-      if (apiError.status === 401) {
+      if (apiError.status === 401 && apiError.code === "UNAUTHENTICATED") {
         setState(createEmptyState());
         setStatus("anonymous");
         if (notify) toast.error("Your session expired. Sign in again.");
@@ -257,6 +265,57 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     },
     [failMutation, load],
   );
+
+  const loginWithGoogle = useCallback(
+    async (input: { credential: string; remember?: boolean }) => {
+      try {
+        await api.auth.googleLogin(input);
+        await load();
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Google sign-in failed.", false);
+      }
+    },
+    [failMutation, load],
+  );
+
+  const linkGoogle = useCallback(
+    async (credential: string) => {
+      try {
+        const result = await api.auth.linkGoogle(credential);
+        setState((current) => ({
+          ...current,
+          account: {
+            ...current.account,
+            connectedProviders: result.connectedProviders,
+          },
+        }));
+        return { ok: true };
+      } catch (error) {
+        return failMutation(error, "Could not connect Google.", false);
+      }
+    },
+    [failMutation],
+  );
+
+  const unlinkGoogle = useCallback(async () => {
+    try {
+      await api.auth.unlinkGoogle();
+      setState((current) => ({
+        ...current,
+        account: {
+          ...current.account,
+          connectedProviders: current.account.connectedProviders.filter(
+            (provider) => provider !== "google",
+          ),
+        },
+      }));
+      return true;
+    } catch (error) {
+      failMutation(error, "Could not disconnect Google.");
+      return false;
+    }
+  }, [failMutation]);
 
   const logout = useCallback(async () => {
     try {
@@ -792,6 +851,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       loadError,
       refresh,
       login,
+      loginWithGoogle,
+      linkGoogle,
+      unlinkGoogle,
       logout,
       addLink,
       updateLink,
@@ -821,6 +883,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       loadError,
       refresh,
       login,
+      loginWithGoogle,
+      linkGoogle,
+      unlinkGoogle,
       logout,
       addLink,
       updateLink,

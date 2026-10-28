@@ -15,6 +15,8 @@ export interface AppAccount {
   status: string;
   createdAt: string;
   deletionScheduledFor: string | null;
+  connectedProviders: string[];
+  hasPassword: boolean;
 }
 
 export interface AppState {
@@ -65,6 +67,8 @@ export const EMPTY_ACCOUNT: AppAccount = {
   status: "anonymous",
   createdAt: new Date(0).toISOString(),
   deletionScheduledFor: null,
+  connectedProviders: [],
+  hasPassword: false,
 };
 
 export function createEmptyState(): AppState {

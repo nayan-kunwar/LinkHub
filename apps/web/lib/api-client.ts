@@ -38,6 +38,9 @@ export interface ApiAccount {
   role: string;
   createdAt: string;
   deletionScheduledFor: string | null;
+  /** Present on GET /account; /auth/me returns the base account fields only. */
+  connectedProviders?: string[];
+  hasPassword?: boolean;
 }
 
 export interface ApiProfile extends Profile {
@@ -224,6 +227,21 @@ export const api = {
       setCsrfToken(data.csrfToken);
       return data;
     },
+    googleLogin: async (input: { credential: string; remember?: boolean }) => {
+      const data = await request<LoginResponse>("/auth/google", {
+        method: "POST",
+        body: input,
+      });
+      setCsrfToken(data.csrfToken);
+      return data;
+    },
+    linkGoogle: (credential: string) =>
+      request<{ connectedProviders: string[] }>("/auth/google/link", {
+        method: "POST",
+        body: { credential },
+      }),
+    unlinkGoogle: () =>
+      request<void>("/auth/google", { method: "DELETE" }),
     logout: async () => {
       await request<void>("/auth/logout", { method: "POST" });
       setCsrfToken(null);
