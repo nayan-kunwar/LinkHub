@@ -1083,7 +1083,7 @@ Order:
 | Web | Vercel Hobby (or Cloudflare Pages) | Root ISR, cached profile data, `/api/*` rewrite, `/internal/revalidate`; Hobby is non-commercial — verify the plan fits a public multi-tenant service |
 | API | Render free | Cold starts ~30–60 s; repeat profile requests use cached data, but a cache miss waits for the API; auth/dashboard requests can exceed the Vercel proxy timeout; upgrade for always-on |
 | DB | Neon free (PostgreSQL 18) | Pooled `DATABASE_URL`, `DIRECT_URL` for migrations; PITR window per plan; set a small `connection_limit` so Prisma + sessions do not exhaust connections |
-| Email | Brevo free | Verified sending domain `nayankunwar.com` (SPF/DKIM/DMARC) |
+| Email | Brevo free | Verified sending domain `nayankunwar.com` (DKIM CNAMEs + DMARC; apex SPF optional and not yet published) |
 | Jobs | cron-job.org → GitHub Actions | One nightly job (§11.3) at 03:17 UTC; Render's free plan has no cron jobs, and GitHub's own `schedule` trigger is not used because it can silently drop runs |
 | DNS | `link.nayankunwar.com` → Vercel; API uses the Render `onrender.com` hostname (a custom API domain is optional) | |
 
