@@ -88,6 +88,9 @@ psql "$DIRECT_URL" -c "select username, is_published from profiles;"
 The repository contains `render.yaml` for the API web service. The free plan
 does not support `preDeployCommand` or cron jobs, so migrations are run manually
 and the nightly analytics job runs in GitHub Actions, dispatched by cron-job.org.
+`render.yaml` also sets a build filter that ignores Markdown, `docs/`,
+`apps/web/` and `.github/`, so documentation and web-only commits do not restart
+the API. API, `packages/shared`, `prisma` and lockfile changes still deploy.
 
 1. In Render: **New → Blueprint**, connect the GitHub repository, and apply
    `render.yaml`.

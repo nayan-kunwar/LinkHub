@@ -50,6 +50,15 @@ services:
     startCommand: pnpm api:start
     healthCheckPath: /api/v1/health/live
     autoDeployTrigger: commit
+    # Documentation, the web app and CI config do not affect the API bundle.
+    # Ignoring them avoids a rebuild and restart (and a rate-limit reset) on
+    # every docs commit. API, shared, prisma and lockfile changes still deploy.
+    buildFilter:
+      ignoredPaths:
+        - "**/*.md"
+        - docs/**
+        - apps/web/**
+        - .github/**
     envVars:
       - fromGroup: linkhub-api-shared
       - key: APP_URL
