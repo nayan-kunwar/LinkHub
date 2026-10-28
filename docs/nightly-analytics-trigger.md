@@ -96,13 +96,15 @@ visible later, and keep the job **enabled**.
 | Field | Value |
 |---|---|
 | Check | `LinkHub nightly analytics` |
-| Schedule | Cron `17 3 * * *`, UTC (or Simple: period 1 day) |
+| Schedule | Cron `17 3 * * *`, UTC |
 | Grace | 2 hours |
 | Alert | Owner email at about 05:17 UTC if no success ping arrives |
 | Ping | Success-only HTTP request from the workflow; body contains the run URL |
 
 The check was created and the `HEARTBEAT_URL` secret was set on 2026-10-27. The
-first ping succeeded in run `40463090302`.
+first ping succeeded in run `40463090302`. The settings were confirmed in the
+Healthchecks dashboard on 2026-10-28: Cron `17 3 * * *`, timezone UTC, 2-hour
+grace, email notification ON.
 
 ## Verification evidence
 
@@ -168,7 +170,8 @@ The cron-job.org test response included:
 
 - [x] Confirm the cron-job.org job is **enabled** and the next execution is
       2026-10-28 03:17 UTC. Verified by the automatic run on 2026-10-28.
-- [ ] Confirm the Healthchecks check uses daily 03:17 UTC with 2 hours grace.
+- [x] Confirmed 2026-10-28: Healthchecks uses Cron `17 3 * * *`, timezone UTC,
+      2-hour grace, email notification ON.
 - [x] Verify the first automatic run on 2026-10-28 at 03:17 UTC: run
       `40625796861` succeeded and pinged the heartbeat.
 - [ ] Rotate the PAT before 2027-01-25.

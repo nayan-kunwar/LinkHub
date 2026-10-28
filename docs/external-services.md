@@ -4,7 +4,7 @@ Status: active.
 
 Last updated: 2026-10-28.
 
-Last verified: 2026-10-28 (nightly trigger, production smoke checks and vendor usage review).
+Last verified: 2026-10-28 (nightly trigger, production smoke checks, vendor usage review, Render workspace audit, edge/DNS and email DNS checks).
 
 This document is the single inventory of every external service and major
 technology LinkHub depends on. For each entry it records the role, the plan and
@@ -127,7 +127,7 @@ committed to this repository.
 
 | Vendor | Free limit | What to watch | Policy note |
 |---|---|---|---|
-| Render | 750 instance-hours/month (workspace-wide), 5 GB outbound, 512 MB RAM, 25 services, 2 custom domains, 500 pipeline minutes | One always-on API uses about 730 hours. The workspace has **12 services**, so audit the other 11: any other free web service shares the same pool. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. | Free instances are not documented for production. |
+| Render | 750 instance-hours/month (workspace-wide), 5 GB outbound, 512 MB RAM, 25 services, 2 custom domains, 500 pipeline minutes | One always-on API uses about 730 hours. The 2026-10-28 audit reduced the workspace from 12 to 8 services: 4 deleted, 2 suspended, 6 active — **all six active are Free**. LinkHub still shares the 750-hour pool with five other free web services; 24/7 leaves only 6-30 hours. Suspend the other five or isolate LinkHub. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. | Free instances are not documented for production. |
 | Vercel | 100 GB fast data transfer, 10 GB fast origin transfer, 1M CDN requests, 1 h CDN CPU, 1M ISR reads, 200k ISR writes | Observed 2026-10-28: 49.24 MB fast data transfer and 6,034 CDN requests. Public profile HTML is rendered per request; profile data is cached for 300 s. | Hobby is non-commercial only. A public multi-tenant service likely needs Pro or another host. |
 | Neon | 100 CU-hours/project/month, 1 GB storage, 6-hour history, one snapshot | Observed 2026-10-28: 5.46 CU-hrs and 32.97 MB storage. Recheck after a week of normal traffic; 5-minute readiness checks would use ~182 CU-hours/month. | No full PITR. The off-machine logical dump is the recovery path. |
 | Brevo | 300 emails/day | Observed 2026-10-28: 300 available (0 used). Signup, verification, reset, email change, restore, contact and 5xx alerts share the quota. | Watch **Statistics** after any signup spike. |
@@ -156,7 +156,7 @@ on 2026-10-26; Brevo is the current daily allowance.
 | Render | Free instance hours | 231.83 h | 750 h/month | 30.9% |
 | Render | Bandwidth | 334 MB | 5 GB | 6.5% |
 | Render | Custom domains | 2 | 2 | 100% |
-| Render | Services | 12 | 25 | 48% |
+| Render | Services | 12 at capture; 8 after cleanup | 25 | 48% → 32% |
 | Render | Pipeline minutes | 34 min | 500 min | 6.8% |
 | Neon | Compute | 5.46 CU-hrs | 100 CU-hrs/month | 5.5% |
 | Neon | Storage | 32.97 MB | 1 GB | 3.2% |
@@ -167,10 +167,15 @@ on 2026-10-26; Brevo is the current daily allowance.
 **Interpretation**
 
 - **Render instance hours are the binding constraint.** The 750-hour allowance
-  is workspace-wide, and the workspace has 12 services. Audit the other 11; any
-  other free web service shares the pool. A full 24/7 month at the current
-  keep-warm cadence is roughly 720-744 hours, leaving ~30 hours in November and
-  ~6 hours in December for LinkHub alone.
+  is workspace-wide. The 2026-10-28 audit reduced the workspace from 12 to 8
+  services: 4 deleted, 2 suspended, 6 active. **All six active services are on
+  the Free plan**, so LinkHub still shares the pool with five other free web
+  services. A full 24/7 month at the current keep-warm cadence is roughly
+  720-744 hours, leaving ~30 hours in November and ~6 hours in December. Any
+  other free service that wakes for more than the remaining margin can exhaust
+  the workspace, and Render then suspends **all** free web services, including
+  LinkHub. Suspend the five non-LinkHub free services or move LinkHub to a
+  dedicated workspace before public launch.
 - **Render bandwidth is 334 MB, not the 10 MB shown on the Metrics page.** The
   billing page includes service-initiated traffic (314 MB) plus HTTP responses
   (20 MB). Still 6.5% of 5 GB.
@@ -208,9 +213,10 @@ dependencies. They are listed so they are not mistaken for live services.
 | 2026-10-27 | cron-job.org test dispatch | `200 OK`; created run `40467931426`, which succeeded and pinged the heartbeat |
 | 2026-10-28 | First automatic cron-job.org dispatch | Run `40625796861` started at **03:17:05 UTC** and succeeded; `Ping heartbeat` succeeded; failure step skipped |
 | 2026-10-28 | Production pages and API | `/`, `/nayankunwar`, `/login`, `/contact`, `/terms`, `/privacy`, `/robots.txt`, `/sitemap.xml` returned 200; API health returned 200 |
-| 2026-10-28 | Vendor usage review | Vercel, Render, Neon and Brevo within limits; Render workspace has 12 services and 2/2 custom domains; see **Usage snapshot** above |
+| 2026-10-28 | Vendor usage review | Vercel, Render, Neon and Brevo within limits; Render workspace had 12 services at capture (8 after cleanup) and 2/2 custom domains; see **Usage snapshot** above |
+| 2026-10-28 | Render workspace audit | 12 → 8 services: 4 deleted (movie-recommendation-backend, ChilChat, community-connect-backend, real-time-polling-backend), 2 suspended (QuipShop-Backend, web-rtc), 6 active and all Free (linkhub-api, anveshan, shrutilipi-backend, payonce…, nearby-friends, shortly). LinkHub still shares the 750-hour pool; suspend the other five or isolate LinkHub. |
 | 2026-10-28 | Edge and DNS check | `link.nayankunwar.com` and the apex return `server: Vercel` with no `cf-ray`; the Render API returns `server: cloudflare`, `cf-ray` and `x-render-origin-server: Render`. Nameservers are `nebula.dns-parking.com` / `aurora.dns-parking.com`. Cloudflare is Render's edge, not an owner-configured zone. |
-| 2026-10-28 | Render build filter | `render.yaml` now ignores `**/*.md`, `docs/**`, `apps/web/**` and `.github/**`. The blueprint sync restarted the API once (uptime reset at 12:04 UTC); a docs-only commit is used to confirm later commits do not restart it. |
+| 2026-10-28 | Render build filter | `render.yaml` now ignores `**/*.md`, `docs/**`, `apps/web/**` and `.github/**`. The blueprint sync restarted the API once; two later docs-only commits did not restart it (uptime 760 s at 12:18:43 UTC). |
 | 2026-10-28 | Email DNS check | Apex TXT has `google-site-verification` and `brevo-code`, no SPF. DKIM CNAMEs `brevo1._domainkey` / `brevo2._domainkey` resolve to Brevo keys; `_dmarc` is `p=none` with Brevo reporting. SPF is optional for Brevo (DKIM alignment) and is recorded as a pre-signup item. |
 
 Vendor checks and open items:
@@ -219,8 +225,9 @@ Vendor checks and open items:
 - [x] Neon compute/storage reviewed (2026-10-28): 5.46 CU-hrs, 32.97 MB.
 - [x] Brevo daily quota reviewed (2026-10-28): 300 available.
 - [x] Render billing reviewed (2026-10-28): 231.83 instance hours, 334 MB, 2/2 domains.
-- [ ] Render workspace audit: confirm the other 11 services do not consume free instance hours.
-- [ ] Healthchecks.io check uses Cron `17 3 * * *`, timezone UTC, 2-hour grace.
+- [x] Render workspace audit (2026-10-28): 12 → 8 services; 4 deleted, 2 suspended, 6 active, **all six Free**. LinkHub shares the 750-hour pool with five other free web services.
+- [ ] Render free-hour isolation: suspend the five non-LinkHub free services or move LinkHub to a dedicated workspace before public launch.
+- [x] Healthchecks.io check confirmed (2026-10-28): Cron `17 3 * * *`, timezone UTC, 2-hour grace, email notification ON.
 - [ ] Publish an apex SPF record (`v=spf1 include:spf.brevo.com ~all`) before public signup; DKIM (two CNAMEs) and DMARC (`p=none`) are already live. Only add SPF if nothing else sends from the domain.
 - [x] Cloudflare documented as Render's edge, not a configured service (2026-10-28): web responses are `server: Vercel` with no `cf-ray`; only the API shows Cloudflare headers. Nameservers are the registrar's `*.dns-parking.com`.
 

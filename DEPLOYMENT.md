@@ -256,7 +256,7 @@ dispatch manually.
 
 | Vendor | Free limit | Watch |
 |---|---|---|
-| Render | 750 instance hours/month (workspace-wide); 5 GB outbound bandwidth; 512 MB RAM; 25 services; 2 custom domains; 500 pipeline minutes | One API service running 24/7 uses about 730 hours. The workspace has **12 services**, so audit the other 11; any other free web service shares the pool. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. Render's free docs say free instances are not for production. |
+| Render | 750 instance hours/month (workspace-wide); 5 GB outbound bandwidth; 512 MB RAM; 25 services; 2 custom domains; 500 pipeline minutes | One API service running 24/7 uses about 730 hours. The 2026-10-28 audit reduced the workspace from 12 to 8 services: 4 deleted, 2 suspended, 6 active — **all six active are Free**. LinkHub still shares the 750-hour pool with five other free web services; 24/7 leaves only 6-30 hours. Suspend the other five or isolate LinkHub. Observed 2026-10-28: 231.83 hours, 334 MB, 2/2 domains. Render's free docs say free instances are not for production. |
 | Vercel Hobby | 100 GB fast data transfer; 10 GB fast origin transfer; 1M CDN requests; 1 h CDN CPU; 1M ISR reads; 200k ISR writes; 1M function invocations; 4 CPU-hours; 360 GB-hours | Public profile HTML is rendered per request; profile data is cached for 300 seconds. Observed 2026-10-28: 49.24 MB fast data transfer, 6,034 CDN requests. Hobby is non-commercial only; a public multi-tenant launch may require Pro or another host. |
 | Neon Free | 100 CU-hours/project/month; 1 GB storage; 6-hour history; one manual snapshot; no full PITR; PostgreSQL 18 | Observed 2026-10-28: 5.46 CU-hrs, 32.97 MB storage, 4.25 MB history. Recheck after a week of normal traffic; 5-minute readiness checks would use ~182 CU-hours/month. |
 | Brevo Free | 300 emails/day | Observed 2026-10-28: 300 available. Signup, verification, reset, email-change, restore, contact and 5xx alerts share the quota. Watch **Statistics** after a signup spike. |
@@ -269,7 +269,9 @@ The measured database on 2026-10-27 was `8,672 kB` with 2 users, 2 profiles,
 8 links, 5 categories, 5 click events, 1 session and 5 verification tokens.
 Vendor usage was reviewed on 2026-10-28: Vercel, Render, Neon and Brevo are
 within their free limits. The remaining Render risk is workspace-wide instance
-hours: 12 services exist, so confirm the other 11 are not free web services.
+hours: after the 2026-10-28 cleanup, 8 services exist — 6 active (all Free),
+2 suspended and 4 deleted. LinkHub shares the 750-hour pool with five other
+free web services, so suspend them or isolate LinkHub before public launch.
 
 A fresh logical dump was taken 2026-10-27 (`36,396` bytes, all 12 tables,
 verified with `pg_restore --list`) and stored off-machine with a metadata
