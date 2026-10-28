@@ -99,7 +99,8 @@ and the nightly analytics job runs in GitHub Actions, dispatched by cron-job.org
    - Region: Singapore
    - Plan: Free
    - Health check: `/api/v1/health/live`
-   - `TRUST_PROXY=3` (verified Render/Cloudflare hop count; do not change
+   - `TRUST_PROXY=3` (verified client → Cloudflare edge → Render proxy hop
+     count; Cloudflare is Render's edge, not a separate zone; do not change
      without repeating the probe procedure in `link-hub-architecture.md` §17)
 4. Keep `EMAIL_PROVIDER=brevo` for production. The API refuses to start with
    the console mailer unless `ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true` is set

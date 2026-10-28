@@ -22,12 +22,12 @@ here. Secret names and storage locations are listed in
 Browser
   │
   ▼
-Cloudflare edge (observed)
-  │
+Vercel (Next.js 16 web, Server: Vercel)
+  │  /api/* rewrite
   ▼
-Vercel (Next.js 16 web) ── /api/* rewrite ──► Render (Express 5 API) ──► Neon (PostgreSQL 18)
-                                                        │
-                                                        └──► Brevo (transactional email)
+Render edge (Cloudflare, CF-RAY) ──► Render (Express 5 API) ──► Neon (PostgreSQL 18)
+                                            │
+                                            └──► Brevo (transactional email)
 
 UptimeRobot ──► Render  /api/v1/health/live  every 5 min (keep-warm)
                     └──► /api/v1/health       every 30 min (readiness, queries Neon)
@@ -38,6 +38,11 @@ cron-job.org ──► GitHub Actions (nightly) ──► Neon
 GitHub ──► Vercel and Render auto-deploy on `main`
 Owner  ──► OneDrive (pg_dump backups)
 ```
+
+Cloudflare is not configured by the owner. `link.nayankunwar.com` and the apex
+are served directly by Vercel; the only Cloudflare hop is Render's own edge for
+`onrender.com`, confirmed from live response headers on 2026-10-28. Authoritative
+DNS is the registrar's (`*.dns-parking.com`), not Cloudflare's.
 
 ## Dashboard links
 
@@ -66,8 +71,8 @@ credentials are stored in this repository.
 | **Render** | Hosts the Express 5 API; runs schema-compatible code from `main`; exposes `/api/v1/health/live` as the Render health check; auto-deploys on commit | **Free:** 750 instance-hours/month **shared across the workspace**, 5 GB outbound bandwidth, 512 MB RAM, 0.15 CPU (service dashboard), 25 services, 2 custom domains, 500 pipeline minutes. Sleeps after 15 minutes idle; cold start measured at **57.1 s**; no cron jobs or pre-deploy commands. Memory/CPU metrics are paid-only. Render's free plan is **not documented for production**. | `render.yaml` plus Render dashboard env vars | API returns 502/timeout or cold-starts. Auth, dashboard, analytics, export and contact are unavailable. Cached public profiles may still render from Vercel. |
 | **Neon** | Managed PostgreSQL 18 in Singapore; stores users, profiles, links, categories, sessions, verification tokens, click events and rollups | **Free:** 100 CU-hours/project/month, 1 GB storage, 6-hour history window, one manual snapshot, **no full PITR**. Compute scales to zero after about 5 minutes idle. | Neon console; `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) on Render and in GitHub Actions secrets | Writes fail and readiness returns `503`. Cached public profiles may still render. Recovery is the latest off-machine `pg_dump`, not PITR. |
 | **Brevo** | Transactional email: signup verification, password reset, email-change verification, account-restore links, contact-form delivery to the owner, and throttled API 5xx alerts | **Free:** 300 emails/day, shared by all flows. | Render env `EMAIL_PROVIDER=brevo`, `EMAIL_BREVO_API_KEY`, `EMAIL_FROM`; domain authentication records in Hostinger DNS | Verification, reset, email change, restore, contact and 5xx alerts stop. Signup and recovery are effectively blocked. |
-| **Cloudflare** | Edge proxy observed in front of Render; part of the TLS and request path | Not configured in this repository. Treated as part of the upstream path. | Not in the repo. Verified indirectly with the `X-Forwarded-For` probe on 2026-10-26. | The proxy chain changes. `TRUST_PROXY=3` and the trusted country header (`WEB_PROXY_SECRET`) must be re-verified. |
-| **Hostinger** | Domain registration for `nayankunwar.com` and the authoritative DNS zone: `link` CNAME to Vercel, plus Brevo SPF, DKIM and DMARC records | Paid domain/DNS; not a free tier. | Hostinger → Domains → `nayankunwar.com` → DNS / DNS Zone | DNS resolution and HTTPS fail for `link.nayankunwar.com`; Brevo domain authentication breaks if the records are removed. |
+| **Cloudflare** | Render's upstream edge for `onrender.com`: terminates TLS and adds the Cloudflare HTTP layer in front of the API. It is **not** an owner-configured zone and does not sit in front of Vercel. | Part of Render's infrastructure; no account, plan or quota of ours. | Not in this repository. Confirmed 2026-10-28 from live headers: the API returns `server: cloudflare`, `cf-ray` and `x-render-origin-server: Render`, while `link.nayankunwar.com` returns `server: Vercel` with no `cf-ray`. | Render's edge changes or is bypassed. Re-verify `TRUST_PROXY=3` and the trusted country header (`WEB_PROXY_SECRET`) before changing either. |
+| **Hostinger** | Domain registration for `nayankunwar.com` and the authoritative DNS zone (nameservers `nebula.dns-parking.com` / `aurora.dns-parking.com`): apex and `link` CNAME to Vercel, plus Brevo SPF, DKIM and DMARC records | Paid domain/DNS; not a free tier. | Hostinger → Domains → `nayankunwar.com` → DNS / DNS Zone | DNS resolution and HTTPS fail for `link.nayankunwar.com`; Brevo domain authentication breaks if the records are removed. |
 
 ## Operations, CI and recovery services
 
@@ -204,6 +209,7 @@ dependencies. They are listed so they are not mistaken for live services.
 | 2026-10-28 | First automatic cron-job.org dispatch | Run `40625796861` started at **03:17:05 UTC** and succeeded; `Ping heartbeat` succeeded; failure step skipped |
 | 2026-10-28 | Production pages and API | `/`, `/nayankunwar`, `/login`, `/contact`, `/terms`, `/privacy`, `/robots.txt`, `/sitemap.xml` returned 200; API health returned 200 |
 | 2026-10-28 | Vendor usage review | Vercel, Render, Neon and Brevo within limits; Render workspace has 12 services and 2/2 custom domains; see **Usage snapshot** above |
+| 2026-10-28 | Edge and DNS check | `link.nayankunwar.com` and the apex return `server: Vercel` with no `cf-ray`; the Render API returns `server: cloudflare`, `cf-ray` and `x-render-origin-server: Render`. Nameservers are `nebula.dns-parking.com` / `aurora.dns-parking.com`. Cloudflare is Render's edge, not an owner-configured zone. |
 
 Vendor checks and open items:
 
@@ -213,7 +219,7 @@ Vendor checks and open items:
 - [x] Render billing reviewed (2026-10-28): 231.83 instance hours, 334 MB, 2/2 domains.
 - [ ] Render workspace audit: confirm the other 11 services do not consume free instance hours.
 - [ ] Healthchecks.io check uses Cron `17 3 * * *`, timezone UTC, 2-hour grace.
-- [ ] Cloudflare is documented as an observed edge rather than a configured service, unless the owner confirms otherwise.
+- [x] Cloudflare documented as Render's edge, not a configured service (2026-10-28): web responses are `server: Vercel` with no `cf-ray`; only the API shows Cloudflare headers. Nameservers are the registrar's `*.dns-parking.com`.
 
 ## Maintenance
 
