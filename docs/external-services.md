@@ -44,10 +44,11 @@ are served directly by Vercel; the only Cloudflare hop is Render's own edge for
 `onrender.com`, confirmed from live response headers on 2026-10-28. Authoritative
 DNS is the registrar's (`*.dns-parking.com`), not Cloudflare's.
 
-When Google sign-in is enabled, the browser also loads Google Identity Services
-from `accounts.google.com`. The API verifies the returned Google ID token with
-Google's JWKS. No Google client secret is used or stored. The feature is dark by
-default until both Google client-ID environment variables are set.
+When Google sign-in or sign-up is enabled, the browser also loads Google Identity
+Services from `accounts.google.com`. The API verifies the returned Google ID
+token with Google's JWKS. No Google client secret is used or stored. The feature
+is dark by default until both Google client-ID environment variables are set;
+Google account creation additionally requires `ALLOW_SIGNUP=true`.
 
 ## Dashboard links
 
@@ -76,7 +77,7 @@ credentials are stored in this repository.
 | **Render** | Hosts the Express 5 API; runs schema-compatible code from `main`; exposes `/api/v1/health/live` as the Render health check; auto-deploys on commit | **Free:** 750 instance-hours/month **shared across the workspace**, 5 GB outbound bandwidth, 512 MB RAM, 0.15 CPU (service dashboard), 25 services, 2 custom domains, 500 pipeline minutes. Sleeps after 15 minutes idle; cold start measured at **57.1 s**; no cron jobs or pre-deploy commands. Memory/CPU metrics are paid-only. Render's free plan is **not documented for production**. | `render.yaml` plus Render dashboard env vars. A build filter ignores `**/*.md`, `docs/**`, `apps/web/**` and `.github/**`, so docs and web-only commits do not restart the API. | API returns 502/timeout or cold-starts. Auth, dashboard, analytics, export and contact are unavailable. Cached public profiles may still render from Vercel. |
 | **Neon** | Managed PostgreSQL 18 in Singapore; stores users, profiles, links, categories, sessions, verification tokens, click events and rollups | **Free:** 100 CU-hours/project/month, 1 GB storage, 6-hour history window, one manual snapshot, **no full PITR**. Compute scales to zero after about 5 minutes idle. | Neon console; `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) on Render and in GitHub Actions secrets | Writes fail and readiness returns `503`. Cached public profiles may still render. Recovery is the latest off-machine `pg_dump`, not PITR. |
 | **Brevo** | Transactional email: signup verification, password reset, email-change verification, account-restore links, contact-form delivery to the owner, and throttled API 5xx alerts | **Free:** 300 emails/day, shared by all flows. | Render env `EMAIL_PROVIDER=brevo`, `EMAIL_BREVO_API_KEY`, `EMAIL_FROM`; domain authentication records in Hostinger DNS (Brevo code TXT, DKIM CNAMEs, DMARC; no apex SPF) | Verification, reset, email change, restore, contact and 5xx alerts stop. Signup and recovery are effectively blocked. |
-| **Google Identity Services** | Optional Google sign-in for **existing** accounts. The browser receives a Google ID token; the API verifies it with Google's JWKS and looks up the linked Google subject. No Google signup, email auto-link, access token or client secret. | Free. OAuth consent screen in Testing mode for the private phase; publish before public launch. | Google Cloud Console Web OAuth client; Render `GOOGLE_CLIENT_ID`; Vercel `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (same value) | Google sign-in returns `503 GOOGLE_SIGN_IN_DISABLED` or the button is hidden. Password sign-in and linked-account management continue to work. |
+| **Google Identity Services** | Optional Google sign-in and Google-first sign-up. The browser receives a Google ID token; the API verifies it with Google's JWKS, signs in a linked Google subject, or returns one editable username claim for a new account. Existing emails are never auto-linked. No Google access token or client secret. | Free. OAuth consent screen in Testing mode for the private phase; publish before public Google sign-up. | Google Cloud Console Web OAuth client; Render `GOOGLE_CLIENT_ID`; Vercel `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (same value); `ALLOW_SIGNUP`/`NEXT_PUBLIC_ALLOW_SIGNUP=true` for account creation | Google sign-in returns `503 GOOGLE_SIGN_IN_DISABLED` or the button is hidden. Password sign-in and linked-account management continue to work. |
 | **Cloudflare** | Render's upstream edge for `onrender.com`: terminates TLS and adds the Cloudflare HTTP layer in front of the API. It is **not** an owner-configured zone and does not sit in front of Vercel. | Part of Render's infrastructure; no account, plan or quota of ours. | Not in this repository. Confirmed 2026-10-28 from live headers: the API returns `server: cloudflare`, `cf-ray` and `x-render-origin-server: Render`, while `link.nayankunwar.com` returns `server: Vercel` with no `cf-ray`. | Render's edge changes or is bypassed. Re-verify `TRUST_PROXY=3` and the trusted country header (`WEB_PROXY_SECRET`) before changing either. |
 | **Hostinger** | Domain registration for `nayankunwar.com` and the authoritative DNS zone (nameservers `nebula.dns-parking.com` / `aurora.dns-parking.com`): apex and `link` CNAME to Vercel, plus Brevo DKIM CNAMEs and DMARC (no apex SPF) | Paid domain/DNS; not a free tier. | Hostinger → Domains → `nayankunwar.com` → DNS / DNS Zone | DNS resolution and HTTPS fail for `link.nayankunwar.com`; Brevo domain authentication breaks if the records are removed. |
 
@@ -125,8 +126,9 @@ committed to this repository.
 | `INTERNAL_FETCH_TOKEN` | API and web | Render env, Vercel env | Must be identical on both; rotate together. |
 | `WEB_PROXY_SECRET` | API and web | Render env, Vercel env | Must be identical on both; gates the trusted country header. |
 | `ANALYTICS_HASH_SECRET` | API | Render env | Keyed daily click-dedupe hash. Rotating it only affects future dedupe windows; no historical linkage. |
-| `GOOGLE_CLIENT_ID` | API | Render env | Not a secret: the public Web OAuth client ID. Optional; unset disables Google sign-in. Must match the Vercel value. |
+| `GOOGLE_CLIENT_ID` | API | Render env | Not a secret: the public Web OAuth client ID. Optional; unset disables Google sign-in and sign-up. Must match the Vercel value. |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Web | Vercel env | Not a secret: the same public client ID, inlined at build time. Optional; unset hides the Google button. |
+| `NEXT_PUBLIC_ALLOW_SIGNUP` | Web | Vercel env | Build-time UI flag for `/signup`; must be `true` for the Google entry screen to render. The API's `ALLOW_SIGNUP` remains the security boundary. |
 | `EMAIL_BREVO_API_KEY` | API | Render env | Rotate in Brevo → SMTP & API → API Keys. |
 | `HEARTBEAT_URL` | Nightly workflow | GitHub Actions secret | Recreate the Healthchecks check or ping URL, then update the secret. |
 | GitHub fine-grained PAT | cron-job.org | cron-job.org job header only | `LinkHub` only, **Actions: Read and write**, expires **2027-01-25 07:08 UTC**. Rotate before expiry. |
@@ -205,7 +207,7 @@ dependencies. They are listed so they are not mistaken for live services.
 
 | Item | Status | Note |
 |---|---|---|
-| Google sign-in | Built, dark by default | Existing accounts only; enabled only when `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` are set. No Google signup and no email auto-link. |
+| Google sign-in and sign-up | Built, dark by default | Sign-in is limited to linked accounts; sign-up is Google-first with one user-confirmed username and requires `ALLOW_SIGNUP=true`. No email auto-link. Enabled only when `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` are set. |
 | Resend | Dormant | The mailer supports `EMAIL_PROVIDER=resend`, but production uses Brevo. No Resend key is configured. |
 | Console mail transport | Development only | Writes to `apps/api/.mail-outbox`. Production validation rejects it unless `ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true`, which must not be enabled on the public site. |
 | mail.tm / maxxspace.com | Test only | Temporary inboxes used to verify email delivery and the email-change flow. Not part of the product. |
@@ -228,6 +230,7 @@ dependencies. They are listed so they are not mistaken for live services.
 | 2026-10-28 | Render build filter | `render.yaml` now ignores `**/*.md`, `docs/**`, `apps/web/**` and `.github/**`. The blueprint sync restarted the API once; two later docs-only commits did not restart it (uptime 760 s at 12:18:43 UTC). |
 | 2026-10-28 | Email DNS check | Apex TXT has `google-site-verification` and `brevo-code`, no SPF. DKIM CNAMEs `brevo1._domainkey` / `brevo2._domainkey` resolve to Brevo keys; `_dmarc` is `p=none` with Brevo reporting. SPF is optional for Brevo (DKIM alignment) and is recorded as a pre-signup item. |
 | 2026-10-28 | Google sign-in implementation | GIS ID-token flow, explicit Settings linking, unique `(user_id, provider)` constraint, verifier/service/route tests. Feature stays dark until the owner creates a Web OAuth client and sets both client-ID env vars. |
+| 2026-10-29 | Google sign-up implementation | `/signup` is Google-first with one editable username claim; `/auth/google/signup` creates an active, email-verified user only when `ALLOW_SIGNUP=true`; existing emails return `GOOGLE_ACCOUNT_EXISTS`; Google-only accounts can set a first password in Settings. Feature stays dark until the client IDs, signup flags and published consent screen are in place. |
 
 Vendor checks and open items:
 

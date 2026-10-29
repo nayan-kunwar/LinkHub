@@ -47,6 +47,16 @@ export interface MutationResult {
   error?: ApiError;
 }
 
+export type GoogleLoginOutcome =
+  | { status: "authenticated" }
+  | {
+      status: "signup_required";
+      email: string;
+      displayName: string;
+      suggestedUsername: string;
+    }
+  | { status: "error"; error?: ApiError };
+
 interface AppDataContextValue {
   state: AppState;
   hydrated: boolean;
@@ -60,6 +70,11 @@ interface AppDataContextValue {
   }) => Promise<MutationResult>;
   loginWithGoogle: (input: {
     credential: string;
+    remember?: boolean;
+  }) => Promise<GoogleLoginOutcome>;
+  signupWithGoogle: (input: {
+    credential: string;
+    username: string;
     remember?: boolean;
   }) => Promise<MutationResult>;
   linkGoogle: (credential: string) => Promise<MutationResult>;
@@ -84,7 +99,7 @@ interface AppDataContextValue {
   ) => Promise<MutationResult>;
   cancelPendingEmail: () => Promise<boolean>;
   changePassword: (
-    currentPassword: string,
+    currentPassword: string | undefined,
     newPassword: string,
   ) => Promise<MutationResult>;
   removeSession: (id: string) => Promise<boolean>;
@@ -267,13 +282,42 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   );
 
   const loginWithGoogle = useCallback(
-    async (input: { credential: string; remember?: boolean }) => {
+    async (input: {
+      credential: string;
+      remember?: boolean;
+    }): Promise<GoogleLoginOutcome> => {
       try {
-        await api.auth.googleLogin(input);
+        const result = await api.auth.googleLogin(input);
+        if ("signupRequired" in result) {
+          return {
+            status: "signup_required",
+            email: result.email,
+            displayName: result.displayName,
+            suggestedUsername: result.suggestedUsername,
+          };
+        }
+        await load();
+        return { status: "authenticated" };
+      } catch (error) {
+        const failure = failMutation(error, "Google sign-in failed.", false);
+        return { status: "error", error: failure.error };
+      }
+    },
+    [failMutation, load],
+  );
+
+  const signupWithGoogle = useCallback(
+    async (input: {
+      credential: string;
+      username: string;
+      remember?: boolean;
+    }) => {
+      try {
+        await api.auth.googleSignup(input);
         await load();
         return { ok: true };
       } catch (error) {
-        return failMutation(error, "Google sign-in failed.", false);
+        return failMutation(error, "Could not create your Link Hub.", false);
       }
     },
     [failMutation, load],
@@ -761,9 +805,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [failMutation]);
 
   const changePassword = useCallback(
-    async (currentPassword: string, newPassword: string) => {
+    async (currentPassword: string | undefined, newPassword: string) => {
       try {
         await api.account.changePassword(currentPassword, newPassword);
+        setState((current) => ({
+          ...current,
+          account: { ...current.account, hasPassword: true },
+        }));
         const sessions = await api.account.sessions().catch(() => null);
         if (sessions) {
           setState((current) => ({ ...current, sessions }));
@@ -852,6 +900,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       refresh,
       login,
       loginWithGoogle,
+      signupWithGoogle,
       linkGoogle,
       unlinkGoogle,
       logout,
@@ -884,6 +933,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       refresh,
       login,
       loginWithGoogle,
+      signupWithGoogle,
       linkGoogle,
       unlinkGoogle,
       logout,

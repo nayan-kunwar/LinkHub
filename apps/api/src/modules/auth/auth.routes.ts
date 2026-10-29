@@ -12,6 +12,7 @@ import {
   forgotPasswordLimiter,
   googleLinkLimiter,
   googleLoginLimiter,
+  googleSignupLimiter,
   loginLimiter,
   registerLimiter,
   resendVerificationLimiter,
@@ -23,6 +24,7 @@ import {
   forgotPassword,
   getMe,
   googleLogin,
+  googleSignup,
   linkGoogleAccount,
   login,
   register,
@@ -37,6 +39,7 @@ import {
   forgotPasswordSchema,
   googleAuthSchema,
   googleLinkSchema,
+  googleSignupSchema,
   loginSchema,
   resetPasswordApiSchema,
   signupApiSchema,
@@ -99,7 +102,35 @@ authRouter.post(
   googleLoginLimiter,
   validateBody(googleAuthSchema),
   async (req, res) => {
-    const user = await googleLogin(req.body.credential);
+    const result = await googleLogin(req.body.credential);
+    if (result.status === "signup_required") {
+      noStore(res);
+      sendData(res, {
+        signupRequired: true,
+        email: result.email,
+        displayName: result.displayName,
+        suggestedUsername: result.suggestedUsername,
+      });
+      return;
+    }
+    await completeLogin(req, res, result.user, req.body.remember, "google");
+  },
+);
+
+authRouter.post(
+  "/google/signup",
+  googleConfigured,
+  (_req, _res, next) => {
+    if (!env.ALLOW_SIGNUP) {
+      next(fail.signupDisabled());
+      return;
+    }
+    next();
+  },
+  googleSignupLimiter,
+  validateBody(googleSignupSchema),
+  async (req, res) => {
+    const user = await googleSignup(req.body);
     await completeLogin(req, res, user, req.body.remember, "google");
   },
 );

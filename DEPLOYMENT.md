@@ -98,8 +98,9 @@ the API. API, `packages/shared`, `prisma` and lockfile changes still deploy.
    - `DATABASE_URL` and `DIRECT_URL` from Neon
    - the five secrets from step 1
    - `EMAIL_BREVO_API_KEY` from Brevo
-   - optional: `GOOGLE_CLIENT_ID` for Google sign-in. Leave it empty to keep
-     the feature disabled; see **5.1 Google sign-in (optional)**.
+   - optional: `GOOGLE_CLIENT_ID` for Google sign-in and sign-up. Leave it empty
+     to keep the feature disabled; see **5.1 Google sign-in and sign-up
+     (optional)**.
 3. Confirm the service settings:
    - Region: Singapore
    - Plan: Free
@@ -381,8 +382,8 @@ domain).
 |---|---|
 | `API_BASE_URL` | Render service URL, no trailing slash |
 | `NEXT_PUBLIC_APP_URL` | `https://link.nayankunwar.com` |
-| `NEXT_PUBLIC_ALLOW_SIGNUP` | `false` |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional. Same Web OAuth client ID as Render's `GOOGLE_CLIENT_ID`; leave unset to hide Google sign-in. |
+| `NEXT_PUBLIC_ALLOW_SIGNUP` | `true` only when the API also has `ALLOW_SIGNUP=true`; this build-time flag opens `/signup` and the Google entry screen. |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional. Same Web OAuth client ID as Render's `GOOGLE_CLIENT_ID`; leave unset to hide the Google button. |
 | `ALLOW_DEMO_PREVIEW` | `false` |
 | `ROOT_MODE` | `landing` (marketing page at `/`; owner profile stays at `/nayankunwar`). Use `profile` only if `/` should serve the owner profile. |
 | `DEFAULT_USERNAME` | `nayankunwar` |
@@ -406,11 +407,14 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 > Vercel Hobby is for non-commercial use. A public, multi-tenant LinkHub needs
 > Vercel Pro.
 
-### 5.1 Google sign-in (optional)
+### 5.1 Google sign-in and sign-up (optional)
 
-Google sign-in is built but dark until both client-ID variables are set. It
-works for **existing** accounts only; it never creates an account and never
-auto-links by email. The full design, error codes and security notes are in
+Google sign-in and Google-first sign-up are built but dark until both client-ID
+variables are set. Existing accounts sign in only when their Google subject is
+already linked. New accounts are created only when `ALLOW_SIGNUP=true`; the user
+confirms one editable **Choose your LinkHub URL** screen and lands on the
+dashboard. Google email is never auto-linked to an existing account. The full
+design, error codes and security notes are in
 [`docs/google-sign-in.md`](docs/google-sign-in.md).
 
 1. Create a **Web application** OAuth client in Google Cloud Console:
@@ -421,24 +425,40 @@ auto-links by email. The full design, error codes and security notes are in
 2. Set the same client ID in both places:
    - Render: `GOOGLE_CLIENT_ID`
    - Vercel: `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
-3. Apply the new migration before or with the API deploy:
+3. Set the signup flags together:
+   - Render: `ALLOW_SIGNUP=true`
+   - Vercel: `NEXT_PUBLIC_ALLOW_SIGNUP=true`
+   The web flag only controls whether `/signup` renders; the API flag is the
+   security boundary. Keep them in sync.
+4. Apply the new migration before or with the API deploy:
 
    ```bash
    set -a; source .env.deploy.local; set +a
    pnpm db:deploy
    ```
 
-4. Redeploy the API (env change) and the web app (the `NEXT_PUBLIC_*` value is
-   inlined at build time).
-5. Sign in with a password, open **Settings → Connected accounts**, connect
-   Google, sign out, then use **Sign in with Google**.
-6. To disable the feature without a code change, remove the Vercel variable and
+5. Redeploy the API (env change) and the web app (the `NEXT_PUBLIC_*` values
+   are inlined at build time). Changing a Vercel environment variable does not
+   rebuild an existing deployment.
+6. Smoke-test both paths:
+   - Sign in with a password, open **Settings → Connected accounts**, connect
+     Google, sign out, then use **Sign in with Google**.
+   - In a private window, open `/signup`, choose **Continue with Google**,
+     confirm or edit the suggested URL, and land on the dashboard.
+   - Open **Settings**, set a first password for the Google-created account,
+     sign out, and sign in with that password.
+   - Try a Google email that already has a password account; confirm the
+     explicit **account exists** message and that no account is linked.
+7. To disable the feature without a code change, remove the Vercel variable and
    redeploy the web app; remove the Render variable to make the API return
    `503 GOOGLE_SIGN_IN_DISABLED`. Existing links remain in `accounts` and can
-   be removed from Settings.
+   be removed from Settings. Setting `ALLOW_SIGNUP=false` stops new Google
+   account creation but leaves sign-in for linked accounts working.
 
 > The Google consent screen can stay in **Testing** mode with the owner as a
-> test user during the private phase. Publish it before public launch.
+> test user during the private phase. Publish it before opening public Google
+> sign-up; the app is still dark to the public until the client IDs, signup
+> flags and consent screen are all in place.
 
 ---
 

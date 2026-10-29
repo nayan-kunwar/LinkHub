@@ -11,6 +11,7 @@ export const ERROR_CODES = [
   "GOOGLE_TOKEN_INVALID",
   "GOOGLE_EMAIL_UNVERIFIED",
   "GOOGLE_NOT_LINKED",
+  "GOOGLE_ACCOUNT_EXISTS",
   "GOOGLE_ALREADY_LINKED",
   "LAST_SIGN_IN_METHOD",
   "EMAIL_NOT_VERIFIED",
@@ -77,6 +78,9 @@ export const fail = {
   googleNotLinked: (
     message = "This Google account is not linked. Sign in with your password, then connect Google in Settings.",
   ) => new AppError(403, "GOOGLE_NOT_LINKED", message),
+  googleAccountExists: (
+    message = "An account with this email already exists. Sign in with your password, then connect Google in Settings.",
+  ) => new AppError(409, "GOOGLE_ACCOUNT_EXISTS", message),
   googleAlreadyLinked: (
     message = "This Google account is already linked to a Link Hub account.",
   ) => new AppError(409, "GOOGLE_ALREADY_LINKED", message),

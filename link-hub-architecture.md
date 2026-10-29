@@ -141,7 +141,7 @@ It is built and used by the owner first, but the schema, authorization model and
 | ToS / Privacy pages, basic abuse report (email/form) | Public launch | |
 | Landing page | Public launch | |
 | Billing / paid plans | Later | Entitlements seam exists |
-| Google sign-in (existing accounts) | Built, dark by default | GIS ID-token flow; explicit Settings linking; no Google signup or email auto-link |
+| Google sign-in and sign-up | Built, dark by default | GIS ID-token flow; explicit Settings linking; Google-first signup with one editable username claim; no email auto-link |
 | OAuth (GitHub and other providers) | Later | `accounts` table supports provider rows |
 | Custom domains | Later | `custom_domains` table not migrated |
 | Advanced moderation / admin console | Later | `role=admin` reserved |
@@ -740,14 +740,14 @@ model ClickDailyBreakdown {
 | Resend verification | Invalidates prior unused tokens; rate-limited (3/h per user) | Public launch |
 | Password reset | Same token scheme, type `password_reset`, 1 h expiry; always `200` on request; token consumed atomically; on reset: update hash, delete **all** user sessions | Public launch |
 | Email change | `PATCH /account/email` requires the current password, validates the new address, stores `users.pending_email`, and issues a 32-byte token of type `email_change` to the **new** address (24 h expiry). `POST /auth/verify-email-change` consumes it atomically and swaps `email`/`pending_email`, sets `email_verified_at`, and invalidates the old address. The current email stays active until verification; `DELETE /account/email` cancels a pending change. Never reveals whether the target address is already registered. | MVP |
-| Password change | `PATCH /account/password` requires the current password and the 12–128 policy; updates the hash and deletes **all other** sessions, keeping the current one. | MVP |
+| Password change | `PATCH /account/password` requires the current password when one exists and the 12–128 policy; updates the hash and deletes **all other** sessions, keeping the current one. A Google-created account with `password_hash = null` may set its first password without a current-password field; the audit action is `account.password_set` instead of `account.password_changed`. | MVP |
 | Session management | `GET /account/sessions` lists the current user's sessions from `sess` metadata; `DELETE /account/sessions/:sid` revokes one (non-current) session; `DELETE /account/sessions` revokes all others. Non-owned/non-existent SIDs → 404. | MVP |
 | Account deletion & restore | `DELETE /account` requires the current password and the exact username, sets `deletion_scheduled_for = now() + 30 days`, unpublishes the profile, revokes all other sessions and emails a restore link (`account_restore` token, 30-day window). `POST /account/restore` consumes the token and clears the schedule; a successful login also clears it. Restoring does not republish. The nightly prune hard-deletes expired accounts. | MVP |
 | Email transport | Brevo in prod (`EMAIL_PROVIDER=brevo`), console logger in dev/test; outbound timeout + retry/log; verification/reset/restore pages set `Referrer-Policy: no-referrer` and `Cache-Control: no-store` | Public launch |
-| Google sign-in | Optional GIS ID-token flow for **existing** accounts. The API verifies the RS256 JWT with Google JWKS (issuer allowlist, exact `aud`, 15-minute max age, `email_verified=true`, optional `azp`). Login resolves only `accounts(provider='google', provider_account_id=sub)`; it never queries `users.email`, auto-links or creates a user. Linking is an explicit Settings action for an active, verified account; unlink is blocked when `password_hash` is null. Only the Google `sub` is stored. Disabled when `GOOGLE_CLIENT_ID` is unset. | Built, dark by default |
+| Google sign-in and sign-up | Optional GIS ID-token flow. The API verifies the RS256 JWT with Google JWKS (issuer allowlist, exact `aud`, 15-minute max age, `email_verified=true`, optional `azp`). Sign-in resolves `accounts(provider='google', provider_account_id=sub)`; for an unlinked identity it checks `users.email` only to refuse auto-linking (`GOOGLE_ACCOUNT_EXISTS`). With `ALLOW_SIGNUP=true` it returns claim data, and `POST /auth/google/signup` creates an active, email-verified user with the user-confirmed username, Google email and Google name prefill. Linking is an explicit Settings action for an active, verified account; unlink is blocked when `password_hash` is null. Linked existing accounts store only the Google `sub`. Disabled when `GOOGLE_CLIENT_ID` is unset. | Built, dark by default |
 | OAuth (GitHub and other providers) | `accounts` table supports additional providers; no implementation yet | Later |
 
-**Google sign-in details:** `POST /auth/google` shares the password-login completion path (session regeneration, audit, scheduled-deletion restore, CSRF rotation, `no-store`). `POST /auth/google/link` and `DELETE /auth/google` require an active session. The unique indexes `accounts(provider, provider_account_id)` and `accounts(user_id, provider)` prevent one Google subject from being linked to two users and one user from linking two Google accounts. Error codes are `GOOGLE_SIGN_IN_DISABLED` (503), `GOOGLE_TOKEN_INVALID` (401), `GOOGLE_EMAIL_UNVERIFIED`/`GOOGLE_NOT_LINKED` (403), and `GOOGLE_ALREADY_LINKED`/`LAST_SIGN_IN_METHOD` (409). The Google credential is redacted from logs and never persisted. CSP allows only the GIS script/style/frame/connect origins; COOP is `same-origin-allow-popups`. See [`docs/google-sign-in.md`](docs/google-sign-in.md).
+**Google sign-in details:** `POST /auth/google` returns either the signed-in session or `{ signupRequired, email, displayName, suggestedUsername }` with no session. `POST /auth/google/signup` re-verifies the credential, re-checks the username, and creates the user/profile/account in one transaction before sharing the password-login completion path (session regeneration, audit, scheduled-deletion restore, CSRF rotation, `no-store`). `remember` is honored on both completion paths. `POST /auth/google/link` and `DELETE /auth/google` require an active session. The unique indexes `accounts(provider, provider_account_id)` and `accounts(user_id, provider)` prevent one Google subject from being linked to two users and one user from linking two Google accounts. Error codes are `GOOGLE_SIGN_IN_DISABLED` (503), `GOOGLE_TOKEN_INVALID` (401), `GOOGLE_EMAIL_UNVERIFIED`/`GOOGLE_NOT_LINKED`/`SIGNUP_DISABLED` (403), and `GOOGLE_ACCOUNT_EXISTS`/`GOOGLE_ALREADY_LINKED`/`USERNAME_TAKEN`/`USERNAME_RESERVED`/`LAST_SIGN_IN_METHOD` (409). The Google credential is redacted from logs and never persisted. CSP allows only the GIS script/style/frame/connect origins; COOP is `same-origin-allow-popups`. See [`docs/google-sign-in.md`](docs/google-sign-in.md).
 
 ---
 
@@ -764,6 +764,7 @@ Base: `/api/v1`. JSON envelopes. **All non-GET requests require an Origin check 
 | GET | `/auth/csrf` | – | MVP |
 | POST | `/auth/login` | – | MVP |
 | POST | `/auth/google` `{ credential, remember? }` | – (Google env) | Built, dark |
+| POST | `/auth/google/signup` `{ credential, username, remember? }` | – (Google env + `ALLOW_SIGNUP`) | Built, dark |
 | POST | `/auth/google/link` `{ credential }` | session (active) | Built, dark |
 | DELETE | `/auth/google` | session (active) | Built, dark |
 | POST | `/auth/logout` | session | MVP |
@@ -955,7 +956,7 @@ Order:
 - Revalidation: HMAC + timestamp window; secret server-only; optional nonce cache for replay; `INTERNAL_FETCH_TOKEN` for server-to-server public profile fetches.
 - No email enumeration on register/forgot-password; email change returns a generic success and never reveals whether the target address is registered.
 - **Country trust:** `x-vercel-ip-country` is accepted only when `X-Web-Proxy-Secret` matches `WEB_PROXY_SECRET` (constant-time compare); the value must be two uppercase letters. Direct API requests without the secret get `country_code = null`. Never derive country from an IP lookup, and never store/log the IP.
-- **Account lifecycle:** email-change tokens are 32 random bytes, stored hashed, single-use, 24 h expiry; password change deletes all other sessions; deletion requires password + exact username, is idempotent, and schedules a 30-day purge. Restore tokens are single-use and do not republish the profile. The nightly prune is the only path that hard-deletes a user.
+- **Account lifecycle:** email-change tokens are 32 random bytes, stored hashed, single-use, 24 h expiry; password change deletes all other sessions; a Google-only account can set its first password without a current password; deletion requires password + exact username, is idempotent, and schedules a 30-day purge. Restore tokens are single-use and do not republish the profile. The nightly prune is the only path that hard-deletes a user.
 - **Demo route:** `/preview` is disabled unless `ALLOW_DEMO_PREVIEW=true`, is never linked in production, and must not be deployed as an auth bypass. The real session cookie is httpOnly and server-issued.
 - Zod on all inputs; URL scheme allowlist `http`/`https`, max 2048 chars; username rules + reserved list. Add field length caps (display name, headline, bio, title, description, category, theme), HTTPS-only avatar URLs with the same private-host denylist, and a private/localhost host denylist for link URLs (IPv4/IPv6 private, loopback, link-local, and cloud metadata addresses). Validate `theme` against a fixed schema (colors/fonts only, no arbitrary CSS).
 - `helmet`, CSP on web; CORS restricted to `APP_URL`; `Referrer-Policy: no-referrer` on token pages; SPF/DKIM/DMARC for email.
@@ -1044,7 +1045,7 @@ Order:
 | Validation | Vitest | URL schemes, username regex, reserved list (incl. every web route), Zod DTOs |
 | Entitlements | Vitest | `LIMIT_REACHED` at `maxLinks`; soft-deleted rows do not count; two concurrent creates cannot exceed the limit; raw/history retention used by jobs |
 | Auth | Supertest | login/logout, session regenerate, rate limit, CSRF required on login/register/forgot/reset; password length cap; unknown email performs dummy hash |
-| Google sign-in | Vitest/Supertest | valid/invalid ID tokens (issuer, audience, age, `email_verified`, `azp`, subject), linked login, unlinked login with no email lookup, explicit link, duplicate/foreign subject, unlink with/without a password, `connectedProviders`/`hasPassword` DTO, CSRF and unauthenticated routes |
+| Google sign-in and sign-up | Vitest/Supertest | valid/invalid ID tokens (issuer, audience, age, `email_verified`, `azp`, subject), linked login, claim response for an unlinked identity, existing-email conflict with no auto-link, Google signup with confirmed username, taken username, `ALLOW_SIGNUP=false`, first-password setup, explicit link, duplicate/foreign subject, unlink with/without a password, `connectedProviders`/`hasPassword` DTO, CSRF, remembered session cookie and unauthenticated routes |
 | Registration | Supertest | `ALLOW_SIGNUP=false` → 403; true → user `pending_verification`, unpublished profile, token row, mail sent (mock); duplicate email generic response; taken/reserved username 409 |
 | Verification | Supertest | valid → `active`; reused → 400; expired → 400; tampered → 400; resend invalidates old; two concurrent consumes → exactly one succeeds |
 | Password reset | Supertest | token flow, expiry, single-use, two concurrent consumes, all sessions revoked |
@@ -1262,7 +1263,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · Google sign-up · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
+Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 
@@ -1320,7 +1321,7 @@ The production web app lives in `apps/web`; `link-hub-ui/` is the visual referen
 |---|---|---|
 | `/` | Landing | Marketing hero, features, steps, FAQ, CTA, site header/footer and a static phone preview |
 | `/login` | Sign in | Split auth layout; any email/password signs in except password `wrong`; `?next=` is honored; signing in clears a scheduled deletion |
-| `/signup` | Create account | Split auth layout; username availability/reserved/invalid states; `NEXT_PUBLIC_ALLOW_SIGNUP=false` closes signup; success routes to `/check-inbox` |
+| `/signup` | Create account | Split auth layout; Google-first entry with the official GIS button and an email sign-up alternative; Google success opens one editable **Choose your LinkHub URL** claim screen, then the dashboard; email signup keeps username availability/reserved/invalid states and routes to `/check-inbox`; `NEXT_PUBLIC_ALLOW_SIGNUP=false` closes signup |
 | `/forgot-password`, `/reset-password` | Recovery | Request, expired-token, invalid-password and success states |
 | `/verify-email` | Verification | Verifying, success, expired and already-verified states |
 | `/check-inbox` | Verification pending | Resend cooldown, change-email form, success/expired states |
@@ -1332,7 +1333,7 @@ The production web app lives in `apps/web`; `link-hub-ui/` is the visual referen
 | `/dashboard/analytics` | Analytics | Range selector, stats, chart, traffic/devices/countries/insights, per-link table, `?linkId=` filter banner, fallback skeleton |
 | `/dashboard/export` | Export | Format cards, include checkboxes, never-included notice, JSON/ZIP generation, preview, copy, download, size label; ZIP has five CSVs |
 | `/dashboard/profile` | Profile | URL-only avatar, headline/bio/username/socials, mock availability check, publish toggle, copy/open public URL, unsaved warning, 30-day deletion dialog, restore banner |
-| `/settings` | Settings | Account/Security/Preferences/Notifications tabs, pending email, password change, session revoke one/all, read-only UTC note, account summary |
+| `/settings` | Settings | Account/Security/Preferences/Notifications tabs, pending email, password change or first-password setup for Google-created accounts, session revoke one/all, read-only UTC note, account summary |
 | `/[username]` | Public profile | Themed profile from the mock store; unknown and unpublished usernames show the same unavailable page |
 | `/terms`, `/privacy`, `not-found` | Legal / 404 | Shared marketing shell and accessible content |
 | `/preview` | Demo entry | Sets `lh.sid=demo-preview` and redirects to `/dashboard`; gated by `ALLOW_DEMO_PREVIEW` |

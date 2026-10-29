@@ -54,6 +54,15 @@ export interface MeResponse {
 
 export type LoginResponse = MeResponse & { csrfToken: string };
 
+export interface GoogleSignupRequired {
+  signupRequired: true;
+  email: string;
+  displayName: string;
+  suggestedUsername: string;
+}
+
+export type GoogleLoginResponse = LoginResponse | GoogleSignupRequired;
+
 export interface AvailabilityResponse {
   available: boolean;
   reason?: "reserved" | "taken" | "invalid";
@@ -228,7 +237,20 @@ export const api = {
       return data;
     },
     googleLogin: async (input: { credential: string; remember?: boolean }) => {
-      const data = await request<LoginResponse>("/auth/google", {
+      const data = await request<GoogleLoginResponse>("/auth/google", {
+        method: "POST",
+        body: input,
+      });
+      if ("signupRequired" in data) return data;
+      setCsrfToken(data.csrfToken);
+      return data;
+    },
+    googleSignup: async (input: {
+      credential: string;
+      username: string;
+      remember?: boolean;
+    }) => {
+      const data = await request<LoginResponse>("/auth/google/signup", {
         method: "POST",
         body: input,
       });
@@ -300,10 +322,13 @@ export const api = {
       }),
     cancelEmailChange: () =>
       request<void>("/account/email", { method: "DELETE" }),
-    changePassword: (currentPassword: string, newPassword: string) =>
+    changePassword: (currentPassword: string | undefined, newPassword: string) =>
       request<void>("/account/password", {
         method: "PATCH",
-        body: { currentPassword, newPassword },
+        body: {
+          ...(currentPassword ? { currentPassword } : {}),
+          newPassword,
+        },
       }),
     sessions: () => request<SessionSummary[]>("/account/sessions"),
     revokeSession: (id: string) =>

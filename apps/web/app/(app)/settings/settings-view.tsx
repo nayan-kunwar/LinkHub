@@ -22,6 +22,7 @@ import {
   LIMITS,
   changeEmailSchema,
   changePasswordSchema,
+  setPasswordSchema,
 } from "@linkhub/shared";
 import { PageHeader } from "@/components/page-header";
 import { DashboardFrame } from "@/components/dashboard-frame";
@@ -185,6 +186,7 @@ export function SettingsView() {
   const scheduledFor = state.account.deletionScheduledFor;
   const otherSessions = state.sessions.filter((session) => !session.current);
   const googleConnected = state.account.connectedProviders.includes("google");
+  const hasPassword = state.account.hasPassword;
   const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
 
   const connectGoogle = async (credential: string) => {
@@ -263,11 +265,13 @@ export function SettingsView() {
 
   const submitPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const parsed = changePasswordSchema.safeParse({
-      currentPassword,
-      newPassword,
-      confirmPassword,
-    });
+    const parsed = (
+      hasPassword ? changePasswordSchema : setPasswordSchema
+    ).safeParse(
+      hasPassword
+        ? { currentPassword, newPassword, confirmPassword }
+        : { newPassword, confirmPassword },
+    );
     const nextErrors: {
       currentPassword?: string;
       newPassword?: string;
@@ -279,7 +283,7 @@ export function SettingsView() {
         if (!nextErrors[key]) nextErrors[key] = issue.message;
       }
     }
-    if (newPassword && newPassword === currentPassword) {
+    if (hasPassword && newPassword && newPassword === currentPassword) {
       nextErrors.newPassword = "New password must differ from the current one.";
     }
     setPasswordErrors(nextErrors);
@@ -294,7 +298,10 @@ export function SettingsView() {
     }
     if (!parsed.success) return;
 
-    const result = await changePassword(parsed.data.currentPassword, parsed.data.newPassword);
+    const result = await changePassword(
+      hasPassword ? currentPassword : undefined,
+      parsed.data.newPassword,
+    );
     if (!result.ok) {
       const error = result.error;
       const fieldErrors =
@@ -314,7 +321,11 @@ export function SettingsView() {
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
-    toast.success("Password updated. Other sessions signed out.");
+    toast.success(
+      hasPassword
+        ? "Password updated. Other sessions signed out."
+        : "Password set. You can now sign in without Google.",
+    );
   };
 
   const signOutSession = async (id: string, label: string) => {
@@ -519,28 +530,40 @@ export function SettingsView() {
           ) : null}
 
           <Card className="p-5">
-            <h2 className="font-bold text-zinc-900">Change password</h2>
+            <h2 className="font-bold text-zinc-900">
+              {hasPassword ? "Change password" : "Set a password"}
+            </h2>
+            {!hasPassword ? (
+              <p className="mt-1 text-sm text-zinc-600">
+                You signed up with Google. Add a password so you can also sign
+                in with your email.
+              </p>
+            ) : null}
             <form
               onSubmit={(event) => {
                 void submitPassword(event);
               }}
               noValidate
-              className="mt-3 grid gap-3 sm:grid-cols-3"
+              className={`mt-3 grid gap-3 ${
+                hasPassword ? "sm:grid-cols-3" : "sm:grid-cols-2"
+              }`}
             >
-              <PasswordField
-                id="settings-current-password"
-                label="Current password"
-                value={currentPassword}
-                onChange={(value) => {
-                  setCurrentPassword(value);
-                  setPasswordErrors((current) => ({ ...current, currentPassword: undefined }));
-                }}
-                autoComplete="current-password"
-                error={passwordErrors.currentPassword}
-              />
+              {hasPassword ? (
+                <PasswordField
+                  id="settings-current-password"
+                  label="Current password"
+                  value={currentPassword}
+                  onChange={(value) => {
+                    setCurrentPassword(value);
+                    setPasswordErrors((current) => ({ ...current, currentPassword: undefined }));
+                  }}
+                  autoComplete="current-password"
+                  error={passwordErrors.currentPassword}
+                />
+              ) : null}
               <PasswordField
                 id="settings-new-password"
-                label="New password"
+                label={hasPassword ? "New password" : "Password"}
                 value={newPassword}
                 onChange={(value) => {
                   setNewPassword(value);
@@ -551,7 +574,7 @@ export function SettingsView() {
               />
               <PasswordField
                 id="settings-confirm-password"
-                label="Confirm new password"
+                label={hasPassword ? "Confirm new password" : "Confirm password"}
                 value={confirmPassword}
                 onChange={(value) => {
                   setConfirmPassword(value);
@@ -561,7 +584,9 @@ export function SettingsView() {
                 error={passwordErrors.confirmPassword}
               />
               <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
-                <Button type="submit">Update password</Button>
+                <Button type="submit">
+                  {hasPassword ? "Update password" : "Set password"}
+                </Button>
                 <p className="text-xs text-zinc-600">
                   {LIMITS.minPassword}–{LIMITS.maxPassword} characters. Other sessions will be
                   signed out.

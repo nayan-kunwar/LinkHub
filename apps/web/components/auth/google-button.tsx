@@ -90,6 +90,8 @@ export interface GoogleButtonProps {
   onCredential: (credential: string) => void;
   disabled?: boolean;
   text?: "signin_with" | "continue_with";
+  /** GIS context hint; defaults to sign-in unless the text implies otherwise. */
+  context?: "signin" | "signup" | "use";
   className?: string;
 }
 
@@ -102,6 +104,7 @@ export function GoogleButton({
   onCredential,
   disabled = false,
   text = "signin_with",
+  context,
   className,
 }: GoogleButtonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -140,7 +143,7 @@ export function GoogleButton({
           auto_select: false,
           cancel_on_tap_outside: true,
           ux_mode: "popup",
-          context: text === "continue_with" ? "use" : "signin",
+          context: context ?? (text === "continue_with" ? "use" : "signin"),
         });
         initialized = true;
       }
@@ -173,7 +176,7 @@ export function GoogleButton({
       cancelled = true;
       observer.disconnect();
     };
-  }, [clientId, text]);
+  }, [clientId, text, context]);
 
   if (!clientId) return null;
 

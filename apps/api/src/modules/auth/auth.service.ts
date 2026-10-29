@@ -1,11 +1,15 @@
 import { Prisma, type TokenType, type User } from "@prisma/client";
 import type { Request } from "express";
+import { LIMITS } from "@linkhub/shared";
 import { env } from "../../config/env";
 import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/db";
 import { DEFAULT_APPEARANCE, meDto, type MeDto } from "../../lib/dto";
 import { fail } from "../../lib/errors";
-import { verifyGoogleCredential } from "../../lib/google";
+import {
+  verifyGoogleCredential,
+  type GoogleIdentity,
+} from "../../lib/google";
 import {
   sendAccountRestoreEmail,
   sendEmailChangeVerification,
@@ -19,7 +23,11 @@ import { revalidateProfile } from "../../lib/revalidate";
 import { isReservedUsername } from "../../lib/validation";
 import { randomToken, sha256 } from "../../lib/crypto";
 import { getConnectedProviders } from "../account/account.service";
-import type { LoginInput, SignupInput } from "./auth.schema";
+import type {
+  GoogleSignupInput,
+  LoginInput,
+  SignupInput,
+} from "./auth.schema";
 
 const GENERIC_REGISTER_RESPONSE = {
   message: "Check your inbox for a verification link.",
@@ -180,11 +188,78 @@ export async function login(input: LoginInput): Promise<User> {
   return user;
 }
 
+function googleDisplayName(identity: GoogleIdentity): string {
+  const name = identity.name?.trim();
+  if (name) return name.slice(0, LIMITS.maxDisplayName).trim();
+
+  const localPart = identity.email.split("@")[0] ?? "";
+  const fromEmail = localPart
+    .replace(/[._+-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (fromEmail || "Link Hub creator").slice(0, LIMITS.maxDisplayName);
+}
+
+function usernameBase(name: string, email: string): string {
+  const source = name.trim() || email.split("@")[0] || "linkhub";
+  const slug = source
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 30)
+    .replace(/-+$/g, "");
+  return slug.length >= 3 ? slug : "linkhub";
+}
+
+function randomUsernameSuffix(): string {
+  return randomToken(4)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 6) || "x";
+}
+
 /**
- * Google sign-in resolves an existing link only. It never looks up a user by
- * email, never auto-links by verified email, and never creates an account.
+ * Suggestions are only a starting point for the claim screen. The user can
+ * always edit the value, and the signup transaction checks it again.
  */
-export async function googleLogin(credential: string): Promise<User> {
+async function suggestUsername(identity: GoogleIdentity): Promise<string> {
+  const base = usernameBase(identity.name ?? "", identity.email);
+  const candidates = [base];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    candidates.push(`${base.slice(0, 23)}-${randomUsernameSuffix()}`);
+  }
+
+  for (const candidate of candidates) {
+    if (isReservedUsername(candidate)) continue;
+    const owner = await prisma.profile.findUnique({
+      where: { username: candidate },
+      select: { id: true },
+    });
+    if (!owner) return candidate;
+  }
+
+  return `${base.slice(0, 20)}-${randomUsernameSuffix()}`;
+}
+
+export type GoogleLoginResult =
+  | { status: "authenticated"; user: User }
+  | {
+      status: "signup_required";
+      email: string;
+      displayName: string;
+      suggestedUsername: string;
+    };
+
+/**
+ * Google sign-in resolves an existing link only. It never auto-links by
+ * verified email and never creates an account. When the Google email does not
+ * belong to anyone, the caller gets the data needed to start the claim step.
+ */
+export async function googleLogin(
+  credential: string,
+): Promise<GoogleLoginResult> {
   const identity = await verifyGoogleCredential(credential);
 
   const account = await prisma.account.findUnique({
@@ -196,12 +271,120 @@ export async function googleLogin(credential: string): Promise<User> {
     },
     include: { user: true },
   });
-  if (!account) throw fail.googleNotLinked();
+  if (account) {
+    const user = account.user;
+    if (user.status === "deleted" || user.deletedAt) throw fail.googleNotLinked();
+    if (user.status === "suspended") throw fail.suspended();
+    return { status: "authenticated", user };
+  }
 
-  const user = account.user;
-  if (user.status === "deleted" || user.deletedAt) throw fail.googleNotLinked();
-  if (user.status === "suspended") throw fail.suspended();
-  return user;
+  const email = identity.email.trim().toLowerCase();
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ email }, { pendingEmail: email }] },
+    select: { id: true },
+  });
+  if (existing) throw fail.googleAccountExists();
+  if (!env.ALLOW_SIGNUP) throw fail.signupDisabled();
+
+  const displayName = googleDisplayName(identity);
+  return {
+    status: "signup_required",
+    email,
+    displayName,
+    suggestedUsername: await suggestUsername(identity),
+  };
+}
+
+/**
+ * Creates an active, email-verified account from a Google ID token. The
+ * username is always the value the user confirmed on the claim screen; it is
+ * never generated by the server without that confirmation.
+ */
+export async function googleSignup(input: GoogleSignupInput): Promise<User> {
+  if (!env.ALLOW_SIGNUP) throw fail.signupDisabled();
+
+  const identity = await verifyGoogleCredential(input.credential);
+  const email = identity.email.trim().toLowerCase();
+  const username = input.username.trim().toLowerCase();
+
+  if (isReservedUsername(username)) throw fail.usernameReserved();
+
+  const [linkedAccount, emailOwner, usernameOwner] = await Promise.all([
+    prisma.account.findUnique({
+      where: {
+        provider_providerAccountId: {
+          provider: "google",
+          providerAccountId: identity.sub,
+        },
+      },
+      select: { id: true },
+    }),
+    prisma.user.findFirst({
+      where: { OR: [{ email }, { pendingEmail: email }] },
+      select: { id: true },
+    }),
+    prisma.profile.findUnique({
+      where: { username },
+      select: { id: true },
+    }),
+  ]);
+
+  if (linkedAccount) throw fail.googleAlreadyLinked();
+  if (emailOwner) throw fail.googleAccountExists();
+  if (usernameOwner) throw fail.usernameTaken();
+
+  const displayName = googleDisplayName(identity);
+  let created: User | undefined;
+
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          status: "active",
+          emailVerifiedAt: new Date(),
+        },
+      });
+      await tx.profile.create({
+        data: {
+          userId: user.id,
+          username,
+          displayName,
+          theme: DEFAULT_APPEARANCE as unknown as Prisma.InputJsonValue,
+          socials: {},
+          isPublished: false,
+        },
+      });
+      await tx.account.create({
+        data: {
+          userId: user.id,
+          provider: "google",
+          providerAccountId: identity.sub,
+        },
+      });
+      return user;
+    });
+  } catch (error) {
+    if (isUniqueError(error)) {
+      const target = String(error.meta?.target ?? "");
+      if (target.includes("username")) throw fail.usernameTaken();
+      if (target.includes("email")) throw fail.googleAccountExists();
+      if (target.includes("provider") || target.includes("account")) {
+        throw fail.googleAlreadyLinked();
+      }
+    }
+    throw error;
+  }
+
+  if (!created) throw fail.internal();
+
+  audit({
+    action: "account.registered",
+    targetUserId: created.id,
+    metadata: { via: "google" },
+  });
+
+  return created;
 }
 
 /**
@@ -693,18 +876,27 @@ export async function cancelPendingEmailChange(userId: string): Promise<void> {
 
 export async function changePassword(
   user: User,
-  currentPassword: string,
+  currentPassword: string | undefined,
   newPassword: string,
   currentSid: string,
 ): Promise<void> {
-  if (!user.passwordHash || !(await verifyPassword(user.passwordHash, currentPassword))) {
+  const hadPassword = Boolean(user.passwordHash);
+  if (
+    hadPassword &&
+    (!currentPassword ||
+      !(await verifyPassword(user.passwordHash as string, currentPassword)))
+  ) {
     throw fail.invalidCredentials("Current password is incorrect.");
   }
+
   const passwordHash = await hashPassword(newPassword);
   await prisma.user.update({
     where: { id: user.id },
     data: { passwordHash },
   });
   await revokeAllSessions(user.id, currentSid);
-  audit({ action: "account.password_changed", actorUserId: user.id });
+  audit({
+    action: hadPassword ? "account.password_changed" : "account.password_set",
+    actorUserId: user.id,
+  });
 }

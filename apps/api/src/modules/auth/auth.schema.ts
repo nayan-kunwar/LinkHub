@@ -53,6 +53,12 @@ export const googleLinkSchema = z.object({
   credential: googleCredentialSchema,
 });
 
+export const googleSignupSchema = z.object({
+  credential: googleCredentialSchema,
+  username: apiUsernameSchema,
+  remember: z.boolean().optional(),
+});
+
 export const resetPasswordApiSchema = z.object({
   token: z.string().trim().min(20, "This link is invalid.").max(256, "This link is invalid."),
   password: z
@@ -67,3 +73,4 @@ export type TokenInput = z.infer<typeof tokenSchema>;
 export type ResetPasswordApiInput = z.infer<typeof resetPasswordApiSchema>;
 export type GoogleAuthInput = z.infer<typeof googleAuthSchema>;
 export type GoogleLinkInput = z.infer<typeof googleLinkSchema>;
+export type GoogleSignupInput = z.infer<typeof googleSignupSchema>;

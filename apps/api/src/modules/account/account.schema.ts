@@ -7,7 +7,9 @@ export const changeEmailApiSchema = z.object({
 });
 
 export const changePasswordApiSchema = z.object({
-  currentPassword: z.string().min(1, "Enter your current password."),
+  // Passwordless Google accounts set their first password without a current
+  // one. Accounts that already have a password must still provide it.
+  currentPassword: z.string().min(1, "Enter your current password.").optional(),
   newPassword: z
     .string()
     .min(LIMITS.minPassword, `Use at least ${LIMITS.minPassword} characters.`)

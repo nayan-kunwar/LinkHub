@@ -17,8 +17,10 @@ export default function PrivacyPage() {
         <h2>1. What we collect</h2>
         <ul>
           <li>
-            <strong>Account data:</strong> your email address, password hash, verification state,
-            session records and, if you connect Google sign-in, the Google account identifier.
+            <strong>Account data:</strong> your email address, password hash when you set a
+            password, verification state, session records and, if you use Google, the Google
+            account identifier. If you create an account with Google, we also receive your Google
+            email address and name to set up your Link Hub account and profile.
           </li>
           <li>
             <strong>Profile data:</strong> your username, display name, headline, bio, avatar URL,
@@ -53,7 +55,7 @@ export default function PrivacyPage() {
         <h2>3. Why we use it</h2>
         <ul>
           <li>To create and secure your account and keep you signed in.</li>
-          <li>To let you sign in with Google if you choose to connect it.</li>
+          <li>To let you sign in or create an account with Google if you choose to.</li>
           <li>To render your public profile and let visitors open your links.</li>
           <li>To show you click totals, trends, sources, devices and countries.</li>
           <li>To send verification, password-reset and account-deletion emails.</li>
@@ -97,10 +99,12 @@ export default function PrivacyPage() {
         <p>
           We do not sell personal data. We share data only with service providers that help us host
           the application and deliver email, under contracts that limit their use of it, or where
-          required by law. If you choose Google sign-in, Google Identity Services processes the
-          sign-in under Google&apos;s own terms; we receive only the account identifier we store.
-          Analytics shown on your dashboard are about aggregate recorded clicks, not identifiable
-          visitors.
+          required by law. If you use Google sign-in or sign-up, Google Identity Services processes
+          the authentication under Google&apos;s own terms. We receive the Google account
+          identifier and, when you create an account with Google, the Google email address and name
+          used to set up that account. We do not receive your Google password or Google access
+          tokens. Analytics shown on your dashboard are about aggregate recorded clicks, not
+          identifiable visitors.
         </p>
       </section>
 
@@ -109,8 +113,8 @@ export default function PrivacyPage() {
         <ul>
           <li>Export your profile, links, categories and daily analytics at any time.</li>
           <li>Unpublish your profile instantly from the Profile page.</li>
-          <li>Change your email or password in Settings.</li>
-          <li>Connect or disconnect Google sign-in in Settings.</li>
+          <li>Change your email or password in Settings, or set a first password if you signed up with Google.</li>
+          <li>Connect or disconnect Google in Settings.</li>
           <li>Sign out one session or every other session in Settings.</li>
           <li>Delete your account and restore it during the 30-day grace period.</li>
         </ul>

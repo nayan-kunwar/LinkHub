@@ -21,6 +21,11 @@ export interface GoogleIdentity {
   /** Stable Google subject. This is the only Google value we persist. */
   sub: string;
   email: string;
+  /**
+   * Google profile name, when present. Used only to prefill a new profile's
+   * display name; it is never matched against an existing account.
+   */
+  name?: string;
 }
 
 export interface VerifyGoogleIdTokenOptions {
@@ -32,8 +37,8 @@ export interface VerifyGoogleIdTokenOptions {
 
 /**
  * Pure verifier used by the service wrapper and unit tests. It deliberately
- * returns only the Google subject and email; callers must not persist the
- * email or use it to match an existing account.
+ * returns only the Google subject, email, and optional profile name; callers
+ * must not use the email to match an existing account or persist the name.
  */
 export async function verifyGoogleIdToken(
   credential: string,
@@ -81,7 +86,14 @@ export async function verifyGoogleIdToken(
     throw fail.googleEmailUnverified();
   }
 
-  return { sub: payload.sub, email: payload.email };
+  const name =
+    typeof payload.name === "string" ? payload.name.trim().slice(0, 255) : "";
+
+  return {
+    sub: payload.sub,
+    email: payload.email,
+    ...(name ? { name } : {}),
+  };
 }
 
 export async function verifyGoogleCredential(

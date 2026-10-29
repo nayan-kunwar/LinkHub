@@ -8,6 +8,10 @@ import { loginSchema } from "@linkhub/shared";
 import { AuthLayout, AuthPreviewCard } from "@/components/auth/auth-layout";
 import { AuthAlert, PasswordInput, SubmitButton } from "@/components/auth/auth-form";
 import { GoogleButton } from "@/components/auth/google-button";
+import {
+  GoogleSignupClaim,
+  type GoogleSignupClaimData,
+} from "@/components/auth/google-signup-claim";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Label, FieldError } from "@/components/ui/input";
 import { formatFieldErrors, useAppData } from "@/lib/store";
@@ -24,6 +28,7 @@ export function LoginForm() {
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [deletionScheduledFor, setDeletionScheduledFor] = useState<string | null>(null);
+  const [claim, setClaim] = useState<GoogleSignupClaimData | null>(null);
   const allowSignup = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
   const googleEnabled = Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim());
 
@@ -110,14 +115,38 @@ export function LoginForm() {
     setGoogleLoading(true);
     try {
       const result = await loginWithGoogle({ credential, remember });
-      if (!result.ok) {
-        const error = result.error;
-        if (error?.code === "GOOGLE_NOT_LINKED") {
+      if (result.status === "signup_required") {
+        if (!allowSignup) {
           setFormError(
-            "This Google account is not linked to a Link Hub account. Sign in with your password, then connect Google in Settings.",
+            "Sign-ups are opening soon. Use your email and password to sign in.",
+          );
+          return;
+        }
+        setClaim({
+          credential,
+          email: result.email,
+          displayName: result.displayName,
+          suggestedUsername: result.suggestedUsername,
+          remember,
+        });
+        return;
+      }
+      if (result.status === "error") {
+        const error = result.error;
+        if (
+          error?.code === "GOOGLE_NOT_LINKED" ||
+          error?.code === "GOOGLE_ACCOUNT_EXISTS"
+        ) {
+          setFormError(
+            error.message ||
+              "This Google account is not linked to a Link Hub account. Sign in with your password, then connect Google in Settings.",
           );
         } else if (error?.code === "GOOGLE_SIGN_IN_DISABLED") {
           setFormError("Google sign-in is not available right now. Use your email and password.");
+        } else if (error?.code === "SIGNUP_DISABLED") {
+          setFormError(
+            "Sign-ups are opening soon. Use your email and password to sign in.",
+          );
         } else if (error?.code === "GOOGLE_EMAIL_UNVERIFIED") {
           setFormError(error.message);
         } else if (error?.status === 429) {
@@ -147,6 +176,14 @@ export function LoginForm() {
       description="Create a beautiful profile, share your work, and grow your audience."
       aside={<AuthPreviewCard />}
     >
+      {claim ? (
+        <GoogleSignupClaim
+          claim={claim}
+          onUseDifferentAccount={() => setClaim(null)}
+          onSuccess={goToNext}
+        />
+      ) : (
+        <>
       <h1 className="text-3xl font-extrabold tracking-tight">Welcome back</h1>
       <p className="mb-7 mt-1 text-sm text-zinc-600">
         Sign in to manage your links, analytics and profile.
@@ -268,6 +305,8 @@ export function LoginForm() {
         </p>
       ) : (
         <p className="mt-6 text-center text-sm font-medium text-zinc-700">Sign-ups opening soon</p>
+      )}
+        </>
       )}
     </AuthLayout>
   );

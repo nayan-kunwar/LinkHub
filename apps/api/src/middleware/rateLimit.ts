@@ -51,6 +51,14 @@ export const googleLoginLimiter = rateLimit({
   handler: envelopeHandler("Too many Google sign-in attempts. Try again in 15 minutes."),
 });
 
+export const googleSignupLimiter = rateLimit({
+  ...base,
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  keyGenerator: ipKey,
+  handler: envelopeHandler("Too many Google sign-up attempts. Try again later."),
+});
+
 export const googleLinkLimiter = rateLimit({
   ...base,
   windowMs: 60 * 60 * 1000,

@@ -144,6 +144,11 @@ export const signupSchema = z
     message: "Passwords do not match.",
   });
 
+/** Client-side validation for the Google claim screen. */
+export const googleSignupSchema = z.object({
+  username: usernameSchema,
+});
+
 export const forgotPasswordSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
 });
@@ -164,6 +169,19 @@ export const resetPasswordSchema = z
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Enter your current password."),
+    newPassword: z
+      .string()
+      .min(LIMITS.minPassword, `Use at least ${LIMITS.minPassword} characters.`)
+      .max(LIMITS.maxPassword, `Use at most ${LIMITS.maxPassword} characters.`),
+    confirmPassword: z.string(),
+  })
+  .refine((values) => values.newPassword === values.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
+
+export const setPasswordSchema = z
+  .object({
     newPassword: z
       .string()
       .min(LIMITS.minPassword, `Use at least ${LIMITS.minPassword} characters.`)
@@ -225,9 +243,11 @@ export type LinkFormValues = z.infer<typeof linkFormSchema>;
 export type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 export type LoginValues = z.infer<typeof loginSchema>;
 export type SignupValues = z.infer<typeof signupSchema>;
+export type GoogleSignupValues = z.infer<typeof googleSignupSchema>;
 export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
 export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
+export type SetPasswordValues = z.infer<typeof setPasswordSchema>;
 export type ChangeEmailValues = z.infer<typeof changeEmailSchema>;
 export type DeleteAccountValues = z.infer<typeof deleteAccountSchema>;
 export type ContactValues = z.infer<typeof contactSchema>;
