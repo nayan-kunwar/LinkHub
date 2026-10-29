@@ -501,7 +501,7 @@ export function SettingsView() {
                     Disconnect
                   </Button>
                 ) : googleEnabled ? (
-                  <div className="w-full sm:w-[240px]">
+                  <div className="w-full sm:w-[260px]">
                     <GoogleButton
                       onCredential={connectGoogle}
                       disabled={googleBusy}

@@ -163,7 +163,7 @@ export function LoginForm() {
       ) : null}
 
       {googleEnabled ? (
-        <div className="mb-5">
+        <div className="mb-6">
           <GoogleButton
             onCredential={handleGoogleCredential}
             disabled={loading || googleLoading}
@@ -174,7 +174,7 @@ export function LoginForm() {
               Verifying your Google account…
             </p>
           ) : (
-            <div className="mt-4 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <div className="mt-5 flex items-center gap-3 text-sm text-zinc-500">
               <span className="h-px flex-1 bg-zinc-200" />
               or continue with email
               <span className="h-px flex-1 bg-zinc-200" />

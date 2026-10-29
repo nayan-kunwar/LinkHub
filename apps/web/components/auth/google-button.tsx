@@ -152,7 +152,7 @@ export function GoogleButton({
         size: "large",
         text,
         shape: "rectangular",
-        logo_alignment: "left",
+        logo_alignment: "center",
         width,
       });
     };
