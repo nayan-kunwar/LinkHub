@@ -173,8 +173,11 @@ production change requires a Vercel redeploy.
 
 1. Open **Google Cloud Console → APIs & Services → OAuth consent screen**.
 2. Choose **External**; fill the app name, support email and developer contact.
-3. Add scopes `openid` and `email` only. Do not request profile, Drive, Gmail or
-   any other scope.
+3. Add scopes `openid`, `email` and `profile`. GIS requests these three for the
+   ID-token flow; `profile` supplies the Google name used only to prefill a new
+   profile's display name. All three are non-sensitive, so no Google
+   verification review is required. Do not request Drive, Gmail or any other
+   scope.
 4. While the app is in **Testing**, add the owner's Google account as a test
    user. Testing-mode refresh tokens expire after 7 days, but this flow does not
    store refresh tokens, so that limit does not affect sign-in.

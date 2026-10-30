@@ -420,7 +420,7 @@ design, error codes and security notes are in
 1. Create a **Web application** OAuth client in Google Cloud Console:
    - Authorized JavaScript origins: `https://link.nayankunwar.com` and
      `http://localhost:3000`
-   - Scopes: `openid email` only
+   - Scopes: `openid`, `email` and `profile` (GIS requests all three; `profile` supplies the name used for the new-profile prefill)
    - No client secret and no redirect URI are needed.
 2. Set the same client ID in both places:
    - Render: `GOOGLE_CLIENT_ID`
