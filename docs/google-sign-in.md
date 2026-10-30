@@ -1,7 +1,9 @@
 # Google sign-in and sign-up
 
-Status: implemented on `feat/google-signup`; **dark until the owner sets both
-client-ID environment variables and publishes the Google consent screen**.
+Status: live in production since 2026-10-30. Both client-ID variables are set,
+and Google sign-in plus Google-first sign-up are working. The OAuth consent
+screen is intentionally still in **Testing** with all three scopes configured;
+it must be published before public Google sign-up.
 
 This feature lets an existing Link Hub account sign in with Google and lets a
 new user create an account with Google. Sign-up is Google-first, then one
@@ -171,27 +173,71 @@ production change requires a Vercel redeploy.
 
 ## Google Cloud setup (owner)
 
-1. Open **Google Cloud Console → APIs & Services → OAuth consent screen**.
-2. Choose **External**; fill the app name, support email and developer contact.
-3. Add scopes `openid`, `email` and `profile`. GIS requests these three for the
-   ID-token flow; `profile` supplies the Google name used only to prefill a new
-   profile's display name. All three are non-sensitive, so no Google
-   verification review is required. Do not request Drive, Gmail or any other
-   scope.
-4. While the app is in **Testing**, add the owner's Google account as a test
-   user. Testing-mode refresh tokens expire after 7 days, but this flow does not
-   store refresh tokens, so that limit does not affect sign-in.
-5. **Credentials → Create credentials → OAuth client ID → Web application**.
-6. Authorized JavaScript origins:
+The OAuth app lives in **Google Cloud Console → APIs & Services → Google Auth
+Platform**. The old **OAuth consent screen** entry redirects here. The page has
+**Branding**, **Audience**, **Clients** and **Data Access** sections.
+
+1. **Branding** — choose **External**; fill the app name, support email and
+   developer contact.
+2. **Data Access** — add the three scopes listed below.
+3. **Audience** — while the app is in **Testing**, add every Google account
+   that needs to sign in as a test user. Testing-mode refresh tokens expire
+   after 7 days, but this flow does not store refresh tokens, so that limit
+   does not affect sign-in.
+4. **Clients → Create client → Web application**.
+5. Authorized JavaScript origins:
    - `https://link.nayankunwar.com`
    - `http://localhost:3000`
-7. No authorized redirect URI is needed for the GIS ID-token flow.
-8. Copy the client ID (it ends with `.apps.googleusercontent.com`). Do **not**
+6. No authorized redirect URI is needed for the GIS ID-token flow.
+7. Copy the client ID (it ends with `.apps.googleusercontent.com`). Do **not**
    create or copy a client secret.
-9. Set `GOOGLE_CLIENT_ID` on Render and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on
+8. Set `GOOGLE_CLIENT_ID` on Render and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` on
    Vercel to the same value, then redeploy both.
-10. Publish the consent screen before public launch. Testing mode is fine for
-    the private phase.
+9. Publish the consent screen before public launch; see **Publishing status**
+   below.
+
+### Scopes (Data Access)
+
+Direct link: <https://console.cloud.google.com/auth/scopes>
+
+The **Non-sensitive scopes** table must list all three:
+
+| Console scope | Requested as | Why |
+|---|---|---|
+| `openid` | `openid` | Identifies the Google account for the ID-token flow |
+| `.../auth/userinfo.email` | `email` | Verified email for new accounts and the existing-email conflict check |
+| `.../auth/userinfo.profile` | `profile` | Google name used only to prefill a new profile's display name |
+
+To add them, click **ADD OR REMOVE SCOPES**, select all three and click
+**UPDATE**. If the picker does not list one, use **Manually add scopes** with
+the full values:
+
+- `openid`
+- `https://www.googleapis.com/auth/userinfo.email`
+- `https://www.googleapis.com/auth/userinfo.profile`
+
+All three are non-sensitive, so no Google verification review is required. Do
+not request Drive, Gmail or any other scope.
+
+### Publishing status
+
+As of 2026-10-30 the scopes are configured, but the app is deliberately still
+in **Testing** for the private phase. Two consequences:
+
+- Only Google accounts listed under **Audience → Test users** can complete
+  sign-in or sign-up. Anyone else sees Google's "Access blocked" page.
+- Google shows the consent screen only the first time an account grants access.
+  To see it again, remove LinkHub at
+  <https://myaccount.google.com/permissions> and sign in again.
+
+Before public Google sign-up:
+
+1. Confirm **Data Access** still lists all three scopes.
+2. Open **Audience → Publish app**. These non-sensitive scopes do not require
+   verification.
+3. Re-test with a Google account that is **not** a test user. The consent
+   screen should list the account name and email with no unconfigured-scope
+   warning.
 
 ## Deploy order
 
@@ -313,6 +359,9 @@ Manual:
 10. Disconnect Google in Settings and confirm password sign-in still works.
 11. Try to disconnect when `password_hash` is null (test database only); confirm
     `LAST_SIGN_IN_METHOD`.
+12. Remove LinkHub at <https://myaccount.google.com/permissions>, then sign in
+    again with Google. The consent screen should list the account name and
+    email and should not warn about an unconfigured scope.
 
 ## Privacy
 

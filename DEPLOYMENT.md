@@ -409,38 +409,46 @@ Wait for Vercel to show the domain as valid; HTTPS is issued automatically.
 
 ### 5.1 Google sign-in and sign-up (optional)
 
-Google sign-in and Google-first sign-up are built but dark until both client-ID
-variables are set. Existing accounts sign in only when their Google subject is
-already linked. New accounts are created only when `ALLOW_SIGNUP=true`; the user
+Google sign-in and Google-first sign-up have been live in production since
+2026-10-30. Existing accounts sign in only when their Google subject is already
+linked. New accounts are created only when `ALLOW_SIGNUP=true`; the user
 confirms one editable **Choose your LinkHub URL** screen and lands on the
 dashboard. Google email is never auto-linked to an existing account. The full
 design, error codes and security notes are in
 [`docs/google-sign-in.md`](docs/google-sign-in.md).
 
-1. Create a **Web application** OAuth client in Google Cloud Console:
+1. Create a **Web application** OAuth client in **Google Cloud Console → APIs &
+   Services → Google Auth Platform → Clients**:
    - Authorized JavaScript origins: `https://link.nayankunwar.com` and
      `http://localhost:3000`
-   - Scopes: `openid`, `email` and `profile` (GIS requests all three; `profile` supplies the name used for the new-profile prefill)
    - No client secret and no redirect URI are needed.
-2. Set the same client ID in both places:
+2. Add the scopes under **Google Auth Platform → Data Access**:
+   - `openid`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - `https://www.googleapis.com/auth/userinfo.profile`
+   GIS requests these as `openid email profile`; `profile` supplies the name
+   used for the new-profile prefill. All three are non-sensitive, so no Google
+   verification is required. See
+   [`docs/google-sign-in.md`](docs/google-sign-in.md#scopes-data-access).
+3. Set the same client ID in both places:
    - Render: `GOOGLE_CLIENT_ID`
    - Vercel: `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
-3. Set the signup flags together:
+4. Set the signup flags together:
    - Render: `ALLOW_SIGNUP=true`
    - Vercel: `NEXT_PUBLIC_ALLOW_SIGNUP=true`
    The web flag only controls whether `/signup` renders; the API flag is the
    security boundary. Keep them in sync.
-4. Apply the new migration before or with the API deploy:
+5. Apply the new migration before or with the API deploy:
 
    ```bash
    set -a; source .env.deploy.local; set +a
    pnpm db:deploy
    ```
 
-5. Redeploy the API (env change) and the web app (the `NEXT_PUBLIC_*` values
+6. Redeploy the API (env change) and the web app (the `NEXT_PUBLIC_*` values
    are inlined at build time). Changing a Vercel environment variable does not
    rebuild an existing deployment.
-6. Smoke-test both paths:
+7. Smoke-test both paths:
    - Sign in with a password, open **Settings → Connected accounts**, connect
      Google, sign out, then use **Sign in with Google**.
    - In a private window, open `/signup`, choose **Continue with Google**,
@@ -449,16 +457,23 @@ design, error codes and security notes are in
      sign out, and sign in with that password.
    - Try a Google email that already has a password account; confirm the
      explicit **account exists** message and that no account is linked.
-7. To disable the feature without a code change, remove the Vercel variable and
+8. To disable the feature without a code change, remove the Vercel variable and
    redeploy the web app; remove the Render variable to make the API return
    `503 GOOGLE_SIGN_IN_DISABLED`. Existing links remain in `accounts` and can
    be removed from Settings. Setting `ALLOW_SIGNUP=false` stops new Google
    account creation but leaves sign-in for linked accounts working.
 
-> The Google consent screen can stay in **Testing** mode with the owner as a
-> test user during the private phase. Publish it before opening public Google
-> sign-up; the app is still dark to the public until the client IDs, signup
-> flags and consent screen are all in place.
+> **Before public Google sign-up:** as of 2026-10-30 the consent screen is still
+> in **Testing**, with the scopes configured but the app unpublished. While in
+> Testing, only accounts listed under **Audience → Test users** can complete
+> Google sign-in or sign-up. To open it to the public:
+>
+> 1. Confirm **Google Auth Platform → Data Access** lists `openid`,
+>    `userinfo.email` and `userinfo.profile`.
+> 2. Open **Audience → Publish app**. Non-sensitive scopes need no verification.
+> 3. Re-test with a Google account that is **not** a test user and confirm the
+>    consent screen shows the account name and email with no unconfigured-scope
+>    warning.
 
 ---
 
