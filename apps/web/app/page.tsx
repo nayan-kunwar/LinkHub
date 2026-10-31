@@ -167,7 +167,7 @@ function MarketingPage() {
             aria-hidden="true"
             className="pointer-events-none absolute -right-16 bottom-0 size-96 rounded-full bg-fuchsia-200/40 blur-3xl"
           />
-          <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
+          <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 sm:pb-32 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
             <div>
               <p className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-bold text-violet-900 shadow-sm">
                 <Sparkles aria-hidden="true" className="size-3.5" />
@@ -205,7 +205,7 @@ function MarketingPage() {
             <div className="relative flex justify-center lg:justify-end">
               <div
                 aria-hidden="true"
-                className="absolute inset-x-8 bottom-4 top-10 rounded-[3rem] bg-gradient-to-br from-violet-300/60 via-fuchsia-200/40 to-white blur-2xl"
+                className="absolute inset-x-8 bottom-4 top-10 rounded-[3rem] bg-[radial-gradient(circle_at_center,rgba(196,181,253,0.55),rgba(251,207,232,0.28)_55%,transparent_75%)] blur-2xl"
               />
               <div className="relative">
                 <PhoneFrame>
@@ -222,7 +222,7 @@ function MarketingPage() {
                   <p className="mt-1 text-xl font-extrabold text-zinc-900">1,284</p>
                   <p className="text-[11px] font-bold text-green-800">↑ 12.6% vs last week</p>
                 </div>
-                <div className="absolute -right-8 bottom-24 hidden w-40 rounded-2xl border border-violet-100 bg-white p-3 shadow-float sm:block">
+                <div className="absolute right-0 -bottom-28 hidden w-40 rounded-2xl border border-violet-100 bg-white p-3 shadow-float sm:block">
                   <p className="text-[11px] font-semibold text-zinc-600">Top link</p>
                   <p className="mt-1 text-sm font-bold text-zinc-900">GitHub</p>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100">
@@ -328,7 +328,7 @@ function MarketingPage() {
 
         <section className="bg-white pb-16 sm:pb-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-800 via-violet-700 to-fuchsia-700 px-6 py-12 text-center text-white shadow-float sm:px-12">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-violet-800 via-violet-700 to-fuchsia-700 px-6 py-12 text-center text-white shadow-float sm:px-12">
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute -right-16 -top-20 size-72 rounded-full bg-white/10 blur-2xl"
