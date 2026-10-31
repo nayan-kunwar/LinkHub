@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 import { cn, hexToRgba, shadeHex } from "@/lib/utils";
 import { CategoryDialog } from "./category-dialog";
 
@@ -45,6 +46,7 @@ function SortableCategoryRow({
   linkCount,
   canDrag,
   onToggle,
+  toggleDisabled,
   onEdit,
   onDelete,
   onKeyboardMove,
@@ -53,6 +55,7 @@ function SortableCategoryRow({
   linkCount: number;
   canDrag: boolean;
   onToggle: (category: Category) => void;
+  toggleDisabled: boolean;
   onEdit: (category: Category) => void;
   onDelete: (category: Category) => void;
   onKeyboardMove: (category: Category, direction: -1 | 1) => void;
@@ -134,6 +137,7 @@ function SortableCategoryRow({
       <Switch
         checked={category.isVisible}
         onCheckedChange={() => onToggle(category)}
+        disabled={toggleDisabled}
         aria-label={`Show ${category.name} on profile`}
       />
 
@@ -169,6 +173,7 @@ export function CategoriesView() {
     toggleCategory,
     reorderCategories,
   } = useAppData();
+  const { pending, run } = usePendingAction();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
@@ -231,10 +236,12 @@ export function CategoriesView() {
   };
 
   const handleToggle = async (category: Category) => {
-    const ok = await toggleCategory(category.id);
-    if (ok) {
-      toast.success(`${category.name} is now ${category.isVisible ? "hidden" : "visible"}`);
-    }
+    await run(`toggle-${category.id}`, async () => {
+      const ok = await toggleCategory(category.id);
+      if (ok) {
+        toast.success(`${category.name} is now ${category.isVisible ? "hidden" : "visible"}`);
+      }
+    });
   };
 
   const confirmDelete = async () => {
@@ -342,6 +349,7 @@ export function CategoriesView() {
                   onToggle={(category) => {
                     void handleToggle(category);
                   }}
+                  toggleDisabled={pending !== null}
                   onEdit={openEdit}
                   onDelete={setDeleteTarget}
                   onKeyboardMove={(category, direction) => {
@@ -367,14 +375,13 @@ export function CategoriesView() {
         category={editing}
         categories={state.categories}
         categoryCount={state.categories.length}
-        onSubmit={(values) => {
-          void handleSubmit(values);
-        }}
+        onSubmit={handleSubmit}
       />
 
       <Dialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
+          if (pending === "delete") return;
           if (!open) setDeleteTarget(null);
         }}
       >
@@ -401,14 +408,20 @@ export function CategoriesView() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteTarget(null)}
+              disabled={pending === "delete"}
+            >
               Cancel
             </Button>
             <Button
               variant="danger"
               onClick={() => {
-                void confirmDelete();
+                void run("delete", confirmDelete);
               }}
+              loading={pending === "delete"}
+              disabled={pending !== null && pending !== "delete"}
             >
               Delete category
             </Button>

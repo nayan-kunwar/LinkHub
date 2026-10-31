@@ -65,10 +65,11 @@ export function CategoryDialog({
   category: Category | null;
   categories: Category[];
   categoryCount: number;
-  onSubmit: (values: CategoryFormValues) => void;
+  onSubmit: (values: CategoryFormValues) => Promise<void> | void;
 }) {
   const [values, setValues] = useState<CategoryFormValues>(emptyValues);
   const [errors, setErrors] = useState<Partial<Record<keyof CategoryFormValues, string>>>({});
+  const [submitting, setSubmitting] = useState(false);
   const limitReached = !category && categoryCount >= LIMITS.maxCategories;
 
   useEffect(() => {
@@ -95,9 +96,9 @@ export function CategoryDialog({
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (limitReached) return;
+    if (submitting || limitReached) return;
 
     const parsed = categoryFormSchema.safeParse(values);
     if (!parsed.success) {
@@ -120,11 +121,22 @@ export function CategoryDialog({
       return;
     }
 
-    onSubmit(parsed.data);
+    setSubmitting(true);
+    try {
+      await onSubmit(parsed.data);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (submitting) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{category ? "Edit category" : "Add category"}</DialogTitle>
@@ -260,10 +272,14 @@ export function CategoryDialog({
           </div>
 
           <DialogFooter>
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={limitReached}>
+            <Button type="submit" disabled={limitReached || submitting} loading={submitting}>
               {category ? "Save category" : "Add category"}
             </Button>
           </DialogFooter>

@@ -37,18 +37,66 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /** Shows a spinner and disables the button while a mutation is in flight. */
+  loading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, type = "button", ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      type = "button",
+      loading = false,
+      disabled,
+      children,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "button";
     return (
       <Comp
         ref={ref}
         type={asChild ? undefined : type}
         className={cn(buttonVariants({ variant, size }), className)}
+        disabled={asChild ? undefined : loading || disabled}
+        aria-busy={loading || undefined}
         {...props}
-      />
+      >
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading ? (
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="size-4 animate-spin"
+                fill="none"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeOpacity=".3"
+                  strokeWidth="3"
+                />
+                <path
+                  d="M21 12a9 9 0 0 0-9-9"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : null}
+            {children}
+          </>
+        )}
+      </Comp>
     );
   },
 );

@@ -34,6 +34,7 @@ import { FieldError, FieldHint, Input, Label } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatFieldErrors, useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en-IN", {
@@ -166,6 +167,7 @@ export function SettingsView() {
     linkGoogle,
     unlinkGoogle,
   } = useAppData();
+  const { pending, run } = usePendingAction();
 
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
@@ -355,10 +357,14 @@ export function SettingsView() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={async () => {
-              const ok = await restoreAccount();
-              if (ok) toast.success("Account restored.");
+            onClick={() => {
+              void run("restore", async () => {
+                const ok = await restoreAccount();
+                if (ok) toast.success("Account restored.");
+              });
             }}
+            disabled={pending !== null}
+            loading={pending === "restore"}
           >
             Restore account
           </Button>
@@ -397,13 +403,17 @@ export function SettingsView() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={async () => {
-                    const ok = await cancelPendingEmail();
-                    if (ok) {
-                      setEmailStatus("");
-                      toast.success("Email change cancelled");
-                    }
+                  onClick={() => {
+                    void run("cancel-email", async () => {
+                      const ok = await cancelPendingEmail();
+                      if (ok) {
+                        setEmailStatus("");
+                        toast.success("Email change cancelled");
+                      }
+                    });
                   }}
+                  disabled={pending !== null}
+                  loading={pending === "cancel-email"}
                 >
                   Cancel change
                 </Button>
@@ -412,7 +422,8 @@ export function SettingsView() {
 
             <form
               onSubmit={(event) => {
-                void submitEmail(event);
+                event.preventDefault();
+                void run("email", () => submitEmail(event));
               }}
               noValidate
               className="mt-3 grid gap-3 sm:grid-cols-2"
@@ -450,7 +461,13 @@ export function SettingsView() {
                 error={emailErrors.currentPassword}
               />
               <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-                <Button type="submit">Change email</Button>
+                <Button
+                  type="submit"
+                  disabled={pending !== null}
+                  loading={pending === "email"}
+                >
+                  Change email
+                </Button>
                 <p className="text-xs text-zinc-600">
                   We&apos;ll send a verification link to the new address. Your email changes only
                   after you click it.
@@ -503,9 +520,10 @@ export function SettingsView() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!state.account.hasPassword}
+                    disabled={!state.account.hasPassword || pending !== null}
+                    loading={pending === "google-disconnect"}
                     onClick={() => {
-                      void disconnectGoogle();
+                      void run("google-disconnect", disconnectGoogle);
                     }}
                   >
                     <Unplug aria-hidden="true" className="size-4" />
@@ -515,7 +533,7 @@ export function SettingsView() {
                   <div className="w-full sm:w-[260px]">
                     <GoogleButton
                       onCredential={connectGoogle}
-                      disabled={googleBusy}
+                      disabled={googleBusy || pending !== null}
                       text="continue_with"
                     />
                   </div>
@@ -541,7 +559,8 @@ export function SettingsView() {
             ) : null}
             <form
               onSubmit={(event) => {
-                void submitPassword(event);
+                event.preventDefault();
+                void run("password", () => submitPassword(event));
               }}
               noValidate
               className={`mt-3 grid gap-3 ${
@@ -584,7 +603,11 @@ export function SettingsView() {
                 error={passwordErrors.confirmPassword}
               />
               <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
-                <Button type="submit">
+                <Button
+                  type="submit"
+                  disabled={pending !== null}
+                  loading={pending === "password"}
+                >
                   {hasPassword ? "Update password" : "Set password"}
                 </Button>
                 <p className="text-xs text-zinc-600">
@@ -640,10 +663,13 @@ export function SettingsView() {
                 type="button"
                 variant="destructive"
                 size="sm"
-                disabled={otherSessions.length === 0}
-                onClick={async () => {
-                  const ok = await removeOtherSessions();
-                  if (ok) toast.success("Signed out of all other sessions");
+                disabled={otherSessions.length === 0 || pending !== null}
+                loading={pending === "sessions-all"}
+                onClick={() => {
+                  void run("sessions-all", async () => {
+                    const ok = await removeOtherSessions();
+                    if (ok) toast.success("Signed out of all other sessions");
+                  });
                 }}
               >
                 Sign out everywhere else
@@ -676,8 +702,12 @@ export function SettingsView() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          void signOutSession(session.id, label);
+                          void run(`session-${session.id}`, () =>
+                            signOutSession(session.id, label),
+                          );
                         }}
+                        disabled={pending !== null}
+                        loading={pending === `session-${session.id}`}
                         aria-label={`Sign out ${label}`}
                       >
                         Sign out

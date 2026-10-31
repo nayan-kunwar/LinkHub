@@ -26,6 +26,7 @@ import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { InfoTip } from "@/components/ui/info-tip";
 import { useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 import { useRange } from "@/lib/use-range";
 import { sumSeries, useAnalytics, useLinkSeries } from "@/lib/analytics";
 import { formatNumber } from "@/lib/utils";
@@ -35,6 +36,7 @@ const ACC_TIP =
 
 export default function DashboardPage() {
   const { state, toggleLink } = useAppData();
+  const { pending, run } = usePendingAction();
   const [range, setRange] = useRange(30);
   const analytics = useAnalytics(range);
   const overview = analytics.data;
@@ -55,9 +57,11 @@ export default function DashboardPage() {
   const topLinks = overview?.topLinks ?? [];
 
   const toggle = async (id: string, title: string) => {
-    const link = state.links.find((item) => item.id === id);
-    const ok = await toggleLink(id);
-    if (ok) toast.success(`${title} ${link?.isActive ? "deactivated" : "activated"}`);
+    await run(`toggle-${id}`, async () => {
+      const link = state.links.find((item) => item.id === id);
+      const ok = await toggleLink(id);
+      if (ok) toast.success(`${title} ${link?.isActive ? "deactivated" : "activated"}`);
+    });
   };
 
   return (
@@ -209,6 +213,7 @@ export default function DashboardPage() {
                           onCheckedChange={() => {
                             void toggle(link.id, link.title);
                           }}
+                          disabled={pending !== null}
                           aria-label={`${link.title} active`}
                         />
                       </td>

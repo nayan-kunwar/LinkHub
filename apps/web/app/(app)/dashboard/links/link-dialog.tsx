@@ -60,11 +60,12 @@ export function LinkDialog({
   link: LinkRecord | null;
   categories: Category[];
   linkCount: number;
-  onSubmit: (values: LinkFormValues) => void;
+  onSubmit: (values: LinkFormValues) => Promise<void> | void;
 }) {
   const [values, setValues] = useState<LinkFormValues>(emptyValues);
   const [errors, setErrors] = useState<Partial<Record<keyof LinkFormValues, string>>>({});
   const [limitError, setLimitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const limitReached = !link && linkCount >= LIMITS.maxLinks;
 
   useEffect(() => {
@@ -91,8 +92,9 @@ export function LinkDialog({
     setLimitError("");
   };
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     if (limitReached) {
       setLimitError(`The free plan supports up to ${LIMITS.maxLinks} links.`);
       return;
@@ -107,7 +109,12 @@ export function LinkDialog({
       setErrors(nextErrors);
       return;
     }
-    onSubmit(parsed.data);
+    setSubmitting(true);
+    try {
+      await onSubmit(parsed.data);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const iconPreview = useMemo(
@@ -116,7 +123,13 @@ export function LinkDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (submitting) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{link ? "Edit link" : "Add link"}</DialogTitle>
@@ -246,10 +259,14 @@ export function LinkDialog({
           </div>
 
           <DialogFooter>
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={limitReached}>
+            <Button type="submit" disabled={limitReached || submitting} loading={submitting}>
               {link ? "Save link" : "Add link"}
             </Button>
           </DialogFooter>

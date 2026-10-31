@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { backgroundFor } from "@/lib/appearance";
 import { DEFAULT_APPEARANCE } from "@/lib/app-state";
 import { useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 import { cn } from "@/lib/utils";
 
 const CARD_LABELS: Record<(typeof CARD_STYLES)[number], string> = {
@@ -61,6 +62,7 @@ function defaultAppearance(): AppearanceSettings {
 
 export function AppearanceView() {
   const { state, hydrated, setAppearance } = useAppData();
+  const { pending, run } = usePendingAction();
   const [draft, setDraft] = useState<AppearanceSettings>(() => structuredClone(state.appearance));
 
   useEffect(() => {
@@ -113,10 +115,16 @@ export function AppearanceView() {
             >
               {dirty ? "● Unsaved changes" : "Saved"}
             </span>
-            <Button variant="secondary" onClick={resetDraft}>
+            <Button variant="secondary" onClick={resetDraft} disabled={pending !== null}>
               Reset
             </Button>
-            <Button onClick={saveDraft} disabled={!dirty}>
+            <Button
+              onClick={() => {
+                void run("save", saveDraft);
+              }}
+              disabled={!dirty || pending !== null}
+              loading={pending === "save"}
+            >
               Save
             </Button>
           </>

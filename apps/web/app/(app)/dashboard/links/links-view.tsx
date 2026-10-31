@@ -48,6 +48,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { sumSeries, useLinkSeries, type RangeDays } from "@/lib/analytics";
 import { useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 import { useRange } from "@/lib/use-range";
 import { cn, formatNumber } from "@/lib/utils";
 import { LinkDialog } from "./link-dialog";
@@ -97,6 +98,7 @@ function SortableLinkRow({
   range,
   canDrag,
   onToggle,
+  toggleDisabled,
   onEdit,
   onDelete,
   onKeyboardMove,
@@ -107,6 +109,7 @@ function SortableLinkRow({
   range: RangeDays;
   canDrag: boolean;
   onToggle: (link: LinkRecord) => void;
+  toggleDisabled: boolean;
   onEdit: (link: LinkRecord) => void;
   onDelete: (link: LinkRecord) => void;
   onKeyboardMove: (link: LinkRecord, direction: -1 | 1) => void;
@@ -160,6 +163,7 @@ function SortableLinkRow({
       <Switch
         checked={link.isActive}
         onCheckedChange={() => onToggle(link)}
+        disabled={toggleDisabled}
         aria-label={`${link.title} active`}
       />
 
@@ -223,6 +227,7 @@ function SortableLinkRow({
 export function LinksView() {
   const { state, hydrated, addLink, updateLink, deleteLink, toggleLink, reorderLinks } =
     useAppData();
+  const { pending, run } = usePendingAction();
   const searchParams = useSearchParams();
   const [range] = useRange(30);
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
@@ -363,10 +368,12 @@ export function LinksView() {
   };
 
   const handleToggle = async (link: LinkRecord) => {
-    const ok = await toggleLink(link.id);
-    if (ok) {
-      toast.success(`${link.title} ${link.isActive ? "deactivated" : "activated"}`);
-    }
+    await run(`toggle-${link.id}`, async () => {
+      const ok = await toggleLink(link.id);
+      if (ok) {
+        toast.success(`${link.title} ${link.isActive ? "deactivated" : "activated"}`);
+      }
+    });
   };
 
   const confirmDelete = async () => {
@@ -548,6 +555,7 @@ export function LinksView() {
                   onToggle={(link) => {
                     void handleToggle(link);
                   }}
+                  toggleDisabled={pending !== null}
                   onEdit={openEdit}
                   onDelete={setDeleteTarget}
                   onKeyboardMove={(link, direction) => {
@@ -589,14 +597,13 @@ export function LinksView() {
         link={editing}
         categories={state.categories}
         linkCount={state.links.length}
-        onSubmit={(values) => {
-          void handleLinkSubmit(values);
-        }}
+        onSubmit={handleLinkSubmit}
       />
 
       <Dialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
+          if (pending === "delete") return;
           if (!open) setDeleteTarget(null);
         }}
       >
@@ -613,14 +620,20 @@ export function LinksView() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => setDeleteTarget(null)}
+              disabled={pending === "delete"}
+            >
               Cancel
             </Button>
             <Button
               variant="danger"
               onClick={() => {
-                void confirmDelete();
+                void run("delete", confirmDelete);
               }}
+              loading={pending === "delete"}
+              disabled={pending !== null && pending !== "delete"}
             >
               Delete link
             </Button>

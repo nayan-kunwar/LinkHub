@@ -36,6 +36,7 @@ import { FieldError, FieldHint, Input, Label, Textarea } from "@/components/ui/i
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api-client";
 import { formatFieldErrors, useAppData } from "@/lib/store";
+import { usePendingAction } from "@/lib/use-pending-action";
 import { cn } from "@/lib/utils";
 
 const PUBLIC_ORIGIN = (
@@ -91,6 +92,7 @@ function formatDeletionDate(value: string): string {
 export function ProfileEditor() {
   const { state, hydrated, updateProfile, setPublished, scheduleDeletion, restoreAccount } =
     useAppData();
+  const { pending, run } = usePendingAction();
   const [draft, setDraft] = useState<ProfileInput>(() => toInput(state.profile));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [availability, setAvailability] = useState<
@@ -345,7 +347,13 @@ export function ProfileEditor() {
             >
               {dirty ? "● Unsaved changes" : "Saved"}
             </span>
-            <Button onClick={save} disabled={!dirty}>
+            <Button
+              onClick={() => {
+                void run("save", save);
+              }}
+              disabled={!dirty || pending !== null}
+              loading={pending === "save"}
+            >
               <Save aria-hidden="true" className="size-4" />
               Save profile
             </Button>
@@ -369,12 +377,16 @@ export function ProfileEditor() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={async () => {
-              const ok = await restoreAccount();
-              if (ok) {
-                toast.success("Account restored. Publish your profile when you're ready.");
-              }
+            onClick={() => {
+              void run("restore", async () => {
+                const ok = await restoreAccount();
+                if (ok) {
+                  toast.success("Account restored. Publish your profile when you're ready.");
+                }
+              });
             }}
+            disabled={pending !== null}
+            loading={pending === "restore"}
           >
             Restore account
           </Button>
@@ -385,7 +397,7 @@ export function ProfileEditor() {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          void save();
+          void run("save", save);
         }}
         className="grid grid-cols-1 gap-4 xl:grid-cols-2"
       >
@@ -640,8 +652,9 @@ export function ProfileEditor() {
               <Switch
                 checked={state.profile.isPublished}
                 onCheckedChange={(checked) => {
-                  void togglePublished(checked);
+                  void run("publish", () => togglePublished(checked));
                 }}
+                disabled={pending !== null}
                 aria-labelledby="published-label"
                 aria-describedby="published-description"
               />
@@ -659,10 +672,14 @@ export function ProfileEditor() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={async () => {
-                    const ok = await restoreAccount();
-                    if (ok) toast.success("Account restored.");
+                  onClick={() => {
+                    void run("restore", async () => {
+                      const ok = await restoreAccount();
+                      if (ok) toast.success("Account restored.");
+                    });
                   }}
+                  disabled={pending !== null}
+                  loading={pending === "restore"}
                 >
                   Restore account
                 </Button>
@@ -682,7 +699,13 @@ export function ProfileEditor() {
         </div>
       </form>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (pending === "delete") return;
+          setDeleteOpen(open);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-800">Delete your account?</DialogTitle>
@@ -699,7 +722,8 @@ export function ProfileEditor() {
 
           <form
             onSubmit={(event) => {
-              void confirmDelete(event);
+              event.preventDefault();
+              void run("delete", () => confirmDelete(event));
             }}
             noValidate
           >
@@ -763,10 +787,20 @@ export function ProfileEditor() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setDeleteOpen(false)}
+                disabled={pending === "delete"}
+              >
                 Cancel
               </Button>
-              <Button type="submit" variant="danger">
+              <Button
+                type="submit"
+                variant="danger"
+                loading={pending === "delete"}
+                disabled={pending !== null && pending !== "delete"}
+              >
                 Delete account
               </Button>
             </DialogFooter>
