@@ -29,6 +29,8 @@ export interface PublicProfileData {
     id: string;
     title: string;
     url: string;
+    type: string;
+    config: Record<string, unknown>;
     description: string;
     categoryId: string | null;
     icon: string;

@@ -1,15 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import type { AppearanceSettings, Category, Link as LinkRecord, Profile } from "@linkhub/shared";
-import { ExternalLink } from "lucide-react";
-import { backgroundFor, themeFor } from "@/lib/appearance";
+import type {
+  AppearanceSettings,
+  Category,
+  CategoryIconId,
+  Link as LinkRecord,
+  Profile,
+} from "@linkhub/shared";
+import { SITE_URL } from "@linkhub/shared";
+import { themeFor, themeVars } from "@/lib/appearance";
 import { Avatar } from "./avatar";
-import { CategoryIcon } from "./category-icon";
-import { LinkIcon } from "./link-icon";
+import { BlockRenderer } from "./blocks";
+import { ShareButton } from "./share-button";
 import { SocialIcons } from "./social-icons";
-import { cn, shadeHex } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface ProfileViewProps {
   profile: Profile;
@@ -22,10 +27,39 @@ interface ProfileViewProps {
   onLinkClick?: (link: LinkRecord) => void;
 }
 
-function groupLinks(categories: Category[], links: LinkRecord[]) {
-  const visible = links.filter((link) => link.isActive);
+interface LinkGroup {
+  id: string;
+  name: string;
+  color: string;
+  icon: CategoryIconId;
+  links: LinkRecord[];
+}
+
+function groupLinks(
+  categories: Category[],
+  links: LinkRecord[],
+  layout: AppearanceSettings["layout"],
+): LinkGroup[] {
+  const visible = links
+    .filter((link) => link.isActive)
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+
+  if (layout === "flat") {
+    return visible.length > 0
+      ? [
+          {
+            id: "all",
+            name: "",
+            color: "#71717a",
+            icon: "link",
+            links: visible,
+          },
+        ]
+      : [];
+  }
+
   const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const groups = categories
+  const groups: LinkGroup[] = categories
     .filter((category) => category.isVisible)
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((category) => ({
@@ -37,7 +71,9 @@ function groupLinks(categories: Category[], links: LinkRecord[]) {
     }))
     .filter((group) => group.links.length > 0);
 
-  const other = visible.filter((link) => !link.categoryId || !categoryById.get(link.categoryId));
+  const other = visible.filter(
+    (link) => !link.categoryId || !categoryById.get(link.categoryId),
+  );
   if (other.length > 0) {
     groups.push({
       id: "other",
@@ -61,37 +97,12 @@ export function ProfileView({
   onLinkClick,
 }: ProfileViewProps) {
   const theme = themeFor(appearance);
-  const groups = groupLinks(categories, links);
-  const radius = appearance.card === "soft" ? "22px" : appearance.card === "minimal" ? "4px" : "14px";
+  const groups = groupLinks(categories, links, appearance.layout);
   const isPage = variant === "page";
-
-  const buttonBackground =
-    appearance.button === "outline"
-      ? "transparent"
-      : appearance.button === "glass"
-        ? theme.dark
-          ? "rgba(255,255,255,0.12)"
-          : "rgba(255,255,255,0.65)"
-        : theme.dark
-          ? "rgba(255,255,255,0.08)"
-          : "#ffffff";
-  const buttonBorder =
-    appearance.button === "outline"
-      ? `1.5px solid ${appearance.color}`
-      : appearance.button === "glass"
-        ? "1px solid rgba(255,255,255,0.5)"
-        : `1px solid ${theme.dark ? "rgba(255,255,255,0.13)" : "#ede9fe"}`;
-  const buttonShadow = appearance.button === "solid" ? "0 1px 3px rgba(0,0,0,0.06)" : "none";
-
-  const linkStyle: CSSProperties = {
-    background: buttonBackground,
-    border: buttonBorder,
-    borderRadius: radius,
-    boxShadow: buttonShadow,
-    color: theme.text,
-    backdropFilter: appearance.button === "glass" ? "blur(6px)" : undefined,
-    WebkitBackdropFilter: appearance.button === "glass" ? "blur(6px)" : undefined,
-  };
+  const brand = appearance.button === "brand";
+  const shareUrl = profile.username
+    ? `${SITE_URL.replace(/\/$/, "")}/${profile.username}`
+    : "";
 
   const content = (
     <div
@@ -99,21 +110,27 @@ export function ProfileView({
         "flex flex-col items-center text-center",
         isPage ? "px-1 pt-4 pb-8 sm:pt-8" : "px-4 pb-6 pt-8",
       )}
-      style={{ color: theme.text }}
     >
       {appearance.showAvatar ? (
         <Avatar
           name={profile.displayName}
           src={profile.avatarUrl}
-          className={isPage ? "size-24 text-3xl" : "size-16 text-2xl"}
+          className={isPage ? "size-28 text-4xl" : "size-16 text-2xl"}
           ring={false}
         />
       ) : null}
-      <p className={cn("font-bold", isPage ? "mt-4 text-2xl" : "mt-3 text-sm")}>{profile.displayName}</p>
+      <p
+        className={cn(
+          "font-bold tracking-tight",
+          isPage ? "mt-4 text-2xl" : "mt-3 text-sm",
+        )}
+      >
+        {profile.displayName}
+      </p>
       {profile.headline ? (
         <p
           className={cn("font-medium", isPage ? "mt-1 text-sm" : "text-[11px]")}
-          style={{ color: theme.muted }}
+          style={{ color: "var(--lh-muted)" }}
         >
           {profile.headline}
         </p>
@@ -124,7 +141,7 @@ export function ProfileView({
             "leading-snug",
             isPage ? "mt-3 max-w-md text-sm" : "mt-1.5 max-w-[220px] text-[11px]",
           )}
-          style={{ color: theme.muted }}
+          style={{ color: "var(--lh-muted)" }}
         >
           {profile.bio}
         </p>
@@ -137,69 +154,59 @@ export function ProfileView({
           iconClassName={isPage ? "size-5" : "size-4"}
         />
       ) : null}
+      {shareUrl ? (
+        <div className={isPage ? "mt-5" : "mt-3"}>
+          <ShareButton
+            url={shareUrl}
+            title={`${profile.displayName} (@${profile.username})`}
+            isPage={isPage}
+          />
+        </div>
+      ) : null}
 
-      <div className={cn("w-full text-left", isPage ? "mt-7 space-y-5" : "mt-3 space-y-3")}>
+      <div
+        className={cn(
+          "w-full text-left",
+          isPage ? "mt-8 space-y-6" : "mt-4 space-y-4",
+        )}
+      >
         {groups.length === 0 ? (
-          <p className={cn("text-center", isPage ? "mt-8 text-sm" : "mt-6 text-xs")} style={{ color: theme.muted }}>
+          <p
+            className={cn("text-center", isPage ? "mt-8 text-sm" : "mt-6 text-xs")}
+            style={{ color: "var(--lh-muted)" }}
+          >
             No visible links yet.
           </p>
         ) : (
           groups.map((group) => (
             <div key={group.id}>
-              <p
-                className={cn(
-                  "mb-1.5 flex items-center gap-1.5 font-bold uppercase tracking-wider",
-                  isPage ? "text-[11px]" : "text-[10px]",
-                )}
-                style={{ color: theme.dark ? theme.muted : shadeHex(group.color, 0.62) }}
-              >
-                <CategoryIcon icon={group.icon} className={isPage ? "size-3.5" : "size-3"} />
-                {group.name}
-              </p>
+              {group.name ? (
+                <p
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 text-center font-bold tracking-tight",
+                    isPage ? "mb-2.5 text-sm" : "mb-1.5 text-[11px]",
+                  )}
+                  style={{ color: "var(--lh-text)" }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-1.5 rounded-full"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  {group.name}
+                </p>
+              ) : null}
               <ul className={isPage ? "space-y-2.5" : "space-y-1.5"}>
                 {group.links.map((link) => (
                   <li key={link.id}>
-                    <a
-                      href={link.url}
-                      target={link.url.startsWith("mailto:") ? undefined : "_blank"}
-                      rel={link.url.startsWith("mailto:") ? undefined : "noopener noreferrer"}
-                      onClick={() => onLinkClick?.(link)}
-                      className={cn(
-                        "group/link flex w-full items-center gap-2 font-semibold transition hover:-translate-y-px hover:brightness-[0.99] focus-visible:ring-4 focus-visible:ring-violet-300",
-                        isPage ? "px-4 py-3 text-sm" : "px-3 py-2 text-xs",
-                      )}
-                      style={linkStyle}
-                    >
-                      <LinkIcon
-                        icon={link.icon}
-                        url={link.url}
-                        monochrome={theme.dark}
-                        className={cn(
-                          "shrink-0",
-                          isPage ? "size-5" : "size-4",
-                          theme.dark ? "text-current" : "text-violet-700",
-                        )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{link.title}</span>
-                        {appearance.showDescription && link.description ? (
-                          <span
-                            className={cn(
-                              "block truncate font-normal",
-                              isPage ? "mt-0.5 text-xs" : "text-[10px]",
-                            )}
-                            style={{ color: theme.muted }}
-                          >
-                            {link.description}
-                          </span>
-                        ) : null}
-                      </span>
-                      <ExternalLink
-                        aria-hidden="true"
-                        className={cn("shrink-0", isPage ? "size-4" : "size-3")}
-                        style={{ color: theme.muted }}
-                      />
-                    </a>
+                    <BlockRenderer
+                      link={link}
+                      isPage={isPage}
+                      dark={theme.dark}
+                      brand={brand}
+                      showDescription={appearance.showDescription}
+                      onLinkClick={onLinkClick}
+                    />
                   </li>
                 ))}
               </ul>
@@ -224,13 +231,13 @@ export function ProfileView({
           "flex flex-wrap items-center justify-center gap-x-2 gap-y-1",
           isPage ? "mt-10 text-xs" : "mt-5 text-[10px]",
         )}
-        style={{ color: theme.muted }}
+        style={{ color: "var(--lh-muted)" }}
       >
         <Link
           href="/"
-          className="rounded transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+          className="rounded font-semibold transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
         >
-          Made with Link Hub
+          Create your own Link Hub
         </Link>
         {isPage ? (
           <>
@@ -247,11 +254,18 @@ export function ProfileView({
     </div>
   );
 
+  const wrapperStyle = {
+    ...themeVars(appearance, theme),
+    background: "var(--lh-bg)",
+    color: "var(--lh-text)",
+    fontFamily: "var(--lh-font)",
+  };
+
   if (!isPage) {
     return (
       <div
         className={cn("min-h-full w-full", className)}
-        style={{ background: backgroundFor(appearance, theme) }}
+        style={wrapperStyle}
       >
         {content}
       </div>
@@ -261,7 +275,7 @@ export function ProfileView({
   return (
     <div
       className={cn("min-h-screen w-full", className)}
-      style={{ background: backgroundFor(appearance, theme) }}
+      style={wrapperStyle}
     >
       <div className="mx-auto w-full max-w-xl px-5 py-10 sm:px-8 sm:py-16">{content}</div>
     </div>

@@ -5,6 +5,9 @@ import type {
   Profile,
   SessionSummary,
 } from "@linkhub/shared";
+import { DEFAULT_APPEARANCE } from "@linkhub/shared";
+
+export { DEFAULT_APPEARANCE };
 
 export interface AppAccount {
   id: string;
@@ -27,18 +30,6 @@ export interface AppState {
   appearance: AppearanceSettings;
   sessions: SessionSummary[];
 }
-
-export const DEFAULT_APPEARANCE: AppearanceSettings = {
-  theme: "default",
-  color: "#7c3aed",
-  background: "gradient",
-  card: "rounded",
-  button: "solid",
-  showAvatar: true,
-  showBio: true,
-  showSocial: true,
-  showDescription: false,
-};
 
 export const EMPTY_PROFILE: Profile = {
   id: "",

@@ -105,6 +105,8 @@ export function PublicProfile({
     id: link.id,
     title: link.title,
     url: link.url,
+    type: link.type as LinkRecord["type"],
+    config: link.config,
     description: link.description,
     categoryId: link.categoryId,
     icon: link.icon as LinkIconId,

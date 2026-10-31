@@ -37,6 +37,9 @@ export function detectIcon(url: string): LinkIconId {
   if (lower.includes("linkedin.com")) return "linkedin";
   if (lower.includes("x.com") || lower.includes("twitter.com")) return "x";
   if (lower.includes("medium.com")) return "medium";
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return "youtube";
+  if (lower.includes("spotify.com") || lower.includes("spoti.fi")) return "spotify";
+  if (lower.includes("instagram.com") || lower.includes("instagr.am")) return "instagram";
   return "globe";
 }
 

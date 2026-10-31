@@ -32,7 +32,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://accounts.google.com/gsi/",
-  "frame-src https://accounts.google.com/gsi/",
+  "frame-src https://accounts.google.com/gsi/ https://www.youtube-nocookie.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

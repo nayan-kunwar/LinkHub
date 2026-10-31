@@ -153,6 +153,8 @@ model Link {
   categoryId  String?   @map("category_id") @db.Uuid
   title       String
   url         String
+  type        String    @default("link")
+  config      Json      @default("{}")
   description String?
   icon        String    @default("auto")
   isActive    Boolean   @default(true) @map("is_active")
