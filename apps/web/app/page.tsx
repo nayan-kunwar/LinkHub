@@ -208,7 +208,7 @@ function MarketingPage() {
                 className="absolute inset-x-8 bottom-4 top-10 rounded-[3rem] bg-gradient-to-br from-violet-300/60 via-fuchsia-200/40 to-white blur-2xl"
               />
               <div className="relative">
-                <PhoneFrame className="rotate-1">
+                <PhoneFrame>
                   <ProfileView
                     profile={DEMO_PROFILE}
                     categories={DEMO_CATEGORIES}
@@ -217,7 +217,7 @@ function MarketingPage() {
                     variant="phone"
                   />
                 </PhoneFrame>
-                <div className="absolute -left-10 top-16 hidden w-36 rounded-2xl border border-violet-100 bg-white p-3 shadow-float sm:block">
+                <div className="absolute -left-20 top-16 hidden w-36 rounded-2xl border border-violet-100 bg-white p-3 shadow-float sm:block">
                   <p className="text-[11px] font-semibold text-zinc-600">Clicks this week</p>
                   <p className="mt-1 text-xl font-extrabold text-zinc-900">1,284</p>
                   <p className="text-[11px] font-bold text-green-800">↑ 12.6% vs last week</p>
