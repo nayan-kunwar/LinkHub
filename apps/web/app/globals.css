@@ -74,6 +74,20 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  .lh-card {
+    background: var(--lh-card-bg);
+    border: var(--lh-card-border);
+    border-radius: var(--lh-radius);
+    box-shadow: var(--lh-card-shadow);
+    color: var(--lh-card-text);
+    -webkit-backdrop-filter: var(--lh-blur);
+    backdrop-filter: var(--lh-blur);
+  }
+
+  .lh-media {
+    border-radius: var(--lh-radius-media);
+  }
 }
 
 @keyframes overlay-in {

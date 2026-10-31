@@ -4,7 +4,8 @@ import { LIMITS } from "@linkhub/shared";
 import { env } from "../../config/env";
 import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/db";
-import { DEFAULT_APPEARANCE, meDto, type MeDto } from "../../lib/dto";
+import { meDto, type MeDto } from "../../lib/dto";
+import { DEFAULT_APPEARANCE } from "@linkhub/shared";
 import { fail } from "../../lib/errors";
 import {
   verifyGoogleCredential,

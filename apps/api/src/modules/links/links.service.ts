@@ -1,4 +1,10 @@
 import type { Plan, Prisma } from "@prisma/client";
+import {
+  isLinkType,
+  linkConfigSchemas,
+  parseYouTubeId,
+  type LinkType,
+} from "@linkhub/shared";
 import { prisma } from "../../lib/db";
 import { linkDto } from "../../lib/dto";
 import { assertWithinLimit } from "../../lib/entitlements";
@@ -10,6 +16,37 @@ import type {
   ListLinksQuery,
   UpdateLinkInput,
 } from "./links.schema";
+
+/** Validates and normalises config for a type. Throws a 400 with field paths. */
+function normaliseConfig(
+  type: LinkType,
+  url: string,
+  raw: unknown,
+): Prisma.InputJsonValue {
+  let input = raw;
+  if (type === "youtube") {
+    const videoId = parseYouTubeId(url);
+    if (!videoId) {
+      throw fail.validation("Paste a YouTube video link.", [
+        { path: "url", message: "Paste a YouTube video link." },
+      ]);
+    }
+    // Server-derived; never trust the client's videoId.
+    input = { videoId };
+  }
+
+  const parsed = linkConfigSchemas[type].safeParse(input ?? {});
+  if (!parsed.success) {
+    throw fail.validation(
+      "Some block settings are invalid.",
+      parsed.error.issues.map((issue) => ({
+        path: ["config", ...issue.path].join("."),
+        message: issue.message,
+      })),
+    );
+  }
+  return parsed.data as Prisma.InputJsonValue;
+}
 
 async function revalidateOwner(userId: string): Promise<void> {
   const profile = await prisma.profile.findUnique({
@@ -68,6 +105,8 @@ export async function createLink(
         userId,
         title: input.title,
         url: input.url,
+        type: input.type,
+        config: normaliseConfig(input.type, input.url, input.config),
         description: input.description,
         categoryId: input.categoryId,
         icon: input.icon,
@@ -97,13 +136,26 @@ export async function updateLink(
     if (!category) throw fail.notFound();
   }
 
+  const type: LinkType = isLinkType(current.type) ? current.type : "link";
+
   const data: Prisma.LinkUncheckedUpdateManyInput = {};
   if (input.title !== undefined) data.title = input.title;
-  if (input.url !== undefined) data.url = input.url;
+  if (input.url !== undefined) {
+    data.url = type === "link" || type === "youtube" ? input.url : "";
+  }
   if (input.description !== undefined) data.description = input.description;
   if (input.categoryId !== undefined) data.categoryId = input.categoryId;
   if (input.icon !== undefined) data.icon = input.icon;
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.config !== undefined || input.url !== undefined) {
+    const nextUrl =
+      typeof data.url === "string" ? data.url : current.url;
+    data.config = normaliseConfig(
+      type,
+      nextUrl,
+      input.config ?? current.config,
+    );
+  }
 
   const result = await scoped(userId).links.update(id, data);
   if (result.count === 0) throw fail.notFound();

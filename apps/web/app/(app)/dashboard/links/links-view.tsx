@@ -170,8 +170,21 @@ function SortableLinkRow({
       <LinkIcon icon={link.icon} url={link.url} className="size-7 shrink-0 text-violet-700" />
 
       <div className="min-w-0 flex-1 basis-40">
-        <p className="truncate font-semibold text-zinc-900">{link.title}</p>
-        <p className="truncate text-xs text-zinc-600">{link.url}</p>
+        <p className="flex items-center gap-1.5 truncate font-semibold text-zinc-900">
+          <span className="truncate">{link.title}</span>
+          {link.type !== "link" ? (
+            <span className="inline-flex shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800">
+              {link.type === "youtube" ? "YouTube" : link.type}
+            </span>
+          ) : null}
+        </p>
+        <p className="truncate text-xs text-zinc-600">
+          {link.type === "link" || link.type === "youtube"
+            ? link.url
+            : link.type === "header"
+              ? "Section heading"
+              : "Contact details"}
+        </p>
       </div>
 
       <div className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-44">
@@ -304,7 +317,7 @@ export function LinksView() {
     let list = state.links.filter((link) => {
       const category = link.categoryId ? categoriesById.get(link.categoryId) ?? null : null;
       if (term) {
-        const haystack = `${link.title} ${link.url} ${category?.name ?? ""}`.toLowerCase();
+        const haystack = `${link.title} ${link.url} ${link.type} ${category?.name ?? ""}`.toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       if (categoryFilter === "none") {

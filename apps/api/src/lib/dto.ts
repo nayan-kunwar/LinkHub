@@ -1,24 +1,15 @@
 import type { Category, Link, Profile, User } from "@prisma/client";
 import {
   appearanceSchema,
+  DEFAULT_APPEARANCE,
+  isLinkType,
+  parseLinkConfig,
   socialsSchema,
   type AppearanceSettings,
   type Category as CategoryDto,
   type Link as LinkDto,
   type SocialLinks,
 } from "@linkhub/shared";
-
-export const DEFAULT_APPEARANCE: AppearanceSettings = {
-  theme: "default",
-  color: "#7c3aed",
-  background: "gradient",
-  card: "rounded",
-  button: "solid",
-  showAvatar: true,
-  showBio: true,
-  showSocial: true,
-  showDescription: false,
-};
 
 export const EMPTY_SOCIALS: SocialLinks = {
   website: "",
@@ -135,6 +126,8 @@ export function linkDto(link: Link): LinkDto {
     id: link.id,
     title: link.title,
     url: link.url,
+    type: isLinkType(link.type) ? link.type : "link",
+    config: parseLinkConfig(link.type, link.config),
     description: link.description ?? "",
     categoryId: link.categoryId,
     icon: link.icon as LinkDto["icon"],
@@ -181,6 +174,8 @@ export interface PublicProfileDto {
     id: string;
     title: string;
     url: string;
+    type: string;
+    config: Record<string, unknown>;
     description: string;
     categoryId: string | null;
     icon: string;
@@ -215,6 +210,8 @@ export function publicProfileDto(
       id: link.id,
       title: link.title,
       url: link.url,
+      type: isLinkType(link.type) ? link.type : "link",
+      config: parseLinkConfig(link.type, link.config),
       description: link.description ?? "",
       categoryId: link.categoryId,
       icon: link.icon,

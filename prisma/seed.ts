@@ -1,7 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { usernameSchema } from "@linkhub/shared";
+import { DEFAULT_APPEARANCE, usernameSchema } from "@linkhub/shared";
 import { env } from "../apps/api/src/config/env";
-import { DEFAULT_APPEARANCE } from "../apps/api/src/lib/dto";
 import { hashPassword } from "../apps/api/src/lib/password";
 
 const prisma = new PrismaClient();

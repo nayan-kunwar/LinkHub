@@ -379,6 +379,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         id: crypto.randomUUID(),
         title: values.title,
         url: values.url,
+        type: values.type,
+        config: values.config,
         description: values.description,
         categoryId: values.categoryId,
         icon: values.icon,

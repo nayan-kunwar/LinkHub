@@ -4,13 +4,22 @@ import {
   BUTTON_STYLES,
   CARD_STYLES,
   CATEGORY_ICON_IDS,
+  FONT_CHOICES,
   LIMITS,
   LINK_ICON_IDS,
+  PROFILE_LAYOUTS,
   RESERVED_USERNAMES,
   SOCIAL_KEYS,
   THEME_IDS,
   USERNAME_REGEX,
 } from "./constants";
+import {
+  contactConfigSchema,
+  headerConfigSchema,
+  linkConfigSchema,
+  parseYouTubeId,
+  youtubeConfigSchema,
+} from "./blocks";
 
 const hexColor = z
   .string()
@@ -56,6 +65,10 @@ export const appearanceSchema = z.object({
   background: z.enum(BACKGROUND_STYLES),
   card: z.enum(CARD_STYLES),
   button: z.enum(BUTTON_STYLES),
+  // New fields must have defaults: parseAppearance resets the whole object on
+  // any schema failure, which would silently wipe existing profiles.
+  layout: z.enum(PROFILE_LAYOUTS).default("grouped"),
+  font: z.enum(FONT_CHOICES).default("sans"),
   showAvatar: z.boolean(),
   showBio: z.boolean(),
   showSocial: z.boolean(),
@@ -76,7 +89,7 @@ export const profileSchema = z.object({
   isPublished: z.boolean(),
 });
 
-const linkUrlSchema = z
+export const linkUrlSchema = z
   .string()
   .trim()
   .min(1, "Add a destination URL.")
@@ -91,13 +104,12 @@ const linkUrlSchema = z
     }
   }, "Use an http://, https:// or mailto: link.");
 
-export const linkFormSchema = z.object({
+const linkBase = {
   title: z
     .string()
     .trim()
     .min(1, "Give the link a title.")
     .max(LIMITS.maxLinkTitle, `Keep it under ${LIMITS.maxLinkTitle} characters.`),
-  url: linkUrlSchema,
   categoryId: z.string().nullable(),
   description: z
     .string()
@@ -105,7 +117,39 @@ export const linkFormSchema = z.object({
     .max(LIMITS.maxLinkDescription, `Keep it under ${LIMITS.maxLinkDescription} characters.`),
   icon: z.enum(LINK_ICON_IDS),
   isActive: z.boolean(),
-});
+};
+
+const noUrl = z.literal("");
+
+export const linkFormSchema = z.discriminatedUnion("type", [
+  z.object({
+    ...linkBase,
+    type: z.literal("link"),
+    url: linkUrlSchema,
+    config: linkConfigSchema,
+  }),
+  z.object({
+    ...linkBase,
+    type: z.literal("header"),
+    url: noUrl,
+    config: headerConfigSchema,
+  }),
+  z.object({
+    ...linkBase,
+    type: z.literal("youtube"),
+    url: linkUrlSchema.refine(
+      (value) => parseYouTubeId(value) !== null,
+      "Paste a YouTube video link.",
+    ),
+    config: youtubeConfigSchema,
+  }),
+  z.object({
+    ...linkBase,
+    type: z.literal("contact"),
+    url: noUrl,
+    config: contactConfigSchema,
+  }),
+]);
 
 export const categoryFormSchema = z.object({
   name: z

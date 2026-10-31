@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
-import type { AppearanceSettings } from "@linkhub/shared";
+import type { AppearanceSettings, ThemeId, ThemePresetDef } from "@linkhub/shared";
 import {
   BACKGROUND_STYLES,
   BUTTON_STYLES,
   CARD_STYLES,
   COLOR_PALETTE,
+  FONT_CHOICES,
+  PROFILE_LAYOUTS,
   THEME_PRESETS,
 } from "@linkhub/shared";
 import { DashboardFrame } from "@/components/dashboard-frame";
@@ -18,28 +20,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { backgroundFor } from "@/lib/appearance";
+import {
+  backgroundFor,
+  BUTTON_LABELS,
+  CARD_LABELS,
+  CARD_RADII,
+  FONT_STACK,
+} from "@/lib/appearance";
 import { DEFAULT_APPEARANCE } from "@/lib/app-state";
 import { useAppData } from "@/lib/store";
 import { usePendingAction } from "@/lib/use-pending-action";
 import { cn } from "@/lib/utils";
 
-const CARD_LABELS: Record<(typeof CARD_STYLES)[number], string> = {
-  rounded: "Rounded",
-  soft: "Soft",
-  minimal: "Minimal",
+const LAYOUT_LABELS: Record<(typeof PROFILE_LAYOUTS)[number], string> = {
+  grouped: "Grouped",
+  flat: "Simple list",
 };
 
-const CARD_RADII: Record<(typeof CARD_STYLES)[number], string> = {
-  rounded: "8px",
-  soft: "14px",
-  minimal: "2px",
-};
-
-const BUTTON_LABELS: Record<(typeof BUTTON_STYLES)[number], string> = {
-  solid: "Solid",
-  outline: "Outline",
-  glass: "Glass",
+const FONT_LABELS: Record<(typeof FONT_CHOICES)[number], string> = {
+  sans: "Sans",
+  serif: "Serif",
 };
 
 const BACKGROUND_LABELS: Record<(typeof BACKGROUND_STYLES)[number], string> = {
@@ -86,6 +86,24 @@ export function AppearanceView() {
     value: AppearanceSettings[Key],
   ) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const applyPreset = (id: ThemeId) => {
+    const preset: ThemePresetDef | undefined = THEME_PRESETS.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!preset) return;
+    setDraft((current) => ({
+      ...current,
+      theme: id,
+      // "gradient" means "use the theme's own background", so a preset's
+      // image or pattern is not hidden by a leftover solid choice.
+      background: "gradient",
+      ...(preset.accent ? { color: preset.accent } : {}),
+      ...(preset.font ? { font: preset.font } : {}),
+      ...(preset.card ? { card: preset.card } : {}),
+      ...(preset.button ? { button: preset.button } : {}),
+    }));
   };
 
   const saveDraft = async () => {
@@ -153,7 +171,7 @@ export function AppearanceView() {
                       name="appearance-theme"
                       value={preset.id}
                       checked={draft.theme === preset.id}
-                      onChange={() => update("theme", preset.id)}
+                      onChange={() => applyPreset(preset.id)}
                       className="peer sr-only"
                     />
                     <span className="block rounded-xl border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:ring-2 peer-checked:ring-violet-100 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
@@ -274,6 +292,53 @@ export function AppearanceView() {
               </div>
             </section>
           </Card>
+
+          <Card className="p-5">
+            <section aria-labelledby="appearance-layout">
+              <h2 id="appearance-layout" className="font-bold text-zinc-900">
+                Layout
+              </h2>
+              <p className="mb-3 text-sm text-zinc-700">
+                Group links under category headings, or show one simple list.
+              </p>
+              <div
+                className="grid grid-cols-2 gap-3"
+                role="radiogroup"
+                aria-labelledby="appearance-layout"
+              >
+                {PROFILE_LAYOUTS.map((layout) => (
+                  <label key={layout} className="cursor-pointer">
+                    <input
+                      type="radio"
+                      name="appearance-layout"
+                      value={layout}
+                      checked={draft.layout === layout}
+                      onChange={() => update("layout", layout)}
+                      className="peer sr-only"
+                    />
+                    <span className="block rounded-xl border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:bg-violet-50 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
+                      <span className="mx-auto block h-16 w-full rounded-lg border border-zinc-200 bg-zinc-50 p-2">
+                        {layout === "grouped" ? (
+                          <span className="flex h-full flex-col justify-center gap-1">
+                            <span className="mx-auto block h-1.5 w-8 rounded bg-violet-300" />
+                            <span className="block h-2.5 w-full rounded bg-violet-100" />
+                            <span className="block h-2.5 w-full rounded bg-violet-100" />
+                          </span>
+                        ) : (
+                          <span className="flex h-full flex-col justify-center gap-1">
+                            <span className="block h-2.5 w-full rounded bg-violet-100" />
+                            <span className="block h-2.5 w-full rounded bg-violet-100" />
+                            <span className="block h-2.5 w-full rounded bg-violet-100" />
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-1.5 block">{LAYOUT_LABELS[layout]}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          </Card>
         </div>
 
         <Card className="h-fit p-5">
@@ -283,8 +348,35 @@ export function AppearanceView() {
             </h2>
 
             <fieldset>
+              <legend className="mb-2 text-sm font-semibold text-zinc-800">Font</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {FONT_CHOICES.map((font) => (
+                  <label key={font} className="cursor-pointer">
+                    <input
+                      type="radio"
+                      name="appearance-font"
+                      value={font}
+                      checked={draft.font === font}
+                      onChange={() => update("font", font)}
+                      className="peer sr-only"
+                    />
+                    <span className="block rounded-lg border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:bg-violet-50 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
+                      <span
+                        className="block text-lg leading-6 text-zinc-900"
+                        style={{ fontFamily: FONT_STACK[font] }}
+                      >
+                        Aa
+                      </span>
+                      <span className="mt-1 block">{FONT_LABELS[font]}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend className="mb-2 text-sm font-semibold text-zinc-800">Card style</legend>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {CARD_STYLES.map((card) => (
                   <label key={card} className="cursor-pointer">
                     <input
@@ -309,7 +401,7 @@ export function AppearanceView() {
 
             <fieldset>
               <legend className="mb-2 text-sm font-semibold text-zinc-800">Button style</legend>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {BUTTON_STYLES.map((button) => (
                   <label key={button} className="cursor-pointer">
                     <input
@@ -324,14 +416,22 @@ export function AppearanceView() {
                       <span
                         className="mx-auto block h-8 w-14 rounded-md"
                         style={
-                          button === "solid"
-                            ? { backgroundColor: draft.color }
-                            : button === "outline"
-                              ? { border: `2px solid ${draft.color}` }
-                              : {
-                                  background: "linear-gradient(135deg,#ede9fe,#fff)",
+                          button === "brand"
+                            ? {
+                                backgroundColor: draft.color,
+                                border: `1px solid ${draft.color}`,
+                              }
+                            : button === "solid"
+                              ? {
+                                  backgroundColor: "#ffffff",
                                   border: "1px solid #ddd6fe",
                                 }
+                              : button === "outline"
+                                ? { border: `2px solid ${draft.color}` }
+                                : {
+                                    background: "linear-gradient(135deg,#ede9fe,#fff)",
+                                    border: "1px solid #ddd6fe",
+                                  }
                         }
                       />
                       <span className="mt-1.5 block">{BUTTON_LABELS[button]}</span>
@@ -358,7 +458,8 @@ export function AppearanceView() {
       </div>
 
       <p className="mt-4 text-xs text-zinc-500">
-        Backgrounds are rendered with CSS; no image upload is required.
+        Backgrounds are rendered with CSS; no image upload is required. The Brand
+        button style fills every link card with your primary color.
       </p>
     </DashboardFrame>
   );

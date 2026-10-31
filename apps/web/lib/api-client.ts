@@ -375,11 +375,14 @@ export const api = {
     list: () => request<Link[]>("/links"),
     create: (input: LinkFormValues) =>
       request<Link>("/links", { method: "POST", body: input }),
-    update: (id: string, input: Partial<LinkFormValues>) =>
-      request<Link>(`/links/${encodeURIComponent(id)}`, {
+    update: (id: string, input: LinkFormValues) => {
+      // `type` is immutable on the server; updates carry config only.
+      const { type: _type, ...body } = input;
+      return request<Link>(`/links/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: input,
-      }),
+        body,
+      });
+    },
     setStatus: (id: string, isActive: boolean) =>
       request<Link>(`/links/${encodeURIComponent(id)}/status`, {
         method: "PATCH",

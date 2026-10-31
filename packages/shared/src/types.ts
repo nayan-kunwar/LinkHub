@@ -1,6 +1,11 @@
 import type {
+  ButtonStyle,
+  CardStyle,
   CATEGORY_ICON_IDS,
+  FontChoice,
   LINK_ICON_IDS,
+  LinkType,
+  ProfileLayout,
   SOCIAL_KEYS,
   THEME_IDS,
 } from "./constants";
@@ -44,6 +49,8 @@ export interface Link {
   id: string;
   title: string;
   url: string;
+  type: LinkType;
+  config: Record<string, unknown>;
   description: string;
   categoryId: string | null;
   icon: LinkIconId;
@@ -56,8 +63,10 @@ export interface AppearanceSettings {
   theme: ThemeId;
   color: string;
   background: "solid" | "gradient" | "pattern" | "blur";
-  card: "rounded" | "soft" | "minimal";
-  button: "solid" | "outline" | "glass";
+  card: CardStyle;
+  button: ButtonStyle;
+  layout: ProfileLayout;
+  font: FontChoice;
   showAvatar: boolean;
   showBio: boolean;
   showSocial: boolean;
@@ -76,7 +85,12 @@ export interface PublicProfile {
   profile: Pick<Profile, "username" | "displayName" | "headline" | "bio" | "avatarUrl" | "socials">;
   appearance: AppearanceSettings;
   categories: Array<Pick<Category, "id" | "name" | "icon" | "color" | "sortOrder">>;
-  links: Array<Pick<Link, "id" | "title" | "url" | "description" | "categoryId" | "icon" | "sortOrder">>;
+  links: Array<
+    Pick<
+      Link,
+      "id" | "title" | "url" | "type" | "config" | "description" | "categoryId" | "icon" | "sortOrder"
+    >
+  >;
 }
 
 export interface DailyPoint {
