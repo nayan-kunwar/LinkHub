@@ -10,6 +10,7 @@ dist
 coverage
 playwright-report
 test-results
+e2e/.fixtures.json
 .mail-outbox
 
 # Local-only QA and audit notes (contain credentials/findings; never publish).

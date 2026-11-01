@@ -62,6 +62,13 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters."),
   SESSION_MAX_AGE_DAYS: z.coerce.number().int().positive().max(30).default(7),
+  // Allows the web proxy and API to agree on the cookie name in non-production
+  // environments such as the built-server Playwright suite.
+  SESSION_COOKIE_NAME: z
+    .string()
+    .trim()
+    .regex(/^(__Host-)?[A-Za-z0-9._-]+$/, "SESSION_COOKIE_NAME is not a valid cookie name.")
+    .optional(),
   TRUST_PROXY: trustProxyValue,
   DEBUG_IP_ENDPOINT: booleanString.default(false),
   WEB_INTERNAL_URL: z.string().url().optional(),
@@ -176,6 +183,10 @@ function assertProductionSecrets(env: z.infer<typeof envSchema>): void {
     );
   }
 
+  if (env.SESSION_COOKIE_NAME && !env.SESSION_COOKIE_NAME.startsWith("__Host-")) {
+    throw new Error("SESSION_COOKIE_NAME must use the __Host- prefix in production.");
+  }
+
   const secrets: Array<[string, string]> = [
     ["SESSION_SECRET", env.SESSION_SECRET],
     ["REVALIDATE_SECRET", env.REVALIDATE_SECRET],
@@ -234,7 +245,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     isProd,
     isTest,
     appOrigin: appUrl.origin,
-    sessionCookieName: isProd ? "__Host-lh.sid" : "lh.sid",
+    sessionCookieName:
+      parsed.data.SESSION_COOKIE_NAME ?? (isProd ? "__Host-lh.sid" : "lh.sid"),
     csrfCookieName: isProd ? "__Host-lh.csrf" : "lh.csrf",
     sessionMaxAgeMs: parsed.data.SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
     webInternalUrl: (parsed.data.WEB_INTERNAL_URL ?? parsed.data.APP_URL).replace(/\/$/, ""),

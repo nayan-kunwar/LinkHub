@@ -11,7 +11,7 @@ import {
 import { AuthAlert, SubmitButton } from "@/components/auth/auth-form";
 import { Avatar } from "@/components/avatar";
 import { FieldError, FieldHint, Label } from "@/components/ui/input";
-import { ApiError, api } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import { formatFieldErrors, useAppData } from "@/lib/store";
 
 const PUBLIC_HOST = (

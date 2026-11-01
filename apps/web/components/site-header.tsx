@@ -16,15 +16,15 @@ export function SiteHeader({ showMarketingNav = false }: SiteHeaderProps = {}) {
         <Logo />
         {showMarketingNav ? (
           <nav aria-label="Main" className="ml-6 hidden items-center gap-6 text-sm font-semibold text-zinc-700 md:flex">
-            <a href="/#features" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
+            <Link href="/#features" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
               Features
-            </a>
-            <a href="/#how-it-works" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
+            </Link>
+            <Link href="/#how-it-works" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
               How it works
-            </a>
-            <a href="/#faq" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
+            </Link>
+            <Link href="/#faq" className="rounded transition hover:text-violet-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200">
               FAQ
-            </a>
+            </Link>
           </nav>
         ) : null}
         <div className="ml-auto flex items-center gap-2">

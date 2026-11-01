@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: linkhub
+          POSTGRES_PASSWORD: linkhub
+          POSTGRES_DB: linkhub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U linkhub -d linkhub_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://linkhub:linkhub@localhost:5432/linkhub_test?schema=public
+      DIRECT_URL: postgresql://linkhub:linkhub@localhost:5432/linkhub_test?schema=public
+      APP_URL: http://localhost:3100
+      API_BASE_URL: http://localhost:4000
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      NEXT_PUBLIC_ALLOW_SIGNUP: "true"
+      ALLOW_DEMO_PREVIEW: "false"
+      ROOT_MODE: profile
+      DEFAULT_USERNAME: e2e-owner
+      ALLOW_SIGNUP: "true"
+      SESSION_SECRET: ci-session-secret-0123456789abcdef0123456789
+      SESSION_MAX_AGE_DAYS: "7"
+      TRUST_PROXY: "false"
+      REVALIDATE_SECRET: ci-revalidate-secret-0123456789abcdef0123
+      INTERNAL_FETCH_TOKEN: ci-internal-fetch-token-0123456789abcd
+      WEB_PROXY_SECRET: ci-web-proxy-secret-0123456789abcdef012
+      ANALYTICS_HASH_SECRET: ci-analytics-hash-secret-0123456789abcdef
+      EMAIL_PROVIDER: console
+      EMAIL_FROM: Link Hub <no-reply@test.local>
+      METADATA_FETCH_ENABLED: "false"
+      SEED_OWNER_EMAIL: e2e@example.com
+      SEED_OWNER_PASSWORD: e2e-owner-password-2026
+      SEED_OWNER_NAME: E2E Owner
+      E2E_USE_BUILT_SERVERS: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+
+      - name: Apply migrations, verify status, and seed
+        run: |
+          pnpm db:deploy
+          pnpm exec prisma migrate status --schema prisma/schema.prisma
+          pnpm db:seed
+
+      - run: pnpm lint
+      - name: Generate Next.js route types
+        run: pnpm --filter @linkhub/web exec next typegen
+      - run: pnpm typecheck:all
+      - run: pnpm api:test
+      - run: pnpm api:build
+      - run: pnpm build
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

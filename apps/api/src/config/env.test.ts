@@ -25,6 +25,27 @@ describe("environment validation", () => {
     expect(env.sessionMaxAgeMs).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
+  it("allows overriding the session cookie name", () => {
+    const development = loadEnv({
+      ...productionEnv,
+      NODE_ENV: "development",
+      SESSION_COOKIE_NAME: "lh.sid",
+    });
+    expect(development.sessionCookieName).toBe("lh.sid");
+
+    const production = loadEnv({
+      ...productionEnv,
+      SESSION_COOKIE_NAME: "__Host-custom.sid",
+    });
+    expect(production.sessionCookieName).toBe("__Host-custom.sid");
+  });
+
+  it("rejects non-__Host- session cookie names in production", () => {
+    expect(() =>
+      loadEnv({ ...productionEnv, SESSION_COOKIE_NAME: "lh.sid" }),
+    ).toThrow(/__Host-/);
+  });
+
   it("rejects short production secrets", () => {
     expect(() =>
       loadEnv({ ...productionEnv, SESSION_SECRET: "too-short" }),

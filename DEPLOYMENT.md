@@ -550,6 +550,45 @@ design, error codes and security notes are in
 >    consent screen shows the account name and email with no unconfigured-scope
 >    warning.
 
+### 5.2 CI and Playwright E2E
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+- PostgreSQL 18 service, `prisma migrate deploy`, `prisma migrate status`, and
+  `prisma db seed` on a throwaway database.
+- `pnpm lint`, `pnpm typecheck:all`, `pnpm api:test`, `pnpm api:build`, and
+  `pnpm build`.
+- `playwright install --with-deps chromium`, then `pnpm e2e` against the built
+  API and web servers.
+
+The E2E suite is deterministic and offline. It seeds its own public cards
+directly with Prisma, purges the seeded profile's cache tag, runs the API with
+`METADATA_FETCH_ENABLED=false`, mocks the editor metadata endpoint in the
+browser, and fulfils external images and the YouTube iframe locally. Run it
+locally with:
+
+```bash
+docker start linkhub-postgres
+pnpm db:deploy
+pnpm db:seed
+PLAYWRIGHT_CHANNEL=msedge pnpm e2e
+```
+
+`PLAYWRIGHT_CHANNEL=msedge` uses the installed Edge browser. Omit it in CI, or
+run `pnpm e2e:install` once to download Playwright's bundled Chromium.
+
+CI exercises the production builds. Reproduce that locally with:
+
+```bash
+pnpm api:build
+ALLOW_DEMO_PREVIEW=false pnpm build
+E2E_USE_BUILT_SERVERS=true PLAYWRIGHT_CHANNEL=msedge pnpm e2e
+```
+
+The built web server runs in production mode while the API runs in test mode, so
+both servers set `SESSION_COOKIE_NAME=lh.sid` for the suite. Leave that variable
+unset in production; the API keeps using the `__Host-lh.sid` cookie.
+
 ---
 
 ## 6. Production smoke test

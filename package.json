@@ -11,7 +11,13 @@
     "api:build": "pnpm --filter @linkhub/api build",
     "api:start": "pnpm --filter @linkhub/api start",
     "api:test": "pnpm --filter @linkhub/api test",
-    "typecheck:all": "pnpm -r typecheck",
+    "lint": "eslint apps/web packages/shared",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium",
+    "e2e:setup": "pnpm db:deploy && pnpm db:seed",
+    "e2e:headed": "playwright test --headed",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
+    "typecheck:all": "pnpm -r typecheck && pnpm typecheck:e2e",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
@@ -22,7 +28,12 @@
     "@prisma/client": "6.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "@types/node": "22.18.12",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.4.3",
     "prisma": "6.19.0",
-    "tsx": "4.20.6"
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
   }
 }
