@@ -1188,7 +1188,8 @@ role, free-tier limits, failure impact and the secrets register.
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
 - [x] Vendor ToS/quota reviewed (2026-10-27; see §18.1). Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR and a 100 CU-hour cap, and Brevo Free is 300 emails/day. Public launch requires an explicit accept-or-migrate decision.
-- [ ] Release 2.1: apply migration `20261101000000_link_metadata`; confirm `METADATA_FETCH_ENABLED=true` and the skip-host list; smoke-test preview, refresh, URL-change reset, manual-image precedence, Instagram/Amazon icon fallback, YouTube thumbnail, public `previewImageUrl`, and the kill switch.
+- [x] Release 2.1: migration `20261101000000_link_metadata` applied; `METADATA_FETCH_ENABLED=true`; production smoke 2026-11-02 passed 23/23 (preview, refresh, URL-change reset, manual-image precedence, Instagram skip, YouTube thumbnail, public `previewImageUrl`, and public DTO omits `metadata`; Amazon skip confirmed separately). Local editor/browser smoke passed 23/23, plus YouTube lazy thumbnail/click-to-load 8/8.
+- [x] Release 2.1 kill switch verified 2026-11-02: with `METADATA_FETCH_ENABLED=false`, preview and refresh returned `503 METADATA_DISABLED` (11/11 checks), create/update still succeeded without fetching, and public links stayed readable; restored `true` and preview plus save-time fetch returned `200` (5/5 checks).
 
 ---
 
