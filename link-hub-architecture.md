@@ -1160,7 +1160,7 @@ role, free-tier limits, failure impact and the secrets register.
 
 **Vendor limits:** Vercel Hobby is intended for personal, non-commercial use; confirm the plan fits a public multi-tenant service. Render's free plan has no cron jobs, so nightly analytics runs in GitHub Actions, triggered by a free cron-job.org job at 03:17 UTC. Set `connection_limit` on `DATABASE_URL` and a small `pg` pool for `connect-pg-simple` so Prisma + sessions do not exhaust Neon connections.
 
-**Staging and CI:** use a separate Neon branch and Vercel/Render preview environment with distinct secrets. CI runs lint, typecheck, unit tests, integration tests against a Postgres service, `prisma migrate deploy` on a throwaway DB, and the web build. Migrations are forward-only; take a `pg_dump`/PITR checkpoint before production migrations and document the forward-fix rollback.
+**Staging and CI:** use a separate Neon branch and Vercel/Render preview environment with distinct secrets. CI runs lint, Next.js route typegen, typecheck, unit tests, integration tests against a Postgres service, `prisma migrate deploy` on a throwaway DB, the API and web builds, and a Playwright E2E suite against the built servers. Migrations are forward-only; take a `pg_dump`/PITR checkpoint before production migrations and document the forward-fix rollback.
 
 ### Deployment Checklist (private phase)
 
@@ -1185,7 +1185,8 @@ role, free-tier limits, failure impact and the secrets register.
 - [x] Nightly analytics job externally triggered and heartbeat-monitored (2026-10-27): cron-job.org dispatches the GitHub workflow daily at 03:17 UTC, and a success ping to Healthchecks.io alerts if the run is missed; first-run watermark/backfill tested; Render liveness check path set to `/api/v1/health/live` (readiness `/api/v1/health` is for uptime monitoring)
 - [x] First automatic cron-job.org run verified: run `40625796861` started 2026-10-28 at 03:17:05 UTC, succeeded, and pinged the heartbeat
 - [x] Error tracking and job-failure alerts configured; audit log path documented (2026-10-27): throttled owner email on API 5xx, a `nightly-failure` GitHub issue on workflow failure, a Healthchecks.io dead-man's switch for missed runs, and structured `audit` events for security-relevant account/profile actions
-- [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
+- [ ] CI green (lint, typecheck, unit, integration, migration, build, Playwright E2E)
+- [ ] Staging uses a separate Neon branch with distinct secrets
 - [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
 - [x] Vendor ToS/quota reviewed (2026-10-27; see §18.1). Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR and a 100 CU-hour cap, and Brevo Free is 300 emails/day. Public launch requires an explicit accept-or-migrate decision.
 - [x] Release 2.1: migration `20261101000000_link_metadata` applied; `METADATA_FETCH_ENABLED=true`; production smoke 2026-11-02 passed 23/23 (preview, refresh, URL-change reset, manual-image precedence, Instagram skip, YouTube thumbnail, public `previewImageUrl`, and public DTO omits `metadata`; Amazon skip confirmed separately). Local editor/browser smoke passed 23/23, plus YouTube lazy thumbnail/click-to-load 8/8.

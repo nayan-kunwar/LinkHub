@@ -53,7 +53,6 @@ jobs:
       ANALYTICS_HASH_SECRET: ci-analytics-hash-secret-0123456789abcdef
       EMAIL_PROVIDER: console
       EMAIL_FROM: Link Hub <no-reply@test.local>
-      METADATA_FETCH_ENABLED: "false"
       SEED_OWNER_EMAIL: e2e@example.com
       SEED_OWNER_PASSWORD: e2e-owner-password-2026
       SEED_OWNER_NAME: E2E Owner

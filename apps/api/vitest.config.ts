@@ -22,6 +22,7 @@ export default defineConfig({
       WEB_PROXY_SECRET: "test-web-proxy-secret-0123456789abcdef012",
       ANALYTICS_HASH_SECRET: "test-analytics-hash-secret-0123456789abcdef",
       ALLOW_SIGNUP: "true",
+      METADATA_FETCH_ENABLED: "true",
       GOOGLE_CLIENT_ID: "test-google-client-id.apps.googleusercontent.com",
       EMAIL_PROVIDER: "console",
       EMAIL_FROM: "Link Hub <no-reply@test.local>",
