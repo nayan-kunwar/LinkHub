@@ -556,8 +556,8 @@ design, error codes and security notes are in
 
 - PostgreSQL 18 service, `prisma migrate deploy`, `prisma migrate status`, and
   `prisma db seed` on a throwaway database.
-- `pnpm lint`, `pnpm typecheck:all`, `pnpm api:test`, `pnpm api:build`, and
-  `pnpm build`.
+- `pnpm lint`, Next.js route typegen, `pnpm typecheck:all`, `pnpm api:test`,
+  `pnpm api:build`, and `pnpm build`.
 - `playwright install --with-deps chromium`, then `pnpm e2e` against the built
   API and web servers.
 
