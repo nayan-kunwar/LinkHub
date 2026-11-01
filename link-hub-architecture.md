@@ -1,6 +1,6 @@
 # Link Hub — Architecture & Implementation Specification
 
-**Version:** 2.5
+**Version:** 2.6
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
 **Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `linkhub-api-yphe.onrender.com` (reached by browsers only through the same-origin `/api/*` rewrite; a custom API domain is optional)
 **Status:** Owner-first, multi-tenant by design
@@ -8,6 +8,14 @@
 ---
 
 ## Changelog
+
+**v2.6 profile blocks & appearance expansion (Release 1)**
+
+- Added immutable `Link.type` (`link`, `header`, `youtube`, `contact`) and per-type `Link.config` JSON, validated by `linkConfigSchemas` in `packages/shared/src/blocks.ts`. `toBlock()` re-validates stored config and skips unusable blocks instead of throwing. Migration `20261031000000_link_blocks` is additive with defaults, so existing rows stay classic links.
+- Added card styles `classic`, `rich` and `featured`; rich/featured cards support a manual `imageUrl` thumbnail and render centered titles.
+- Added profile layouts `flat`/`grouped`, `FONT_CHOICES`, expanded theme presets, and card/button/background shape styles. `DEFAULT_APPEARANCE` is shared, and `themeVars()` exposes the appearance as CSS variables.
+- Added a public **Share** button (Web Share API with a clipboard fallback) and an accent-filled **Brand** button style with contrast-aware text.
+- Deferred: shop/work blocks, Links/Shop tabs, server-side OG metadata fetching, image uploads (manual `imageUrl` only) and Pro gating.
 
 **v2.5 production monitoring, audit & free-tier review**
 
@@ -120,6 +128,10 @@ It is built and used by the owner first, but the schema, authorization model and
 | Accessibility baseline (keyboard, focus, contrast) | Public launch | Public pages + dashboard |
 | Unique username + reserved-route validation | MVP | Availability check endpoint |
 | Link CRUD, activate/deactivate, optional icon | MVP | Fixed icon set |
+| Link blocks (`link`, `header`, `youtube`, `contact`) | MVP | Immutable `type`; per-type `config` JSON validated by Zod; `header` is display-only |
+| Card styles (`classic`, `rich`, `featured`) | MVP | Manual `imageUrl` thumbnails; rich/featured titles centered |
+| Profile layout, theme, font and shape controls | MVP | Flat/grouped; shared `DEFAULT_APPEARANCE`; `themeVars()` CSS variables |
+| Public profile Share button | MVP | Web Share API with clipboard fallback |
 | Drag-and-drop ordering | MVP | Transactional reorder |
 | Categories (CRUD, ordering, description, color, icon, visibility) | MVP | Hidden category links stay off the public page |
 | Profile customization (name, headline, bio, avatar URL, socials, appearance) | MVP | URL-only avatar; validated `socials` JSON |
@@ -603,7 +615,7 @@ model Profile {
   bio         String?
   avatarUrl   String?  @map("avatar_url")
   socials     Json     @default("{}")
-  theme       Json     @default("{}")   // appearance: theme, color, background, card, button, visibility
+  theme       Json     @default("{}")   // appearance: theme, color, background, card, button, layout, font, visibility
   isPublished Boolean  @default(false) @map("is_published")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -637,6 +649,8 @@ model Link {
   categoryId  String?          @map("category_id") @db.Uuid
   title       String
   url         String
+  type        String           @default("link")   // immutable: link | header | youtube | contact
+  config      Json             @default("{}")     // per-type settings, validated by linkConfigSchemas
   description String?
   icon        String           @default("auto")
   isActive    Boolean          @default(true) @map("is_active")
@@ -712,11 +726,28 @@ model ClickDailyBreakdown {
 }
 ```
 
+**Link blocks (Release 1).** `type` is immutable after creation and selects the
+renderer; `PATCH /links/:id` does not accept it. `url` is stored as `""` for
+`header` and `contact` blocks, and keeps the pasted URL for `link` and
+`youtube` (the 11-character `videoId` is also stored in `config`). Config
+schemas:
+
+| Type | Config |
+|---|---|
+| `link` | `layout` (`classic`/`rich`/`featured`), `subtitle`, `imageUrl` |
+| `header` | `subtitle` |
+| `youtube` | `videoId` |
+| `contact` | `email`, `phone`, `whatsapp` (at least one required) |
+
+`toBlock()` returns `null` for an invalid stored config, so one bad row cannot
+break the whole profile. YouTube play buttons and contact rows call the same
+click beacon as classic links; header blocks are display-only.
+
 **Category FK choice:** Prisma can express the optional composite relation (nullable `categoryId` + shared non-null `userId`), but `onDelete: SetNull` would emit `SET NULL` for both columns and fail on `user_id NOT NULL`. PG15 `ON DELETE SET NULL (category_id)` would work but requires hand-edited SQL that Prisma would treat as drift. Chosen: `NoAction`, and since categories are soft-deleted, the category service sets `category_id = NULL` on that user's links and soft-deletes the category in one transaction; the purge job does the same before hard-deleting. `scoped(userId).categories.get()` must filter `deletedAt: null`, so the service does not assign a link to a soft-deleted category.
 
 **Analytics FKs:** `click_events`, `click_daily_stats` and `click_daily_breakdowns` carry both `link_id` and `user_id`, and each has a composite FK `(link_id, user_id) → links(id, user_id)` in addition to the user FK. This makes a cross-tenant analytics row impossible even if a service bug or manual insert supplies mismatched IDs; `links` therefore has `@@unique([id, user_id])`. Both values are derived server-side on ingest.
 
-**Profile and presentation fields:** `headline` is capped at 80 characters; `socials` is validated by the shared `socialsSchema` (HTTPS URLs plus a `mailto:` email link, each ≤ 2048 chars). `theme` is the validated appearance object (theme id, six-digit color, background/card/button enums, four visibility booleans); it never contains arbitrary CSS. Category `color` is a six-digit hex, category/link `icon` values come from the shared fixed icon lists, and category `description` is capped at 80 characters. Category visibility is presentation state: hidden categories and their links are excluded from the public DTO and public page, but remain in the dashboard.
+**Profile and presentation fields:** `headline` is capped at 80 characters; `socials` is validated by the shared `socialsSchema` (HTTPS URLs plus a `mailto:` email link, each ≤ 2048 chars). `theme` is the validated appearance object (theme id, six-digit color, background/card/button/layout/font enums, four visibility booleans); it never contains arbitrary CSS. Category `color` is a six-digit hex, category/link `icon` values come from the shared fixed icon lists, and category `description` is capped at 80 characters. Category visibility is presentation state: hidden categories and their links are excluded from the public DTO and public page, but remain in the dashboard.
 
 **Username and session constraints:** `profiles.username` is `citext` for case-insensitive uniqueness; a raw SQL CHECK enforces the lowercase regex. The `sessions` table is created by the Prisma migration with the exact `connect-pg-simple` types (`sid varchar(255)`, `sess json`, `expire timestamp(6)`), and the store is configured with `createTableIfMissing: false`. The expression index `sessions((sess->>'userId'))` is added in a raw SQL migration. Session JSON stores `userId`, `userAgent`, `createdAt` and `lastSeenAt` so Settings can list and revoke devices; it never stores an IP. If the library already created the table in an existing environment, baseline it before switching.
 
@@ -1263,7 +1294,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · additional themes · multiple link pages per user.
+Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · further theme presets beyond Release 1 · multiple link pages per user · shop/work blocks and Links/Shop tabs · server-side OG metadata fetching · image uploads (manual `imageUrl` only in Release 1).
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 

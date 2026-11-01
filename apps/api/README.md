@@ -146,7 +146,9 @@ service in Singapore on Render's free plan with health check
 
 The free plan does not support `preDeployCommand` or cron jobs:
 
-- Run `pnpm db:deploy` manually before deploying schema-dependent changes.
+- Migrations run in the Render `buildCommand` (`pnpm db:deploy`) before
+  `pnpm api:build`, so a deploy cannot start the API before its new columns
+  exist. Keep migrations backward-compatible (expand/contract).
 - Nightly analytics runs from `.github/workflows/analytics-nightly.yml`,
   dispatched by cron-job.org every day at 03:17 UTC. It takes a PostgreSQL
   advisory lock, so overlapping runs are safe.

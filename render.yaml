@@ -6,8 +6,10 @@
 # the service to a paid always-on instance.
 #
 # Free instances do not support preDeployCommand or cron jobs:
-# - Run schema migrations manually before deploying schema changes:
-#     pnpm db:deploy
+# - Migrations run in buildCommand (`pnpm db:deploy`) before `pnpm api:build`,
+#   so the new API never starts before its columns exist. Keep migrations
+#   backward-compatible (expand/contract): the old API may still serve traffic
+#   while the build runs.
 # - The nightly analytics job runs from
 #   .github/workflows/analytics-nightly.yml.
 #
@@ -46,7 +48,7 @@ services:
     region: singapore
     plan: free
     branch: main
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm api:build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm db:generate && pnpm db:deploy && pnpm api:build
     startCommand: pnpm api:start
     healthCheckPath: /api/v1/health/live
     autoDeployTrigger: commit

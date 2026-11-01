@@ -10,7 +10,7 @@ Production topology:
 | PostgreSQL | Neon | Singapore region |
 | Email | Brevo | `no-reply@nayankunwar.com` |
 
-Deploy in this order: Neon → Render API → seed → Vercel → DNS → smoke tests.
+Deploy in this order: Neon → migrations → Render API → seed → Vercel → DNS → smoke tests.
 
 See [`docs/external-services.md`](docs/external-services.md) for the full
 inventory of external services, free-tier limits, failure impact and the secrets
@@ -49,12 +49,14 @@ placeholder secrets.
 3. Append the Prisma parameters:
 
 ```env
-DATABASE_URL="postgresql://...-pooler.../neondb?sslmode=require&pgbouncer=true&connection_limit=5"
-DIRECT_URL="postgresql://.../neondb?sslmode=require"
+DATABASE_URL="postgresql://...-pooler.../neondb?sslmode=require&pgbouncer=true&connection_limit=5&connect_timeout=120"
+DIRECT_URL="postgresql://.../neondb?sslmode=require&connect_timeout=120"
 ```
 
 Keep the quotes: the URLs contain `&`, and the runbook sources this file from a
-shell.
+shell. `connect_timeout=120` is required on networks that resolve Neon's IPv6
+addresses but cannot route them; see **Prisma P1001** below. It makes a cold
+migration take roughly two minutes while Prisma falls through to IPv4.
 
 4. Apply migrations and seed the owner from your machine. Copy
    `.env.deploy.example` to `.env.deploy.local` (gitignored), fill in the Neon
@@ -80,6 +82,38 @@ Verify:
 psql "$DIRECT_URL" -c "select email, role, status from users;"
 psql "$DIRECT_URL" -c "select username, is_published from profiles;"
 ```
+
+### Prisma P1001 from a local machine (IPv6 fallback)
+
+Symptom: `pnpm db:deploy` or `prisma migrate status` fails with
+
+```text
+P1001: Can't reach database server at `ep-....aws.neon.tech:5432`
+```
+
+even though `Test-NetConnection -ComputerName <host> -Port 5432` returns
+`True`. Neon publishes multiple IPv6 (`AAAA`) and IPv4 (`A`) records for each
+endpoint. On a network that advertises IPv6 but cannot route it, Prisma tries
+the IPv6 addresses first; each attempt hangs until the connect timeout, so the
+IPv4 addresses are never reached. `NODE_OPTIONS=--dns-result-order=ipv4first`
+does not help — the Prisma engine resolves names in Rust, not through Node.
+
+Fix: keep `connect_timeout=120` on **both** URLs (the example above already
+does). The timeout gives Prisma time to fall through the dead IPv6 addresses to
+IPv4. A cold migration then takes roughly **2 minutes** instead of a few
+seconds. Verify:
+
+```bash
+set -a; source .env.deploy.local; set +a
+pnpm prisma migrate status
+# Database schema is up to date!
+```
+
+If it still fails, confirm the Neon project is active, the host matches
+**Connect → Direct connection** in the Neon console, and the machine can reach
+port 5432 over IPv4. Do not disable TLS: Neon requires `sslmode=require`.
+Pinning the hostname to an IPv4 address in the OS `hosts` file skips the IPv6
+wait, but Neon's IPs can change; remove the entry after the migration.
 
 ---
 
@@ -112,8 +146,10 @@ the API. API, `packages/shared`, `prisma` and lockfile changes still deploy.
    the console mailer unless `ALLOW_CONSOLE_MAIL_IN_PRODUCTION=true` is set
    deliberately; do not enable that override on the public site. If Brevo is
    not ready, finish the Brevo setup before the first public deploy.
-5. Deploy. The build runs `pnpm install`, `pnpm db:generate` and
-   `pnpm api:build`.
+5. Deploy. The build runs `pnpm install`, `pnpm db:generate`,
+   `pnpm db:deploy` and `pnpm api:build`. The migration step uses `DIRECT_URL`;
+   keep `connect_timeout=120` on it if the build network has the IPv6 fallback
+   described in §2.
 6. Copy the service URL, for example
    `https://linkhub-api-yphe.onrender.com`.
 
@@ -155,15 +191,25 @@ API.
 
 ### Migrations
 
-The schema is already applied. For future schema changes, run migrations from
-your machine before deploying the code that depends on them:
+The schema is already applied. `render.yaml` sets `autoDeployTrigger: commit`,
+so merging to `main` deploys the API immediately. The free plan has no
+`preDeployCommand`, so the build command runs `pnpm db:deploy` before
+`pnpm api:build`: every deploy applies pending migrations before the new API
+starts. This is why a Release 1 merge without the migration produced 500s.
+
+To apply or check migrations locally without deploying:
 
 ```bash
 set -a; source .env.deploy.local; set +a
 pnpm db:deploy
 ```
 
-The free plan has no pre-deploy command, so this is a manual step.
+Keep migrations backward-compatible (expand/contract), because the old API may
+still serve traffic while the build runs. If you ever remove the build-command
+step, the fallback is to disable Render auto-deploy, run the migration, then
+trigger the deploy (or merge only after `db:deploy` succeeds).
+
+Never run `prisma migrate dev` or `prisma db push` against production.
 
 ### Nightly analytics
 
@@ -486,18 +532,27 @@ design, error codes and security notes are in
    `__Host-lh.sid` and the readable CSRF cookie is `__Host-lh.csrf`. Both are
    `Secure`, `Path=/` and host-only; logout clears both.
 3. Create a link, toggle it inactive, delete it.
-4. Rename the profile and confirm the public page updates immediately (the
+4. Open **Links → Add link** and create one **Header**, one **YouTube** (paste a
+   video URL) and one **Contact** block. Set one link to the **Rich** card style
+   with a manual image URL and another to **Featured**. In **Appearance**, switch
+   between flat/grouped, a non-default theme, font and card/button shape; save.
+   In a private window, confirm the public page renders every block, the
+   **Share** button works (native share or clipboard fallback), and the layout
+   matches.
+5. Click the YouTube play button and a contact row, then confirm both appear in
+   `/dashboard/analytics` after the 30-second dedupe window.
+6. Rename the profile and confirm the public page updates immediately (the
    `profile:<username>` tag is revalidated and the route re-renders with fresh
    data).
-5. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
+7. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
    reset.
-6. Open a public link and check `/dashboard/analytics` for the click.
-7. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
-8. Check Render logs for errors and confirm no IP addresses or tokens appear.
-   Confirm the expected `audit` events (`auth.login`, etc.) are present.
-9. If a password was shared in chat or a support ticket, rotate it immediately
-   from **Settings → Account** and store the new value only in your password
-   manager. A password change revokes every other session.
+8. Open a classic link and check `/dashboard/analytics` for the click.
+9. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
+10. Check Render logs for errors and confirm no IP addresses or tokens appear.
+    Confirm the expected `audit` events (`auth.login`, etc.) are present.
+11. If a password was shared in chat or a support ticket, rotate it immediately
+    from **Settings → Account** and store the new value only in your password
+    manager. A password change revokes every other session.
 
 Run the nightly job once from **GitHub → Actions → Nightly analytics → Run
 workflow** and confirm it exits successfully, the `Ping heartbeat` step passes,
