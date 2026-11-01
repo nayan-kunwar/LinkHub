@@ -1,7 +1,8 @@
 # LinkHub API
 
-Express 5 API for LinkHub v2.4. It serves the JSON API consumed by the Next.js
-web app in `apps/web` and is the only process that talks to PostgreSQL.
+Express 5 API for LinkHub v2.7 (Release 2.1). It serves the JSON API consumed by
+the Next.js web app in `apps/web` and is the only process that talks to
+PostgreSQL.
 
 - **Runtime:** Node.js 22, TypeScript, Express 5
 - **Data:** PostgreSQL 18 on Neon in production (PostgreSQL 16 for the local Docker example) through Prisma 6
@@ -74,7 +75,7 @@ From the repository root:
 
 ## Environment
 
-Required in every environment:
+Core environment variables:
 
 | Variable | Notes |
 |---|---|
@@ -87,12 +88,14 @@ Required in every environment:
 | `WEB_PROXY_SECRET` | Shared secret that makes `x-vercel-ip-country` trusted |
 | `APP_URL` | Web origin used for Origin/CSRF checks |
 | `PORT` | API port (default `4000`) |
+| `METADATA_FETCH_ENABLED` | Kill switch for outbound OG/Twitter fetches; defaults to `true` |
+| `METADATA_SKIP_HOSTS` | Comma-separated hosts that skip server previews (default: Instagram/Amazon) |
 
 Useful feature flags: `ALLOW_SIGNUP`, `ALLOW_DEMO_PREVIEW` (web),
 `TRUST_PROXY` (verified hop count, never `true`), `DEBUG_IP_ENDPOINT`
 (development only), `ACCOUNT_DELETION_GRACE_DAYS`,
 `EMAIL_VERIFICATION_TTL_HOURS`, `PASSWORD_RESET_TTL_MINUTES`,
-`CLICK_DEDUPE_SECONDS`.
+`CLICK_DEDUPE_SECONDS`, `METADATA_FETCH_ENABLED`, `METADATA_SKIP_HOSTS`.
 
 Email uses `EMAIL_PROVIDER=console` locally. Messages are written to
 `apps/api/.mail-outbox/` (gitignored) instead of being sent. For production,
@@ -111,7 +114,20 @@ In production the process refuses to start with development fallbacks for
 - Success: `{ "success": true, "data": … }`
 - Error: `{ "success": false, "error": { "code", "message", "details?" } }`
 - Health: `GET /api/v1/health` (DB readiness) and `/api/v1/health/live`
+- Link previews: `POST /api/v1/links/metadata` `{ url }` (preview only) and
+  `POST /api/v1/links/:id/refresh-metadata` (force fetch + persist)
 - Every response carries `X-Request-Id`.
+
+Link preview metadata is server-owned and stored in `Link.metadata`; clients
+cannot send it on create/update. Rich/featured link blocks without a manual
+image fetch it after save, and a URL change resets it. Outbound fetches are
+SSRF-guarded (public addresses only, pinned DNS lookup, per-redirect checks,
+ports 80/443, no credentials), read at most 512 KiB with a 5-second deadline,
+check `Content-Type` before the body, and accept only HTTPS images. Previews
+are cached in memory for 10 minutes per user + URL, share a 20/min/user budget
+and a 4-fetch concurrency cap, and can be disabled with
+`METADATA_FETCH_ENABLED=false`. Instagram/Amazon hosts in
+`METADATA_SKIP_HOSTS` keep the icon fallback without a network request.
 
 All non-GET requests require a matching `Origin` and an `X-CSRF-Token` header
 that matches the readable `lh.csrf` cookie. The one exception is the anonymous
@@ -129,6 +145,7 @@ grace period also restores the account. Restoring never republishes.
 ```bash
 pnpm api:test          # Vitest, no database required
 pnpm typecheck:all
+pnpm api:build
 pnpm build
 ```
 

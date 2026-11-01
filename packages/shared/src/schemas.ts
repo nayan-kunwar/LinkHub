@@ -54,7 +54,7 @@ export const socialsSchema = z.object({
     .string()
     .trim()
     .max(254)
-    .refine((value) => value === "" || /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value), {
+    .refine((value) => value === "" || /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/i.test(value), {
       message: "Use a mailto: link, for example mailto:you@example.com.",
     }),
 });

@@ -238,7 +238,7 @@ function SortableLinkRow({
 }
 
 export function LinksView() {
-  const { state, hydrated, addLink, updateLink, deleteLink, toggleLink, reorderLinks } =
+  const { state, hydrated, addLink, updateLink, refreshLinkMetadata, deleteLink, toggleLink, reorderLinks } =
     useAppData();
   const { pending, run } = usePendingAction();
   const searchParams = useSearchParams();
@@ -611,6 +611,7 @@ export function LinksView() {
         categories={state.categories}
         linkCount={state.links.length}
         onSubmit={handleLinkSubmit}
+        onRefreshMetadata={refreshLinkMetadata}
       />
 
       <Dialog

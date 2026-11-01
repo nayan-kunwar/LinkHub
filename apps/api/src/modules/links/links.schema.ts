@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { LIMITS, LINK_ICON_IDS, parseYouTubeId } from "@linkhub/shared";
+import {
+  LIMITS,
+  LINK_ICON_IDS,
+  normalizeUrl,
+  parseYouTubeId,
+} from "@linkhub/shared";
 import { safeLinkUrlSchema } from "../../lib/validation";
 
 const linkFields = {
@@ -83,6 +88,22 @@ export const linkStatusApiSchema = z.object({
   isActive: z.boolean(),
 });
 
+// Preview requests are read-only and accept only a destination URL. They are
+// never part of create/update bodies, so metadata cannot be client-supplied.
+export const linkMetadataPreviewApiSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .min(1, "Add a URL to preview.")
+      .max(2048, "Keep the URL under 2048 characters.")
+      .refine(
+        (value) => normalizeUrl(value) !== null,
+        "Enter a valid http(s) URL.",
+      ),
+  })
+  .strict();
+
 export const reorderLinksApiSchema = z.object({
   ids: z.array(z.uuid()).max(LIMITS.maxLinks),
   categoryId: z.uuid().nullable().optional(),
@@ -97,3 +118,6 @@ export const listLinksQuerySchema = z.object({
 export type CreateLinkInput = z.infer<typeof createLinkApiSchema>;
 export type UpdateLinkInput = z.infer<typeof updateLinkApiSchema>;
 export type ListLinksQuery = z.infer<typeof listLinksQuerySchema>;
+export type LinkMetadataPreviewInput = z.infer<
+  typeof linkMetadataPreviewApiSchema
+>;

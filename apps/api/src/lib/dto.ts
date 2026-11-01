@@ -4,12 +4,14 @@ import {
   DEFAULT_APPEARANCE,
   isLinkType,
   parseLinkConfig,
+  parseLinkMetadata,
   socialsSchema,
   type AppearanceSettings,
   type Category as CategoryDto,
   type Link as LinkDto,
   type SocialLinks,
 } from "@linkhub/shared";
+import { previewImageFor } from "./link-preview";
 
 export const EMPTY_SOCIALS: SocialLinks = {
   website: "",
@@ -128,6 +130,8 @@ export function linkDto(link: Link): LinkDto {
     url: link.url,
     type: isLinkType(link.type) ? link.type : "link",
     config: parseLinkConfig(link.type, link.config),
+    metadata: parseLinkMetadata(link.metadata),
+    previewImageUrl: previewImageFor(link),
     description: link.description ?? "",
     categoryId: link.categoryId,
     icon: link.icon as LinkDto["icon"],
@@ -176,6 +180,7 @@ export interface PublicProfileDto {
     url: string;
     type: string;
     config: Record<string, unknown>;
+    previewImageUrl: string;
     description: string;
     categoryId: string | null;
     icon: string;
@@ -212,6 +217,7 @@ export function publicProfileDto(
       url: link.url,
       type: isLinkType(link.type) ? link.type : "link",
       config: parseLinkConfig(link.type, link.config),
+      previewImageUrl: previewImageFor(link),
       description: link.description ?? "",
       categoryId: link.categoryId,
       icon: link.icon,

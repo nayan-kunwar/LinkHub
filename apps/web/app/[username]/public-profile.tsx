@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight, Link2Off } from "lucide-react";
+import { EMPTY_LINK_METADATA } from "@linkhub/shared";
 import type {
   Category,
   CategoryIconId,
@@ -107,6 +108,8 @@ export function PublicProfile({
     url: link.url,
     type: link.type as LinkRecord["type"],
     config: link.config,
+    metadata: EMPTY_LINK_METADATA,
+    previewImageUrl: link.previewImageUrl ?? "",
     description: link.description,
     categoryId: link.categoryId,
     icon: link.icon as LinkIconId,

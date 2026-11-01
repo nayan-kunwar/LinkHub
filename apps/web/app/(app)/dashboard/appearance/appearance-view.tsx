@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
-import type { AppearanceSettings, ThemeId, ThemePresetDef } from "@linkhub/shared";
+import type { AppearanceSettings, ThemeId } from "@linkhub/shared";
 import {
   BACKGROUND_STYLES,
   BUTTON_STYLES,
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
+  applyThemePreset,
   backgroundFor,
   BUTTON_LABELS,
   CARD_LABELS,
@@ -88,22 +89,17 @@ export function AppearanceView() {
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const applyPreset = (id: ThemeId) => {
-    const preset: ThemePresetDef | undefined = THEME_PRESETS.find(
-      (candidate) => candidate.id === id,
-    );
+  const applyPreset = (id: ThemeId, force = false) => {
+    const preset = THEME_PRESETS.find((candidate) => candidate.id === id);
     if (!preset) return;
-    setDraft((current) => ({
-      ...current,
-      theme: id,
-      // "gradient" means "use the theme's own background", so a preset's
-      // image or pattern is not hidden by a leftover solid choice.
-      background: "gradient",
-      ...(preset.accent ? { color: preset.accent } : {}),
-      ...(preset.font ? { font: preset.font } : {}),
-      ...(preset.card ? { card: preset.card } : {}),
-      ...(preset.button ? { button: preset.button } : {}),
-    }));
+    setDraft((current) => applyThemePreset(current, preset, { force }));
+  };
+
+  const resetToPreset = () => {
+    const preset = THEME_PRESETS.find((candidate) => candidate.id === draft.theme);
+    if (!preset) return;
+    setDraft((current) => applyThemePreset(current, preset, { force: true }));
+    toast.info("Preset values restored — save to apply");
   };
 
   const saveDraft = async () => {
@@ -134,7 +130,7 @@ export function AppearanceView() {
               {dirty ? "● Unsaved changes" : "Saved"}
             </span>
             <Button variant="secondary" onClick={resetDraft} disabled={pending !== null}>
-              Reset
+              Reset to default
             </Button>
             <Button
               onClick={() => {
@@ -156,16 +152,32 @@ export function AppearanceView() {
               <h2 id="appearance-theme" className="font-bold text-zinc-900">
                 Theme
               </h2>
-              <p className="mb-3 text-sm text-zinc-700">
-                Pick a preset, then fine-tune colors and background.
-              </p>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-zinc-700">
+                  Pick a preset, then fine-tune colors and background.
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetToPreset}
+                  disabled={pending !== null}
+                >
+                  Reset to preset
+                </Button>
+              </div>
               <div
                 className="grid grid-cols-2 gap-3 sm:grid-cols-4"
                 role="radiogroup"
                 aria-labelledby="appearance-theme"
               >
                 {THEME_PRESETS.map((preset) => (
-                  <label key={preset.id} className="cursor-pointer">
+                  <label
+                    key={preset.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      if (draft.theme === preset.id) applyPreset(preset.id, true);
+                    }}
+                  >
                     <input
                       type="radio"
                       name="appearance-theme"

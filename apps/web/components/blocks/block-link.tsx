@@ -1,10 +1,12 @@
 import { ExternalLink } from "lucide-react";
 import {
   detectProvider,
+  isMailtoUrl,
   type Link,
   type LinkConfigMap,
 } from "@linkhub/shared";
 import { LinkIcon } from "../link-icon";
+import { PreviewImage } from "../preview-image";
 import { cn } from "@/lib/utils";
 import type { BlockProps } from "./types";
 
@@ -17,10 +19,10 @@ export function BlockLink({
   showDescription,
   onLinkClick,
 }: { link: Link; config: LinkConfigMap["link"] } & BlockProps) {
-  const isMail = link.url.startsWith("mailto:");
+  const isMail = isMailtoUrl(link.url);
   const provider = detectProvider(link.url);
   const subtitle = config.subtitle || (config.layout === "classic" ? "" : provider?.label || "");
-  const image = config.imageUrl;
+  const image = config.imageUrl || link.previewImageUrl || "";
   const iconColor = brand || dark ? "text-current" : "text-[color:var(--lh-accent)]";
   const description =
     showDescription && link.description ? link.description : "";
@@ -39,27 +41,24 @@ export function BlockLink({
         className="lh-card group/link block w-full overflow-hidden text-center transition hover:-translate-y-0.5 hover:brightness-[1.02] focus-visible:ring-4 focus-visible:ring-violet-300"
         style={{ borderRadius: "var(--lh-radius-media)" }}
       >
-        {image ? (
-          // eslint-disable-next-line @next/next/no-img-element -- same pattern as Avatar
-          <img
-            src={image}
-            alt=""
-            loading="lazy"
-            className="block aspect-[16/9] w-full object-cover"
-          />
-        ) : (
-          <span
-            aria-hidden="true"
-            className="flex aspect-[16/9] w-full items-center justify-center bg-black/5"
-          >
-            <LinkIcon
-              icon={link.icon}
-              url={link.url}
-              monochrome={dark || brand}
-              className={cn("size-10 opacity-70", iconColor)}
-            />
-          </span>
-        )}
+        <PreviewImage
+          src={image}
+          alt=""
+          className="block aspect-[16/9] w-full object-cover"
+          fallback={
+            <span
+              aria-hidden="true"
+              className="flex aspect-[16/9] w-full items-center justify-center bg-black/5"
+            >
+              <LinkIcon
+                icon={link.icon}
+                url={link.url}
+                monochrome={dark || brand}
+                className={cn("size-10 opacity-70", iconColor)}
+              />
+            </span>
+          }
+        />
         <span className={cn("block", isPage ? "px-5 py-4" : "px-3 py-2.5")}>
           <span
             className={cn(
@@ -116,17 +115,19 @@ export function BlockLink({
               : "color-mix(in srgb, var(--lh-accent) 10%, transparent)",
           }}
         >
-          {image ? (
-            // eslint-disable-next-line @next/next/no-img-element -- manual URL thumbnail
-            <img src={image} alt="" loading="lazy" className="size-full object-cover" />
-          ) : (
-            <LinkIcon
-              icon={link.icon}
-              url={link.url}
-              monochrome={dark || brand}
-              className={cn(isPage ? "size-6" : "size-5", iconColor)}
-            />
-          )}
+          <PreviewImage
+            src={image}
+            alt=""
+            className="size-full object-cover"
+            fallback={
+              <LinkIcon
+                icon={link.icon}
+                url={link.url}
+                monochrome={dark || brand}
+                className={cn(isPage ? "size-6" : "size-5", iconColor)}
+              />
+            }
+          />
         </span>
 
         <span className="min-w-0 text-center">

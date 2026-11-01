@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Heading,
+  ImageOff,
   Link2,
+  Loader2,
   Phone,
   MonitorPlay,
+  RefreshCw,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -15,16 +19,23 @@ import type {
   LinkFormValues,
   LinkIconId,
   LinkLayout,
+  LinkMetadata,
   LinkType,
 } from "@linkhub/shared";
 import {
   defaultConfigFor,
+  detectProvider,
+  EMPTY_LINK_METADATA,
+  isMailtoUrl,
   LIMITS,
   linkFormSchema,
   LINK_ICON_IDS,
+  normalizeUrl,
   parseYouTubeId,
 } from "@linkhub/shared";
+import { ApiError, api } from "@/lib/api-client";
 import { LinkIcon } from "@/components/link-icon";
+import { PreviewImage } from "@/components/preview-image";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -36,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input, Label, FieldError, FieldHint, Select, Textarea } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 const ICON_LABELS: Record<LinkIconId, string> = {
@@ -157,6 +169,17 @@ function configString(config: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function configBoolean(
+  config: Record<string, unknown>,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+type PreviewStatus = "idle" | "loading" | "ready" | "error";
+
 export function LinkDialog({
   open,
   onOpenChange,
@@ -164,6 +187,7 @@ export function LinkDialog({
   categories,
   linkCount,
   onSubmit,
+  onRefreshMetadata,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -171,6 +195,10 @@ export function LinkDialog({
   categories: Category[];
   linkCount: number;
   onSubmit: (values: LinkFormValues) => Promise<void> | void;
+  onRefreshMetadata?: (
+    id: string,
+    signal?: AbortSignal,
+  ) => Promise<LinkRecord | null>;
 }) {
   const [step, setStep] = useState<"type" | "form">(link ? "form" : "type");
   const [draft, setDraft] = useState<LinkDraft>(() =>
@@ -179,17 +207,42 @@ export function LinkDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [limitError, setLimitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [preview, setPreview] = useState<LinkMetadata | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<PreviewStatus>("idle");
+  const [previewError, setPreviewError] = useState("");
+  const previewRequest = useRef<{
+    controller: AbortController;
+    url: string;
+  } | null>(null);
   const limitReached = !link && linkCount >= LIMITS.maxLinks;
   const isEditing = Boolean(link);
   const type = draft.type;
 
   useEffect(() => {
     if (!open) return;
-    setDraft(link ? valuesFromLink(link) : emptyValues("link"));
+    previewRequest.current?.controller.abort();
+    previewRequest.current = null;
+    const initial = link ? valuesFromLink(link) : emptyValues("link");
+    const initialPreview =
+      link?.type === "link" &&
+      link.metadata.sourceUrl === normalizeUrl(link.url)
+        ? link.metadata
+        : null;
+    setDraft(initial);
     setStep(link ? "form" : "type");
     setErrors({});
     setLimitError("");
+    setPreview(initialPreview);
+    setPreviewStatus(initialPreview ? "ready" : "idle");
+    setPreviewError("");
   }, [open, link]);
+
+  useEffect(
+    () => () => {
+      previewRequest.current?.controller.abort();
+    },
+    [],
+  );
 
   const update = <Key extends keyof LinkDraft>(key: Key, value: LinkDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -202,7 +255,7 @@ export function LinkDialog({
     setLimitError("");
   };
 
-  const updateConfig = (key: string, value: string) => {
+  const updateConfig = (key: string, value: unknown) => {
     setDraft((current) => ({
       ...current,
       config: { ...current.config, [key]: value },
@@ -223,6 +276,13 @@ export function LinkDialog({
   };
 
   const updateUrl = (value: string) => {
+    if (normalizeUrl(value) !== normalizeUrl(draft.url)) {
+      previewRequest.current?.controller.abort();
+      previewRequest.current = null;
+      setPreview(null);
+      setPreviewStatus("idle");
+      setPreviewError("");
+    }
     setDraft((current) => {
       if (current.type !== "youtube") return { ...current, url: value };
       return {
@@ -279,6 +339,150 @@ export function LinkDialog({
   const youtubeId = type === "youtube" ? parseYouTubeId(draft.url) : null;
   const imageUrl = configString(draft.config, "imageUrl");
   const layout = (configString(draft.config, "layout") || "classic") as LinkLayout;
+  const manualImage = imageUrl.trim();
+  const usePreviewImage = configBoolean(draft.config, "usePreviewImage", true);
+  const previewKey = normalizeUrl(draft.url);
+  const previewMatches = Boolean(
+    preview && previewKey && preview.sourceUrl === previewKey,
+  );
+  const provider = type === "link" ? detectProvider(draft.url) : null;
+  const previewMayBeBlocked =
+    provider?.id === "instagram" || provider?.id === "amazon";
+  const autoPreviewAllowed =
+    type === "link" &&
+    layout !== "classic" &&
+    !manualImage &&
+    usePreviewImage;
+
+  const applySuggestions = (metadata: LinkMetadata) => {
+    setDraft((current) => {
+      let next = current;
+      if (!current.title.trim() && metadata.title) {
+        next = {
+          ...next,
+          title: metadata.title.slice(0, LIMITS.maxLinkTitle),
+        };
+      }
+      if (!current.description.trim() && metadata.description) {
+        next = {
+          ...next,
+          description: metadata.description.slice(
+            0,
+            LIMITS.maxLinkDescription,
+          ),
+        };
+      }
+      return next;
+    });
+  };
+
+  const fetchPreview = async (
+    url: string,
+    options: { manual?: boolean } = {},
+  ) => {
+    if (type !== "link" || isMailtoUrl(url)) return;
+    const normalized = normalizeUrl(url);
+    if (!normalized) return;
+    if (!options.manual && (!usePreviewImage || manualImage)) return;
+
+    previewRequest.current?.controller.abort();
+    const controller = new AbortController();
+    previewRequest.current = { controller, url: normalized };
+    setPreviewStatus("loading");
+    setPreviewError("");
+
+    try {
+      let metadata: LinkMetadata;
+      if (
+        options.manual &&
+        link?.type === "link" &&
+        normalizeUrl(link.url) === normalized &&
+        onRefreshMetadata
+      ) {
+        const updated = await onRefreshMetadata(link.id, controller.signal);
+        if (!updated) throw new Error("Could not refresh the preview.");
+        metadata = updated.metadata;
+      } else {
+        metadata = await api.links.previewMetadata(
+          normalized,
+          controller.signal,
+        );
+      }
+      // A newer URL change aborts and clears this request; never apply a
+      // response that no longer belongs to the current editor state.
+      if (previewRequest.current?.controller !== controller) return;
+      // Skipped hosts (Instagram/Amazon) return the unchanged link instead of
+      // fetching, so an empty/mismatched payload still means "no preview".
+      const resolved =
+        metadata.sourceUrl === normalized
+          ? metadata
+          : {
+              ...EMPTY_LINK_METADATA,
+              sourceUrl: normalized,
+              finalUrl: normalized,
+            };
+      setPreview(resolved);
+      setPreviewStatus("ready");
+      applySuggestions(resolved);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (previewRequest.current?.controller !== controller) return;
+      setPreview(null);
+      setPreviewStatus("error");
+      setPreviewError(
+        error instanceof ApiError
+          ? error.message
+          : "Could not load a preview for this page.",
+      );
+    } finally {
+      if (previewRequest.current?.controller === controller) {
+        previewRequest.current = null;
+      }
+    }
+  };
+
+  const maybeAutoFetch = (url: string) => {
+    if (!autoPreviewAllowed) return;
+    const normalized = normalizeUrl(url);
+    if (!normalized || isMailtoUrl(url)) return;
+    if (preview?.sourceUrl === normalized) return;
+    void fetchPreview(normalized);
+  };
+
+  const handleUrlPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    if (!autoPreviewAllowed) return;
+    const input = event.currentTarget;
+    // Read the value after React has applied the paste.
+    window.setTimeout(() => maybeAutoFetch(input.value), 0);
+  };
+
+  const handleUrlBlur = () => {
+    maybeAutoFetch(draft.url);
+  };
+
+  const changeLayout = (next: LinkLayout) => {
+    updateConfig("layout", next);
+    if (next === "classic" || manualImage || !usePreviewImage) return;
+    const normalized = normalizeUrl(draft.url);
+    if (normalized && preview?.sourceUrl !== normalized) {
+      void fetchPreview(normalized);
+    }
+  };
+
+  const toggleUsePreviewImage = (checked: boolean) => {
+    updateConfig("usePreviewImage", checked);
+    if (!checked) {
+      previewRequest.current?.controller.abort();
+      previewRequest.current = null;
+      if (previewStatus === "loading") setPreviewStatus("idle");
+      return;
+    }
+    if (layout === "classic" || manualImage) return;
+    const normalized = normalizeUrl(draft.url);
+    if (normalized && preview?.sourceUrl !== normalized) {
+      void fetchPreview(normalized, { manual: true });
+    }
+  };
 
   const titleLabel = type === "header" || type === "contact" ? "Heading" : "Title";
   const titlePlaceholder =
@@ -384,6 +588,8 @@ export function LinkDialog({
                   id="link-url"
                   value={draft.url}
                   onChange={(event) => updateUrl(event.target.value)}
+                  onBlur={type === "link" ? handleUrlBlur : undefined}
+                  onPaste={type === "link" ? handleUrlPaste : undefined}
                   placeholder={
                     type === "youtube"
                       ? "https://youtube.com/watch?v=…"
@@ -409,11 +615,15 @@ export function LinkDialog({
                 </FieldError>
                 {type === "youtube" && youtubeId ? (
                   <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- preview */}
-                    <img
+                    <PreviewImage
                       src={`https://i.ytimg.com/vi/${youtubeId}/default.jpg`}
                       alt=""
                       className="h-12 w-20 rounded object-cover"
+                      fallback={
+                        <span className="flex h-12 w-20 items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500">
+                          No preview
+                        </span>
+                      }
                     />
                     <span className="text-xs text-zinc-600">
                       Video ready to embed on your profile.
@@ -435,7 +645,7 @@ export function LinkDialog({
                           name="link-layout"
                           value={option.value}
                           checked={layout === option.value}
-                          onChange={() => updateConfig("layout", option.value)}
+                          onChange={() => changeLayout(option.value)}
                           className="peer sr-only"
                         />
                         <span className="block rounded-lg border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:bg-violet-50 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
@@ -464,37 +674,183 @@ export function LinkDialog({
                 </div>
 
                 {layout !== "classic" ? (
-                  <div className="mb-3.5">
-                    <Label htmlFor="link-image">Image URL (optional)</Label>
-                    <Input
-                      id="link-image"
-                      value={imageUrl}
-                      onChange={(event) => updateConfig("imageUrl", event.target.value)}
-                      placeholder="https://…/thumbnail.jpg"
-                      spellCheck={false}
-                      aria-invalid={Boolean(errors["config.imageUrl"])}
-                    />
-                    <FieldHint>
-                      Use a public https:// image. Uploads arrive in a later release.
-                    </FieldHint>
-                    <FieldError>{errors["config.imageUrl"]}</FieldError>
-                    {imageUrl ? (
-                      <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- preview */}
-                        <img
-                          src={imageUrl}
-                          alt=""
-                          className={cn(
-                            "rounded object-cover",
-                            layout === "featured" ? "h-16 w-28" : "size-12",
-                          )}
-                        />
-                        <span className="text-xs text-zinc-600">
-                          {layout === "featured"
-                            ? "Shown as a large image card."
-                            : "Shown as the card thumbnail."}
-                        </span>
+                  <div className="mb-3.5 space-y-3">
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-zinc-50 px-3 py-2.5">
+                      <div>
+                        <Label
+                          htmlFor="link-use-preview"
+                          className="mb-0 cursor-pointer font-medium"
+                        >
+                          Use page preview image
+                        </Label>
+                        <p className="text-xs text-zinc-500">
+                          Pull the image, title and description from the
+                          destination page.
+                        </p>
                       </div>
+                      <Switch
+                        id="link-use-preview"
+                        checked={usePreviewImage}
+                        onCheckedChange={toggleUsePreviewImage}
+                        aria-label="Use page preview image"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="link-image">Image URL (optional)</Label>
+                      <Input
+                        id="link-image"
+                        value={imageUrl}
+                        onChange={(event) =>
+                          updateConfig("imageUrl", event.target.value)
+                        }
+                        placeholder="https://…/thumbnail.jpg"
+                        spellCheck={false}
+                        aria-invalid={Boolean(errors["config.imageUrl"])}
+                      />
+                      <FieldHint>
+                        Use a public https:// image. A manual image always
+                        overrides the page preview.
+                      </FieldHint>
+                      <FieldError>{errors["config.imageUrl"]}</FieldError>
+                      {manualImage ? (
+                        <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
+                          <PreviewImage
+                            src={manualImage}
+                            alt=""
+                            className={cn(
+                              "rounded object-cover",
+                              layout === "featured" ? "h-16 w-28" : "size-12",
+                            )}
+                            fallback={
+                              <span
+                                className={cn(
+                                  "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
+                                  layout === "featured"
+                                    ? "h-16 w-28"
+                                    : "size-12",
+                                )}
+                              >
+                                No preview
+                              </span>
+                            }
+                          />
+                          <span className="text-xs text-zinc-600">
+                            Manual image — always wins over the page preview.
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {!manualImage && usePreviewImage ? (
+                      <div className="rounded-lg border border-line bg-zinc-50 p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-zinc-800">
+                              Page preview
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              Fetched by Link Hub; no screenshots or uploads.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              void fetchPreview(draft.url, { manual: true })
+                            }
+                            disabled={
+                              previewStatus === "loading" ||
+                              !normalizeUrl(draft.url) ||
+                              isMailtoUrl(draft.url)
+                            }
+                          >
+                            {previewStatus === "loading" ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="size-4" />
+                            )}
+                            {previewMatches ? "Refresh" : "Fetch preview"}
+                          </Button>
+                        </div>
+
+                        {previewMayBeBlocked ? (
+                          <p className="mt-2 flex gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                            {provider?.label} often blocks previews. Add an
+                            image manually or the card will show its icon.
+                          </p>
+                        ) : null}
+
+                        {previewStatus === "loading" ? (
+                          <p
+                            className="mt-2 flex items-center gap-2 text-xs text-zinc-600"
+                            role="status"
+                          >
+                            <Loader2 className="size-3.5 animate-spin" />
+                            Looking for a preview…
+                          </p>
+                        ) : previewStatus === "error" ? (
+                          <p
+                            className="mt-2 flex gap-1.5 text-xs text-red-700"
+                            role="alert"
+                          >
+                            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                            {previewError}
+                          </p>
+                        ) : previewMatches && preview?.imageUrl ? (
+                          <div className="mt-2 flex items-center gap-3">
+                            <PreviewImage
+                              src={preview.imageUrl}
+                              alt=""
+                              className={cn(
+                                "rounded object-cover",
+                                layout === "featured"
+                                  ? "h-16 w-28"
+                                  : "size-12",
+                              )}
+                              fallback={
+                                <span
+                                  className={cn(
+                                    "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
+                                    layout === "featured"
+                                      ? "h-16 w-28"
+                                      : "size-12",
+                                  )}
+                                >
+                                  No preview
+                                </span>
+                              }
+                            />
+                            <div className="min-w-0 text-xs text-zinc-600">
+                              <p className="truncate font-medium text-zinc-800">
+                                {preview.siteName || "Page preview"}
+                              </p>
+                              <p>
+                                Used automatically when no manual image is set.
+                              </p>
+                            </div>
+                          </div>
+                        ) : previewMatches ? (
+                          <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
+                            <ImageOff className="mt-0.5 size-3.5 shrink-0" />
+                            No preview image found on this page. The card will
+                            use its icon.
+                          </p>
+                        ) : (
+                          <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
+                            <Sparkles className="mt-0.5 size-3.5 shrink-0" />
+                            Paste a URL and leave the field to look for a
+                            preview.
+                          </p>
+                        )}
+                      </div>
+                    ) : !manualImage ? (
+                      <p className="rounded-lg border border-line bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                        Page previews are off for this block. The card will use
+                        its icon.
+                      </p>
                     ) : null}
                   </div>
                 ) : null}

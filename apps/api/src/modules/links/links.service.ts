@@ -1,60 +1,23 @@
 import type { Plan, Prisma } from "@prisma/client";
 import {
   isLinkType,
-  linkConfigSchemas,
-  parseYouTubeId,
+  normalizeUrl,
+  parseLinkConfig,
   type LinkType,
 } from "@linkhub/shared";
 import { prisma } from "../../lib/db";
 import { linkDto } from "../../lib/dto";
 import { assertWithinLimit } from "../../lib/entitlements";
 import { fail } from "../../lib/errors";
-import { revalidateProfile } from "../../lib/revalidate";
 import { scoped } from "../../lib/tenant";
+import { mergeConfigInput, normaliseConfig } from "./links.config";
+import { maybeFetchLinkMetadata } from "./link-metadata.service";
+import { revalidateLinkOwner } from "./links.revalidate";
 import type {
   CreateLinkInput,
   ListLinksQuery,
   UpdateLinkInput,
 } from "./links.schema";
-
-/** Validates and normalises config for a type. Throws a 400 with field paths. */
-function normaliseConfig(
-  type: LinkType,
-  url: string,
-  raw: unknown,
-): Prisma.InputJsonValue {
-  let input = raw;
-  if (type === "youtube") {
-    const videoId = parseYouTubeId(url);
-    if (!videoId) {
-      throw fail.validation("Paste a YouTube video link.", [
-        { path: "url", message: "Paste a YouTube video link." },
-      ]);
-    }
-    // Server-derived; never trust the client's videoId.
-    input = { videoId };
-  }
-
-  const parsed = linkConfigSchemas[type].safeParse(input ?? {});
-  if (!parsed.success) {
-    throw fail.validation(
-      "Some block settings are invalid.",
-      parsed.error.issues.map((issue) => ({
-        path: ["config", ...issue.path].join("."),
-        message: issue.message,
-      })),
-    );
-  }
-  return parsed.data as Prisma.InputJsonValue;
-}
-
-async function revalidateOwner(userId: string): Promise<void> {
-  const profile = await prisma.profile.findUnique({
-    where: { userId },
-    select: { username: true },
-  });
-  if (profile) await revalidateProfile(profile.username);
-}
 
 export async function listLinks(userId: string, query: ListLinksQuery) {
   const where: Prisma.LinkWhereInput = {};
@@ -116,8 +79,9 @@ export async function createLink(
     });
   });
 
-  await revalidateOwner(userId);
-  return linkDto(link);
+  const withPreview = await maybeFetchLinkMetadata(userId, link);
+  await revalidateLinkOwner(userId);
+  return linkDto(withPreview);
 }
 
 export async function updateLink(
@@ -137,6 +101,10 @@ export async function updateLink(
   }
 
   const type: LinkType = isLinkType(current.type) ? current.type : "link";
+  const urlChanged =
+    input.url !== undefined &&
+    (type === "link" || type === "youtube") &&
+    normalizeUrl(input.url) !== normalizeUrl(current.url);
 
   const data: Prisma.LinkUncheckedUpdateManyInput = {};
   if (input.title !== undefined) data.title = input.title;
@@ -147,14 +115,19 @@ export async function updateLink(
   if (input.categoryId !== undefined) data.categoryId = input.categoryId;
   if (input.icon !== undefined) data.icon = input.icon;
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (urlChanged) {
+    // A preview belongs to one destination URL. Never carry it over.
+    data.metadata = {};
+  }
   if (input.config !== undefined || input.url !== undefined) {
     const nextUrl =
       typeof data.url === "string" ? data.url : current.url;
-    data.config = normaliseConfig(
-      type,
-      nextUrl,
-      input.config ?? current.config,
+    // Partial config updates must not wipe fields the client did not send.
+    const mergedConfig = mergeConfigInput(
+      parseLinkConfig(type, current.config),
+      input.config,
     );
+    data.config = normaliseConfig(type, nextUrl, mergedConfig);
   }
 
   const result = await scoped(userId).links.update(id, data);
@@ -162,14 +135,16 @@ export async function updateLink(
 
   const updated = await scoped(userId).links.get(id);
   if (!updated) throw fail.notFound();
-  await revalidateOwner(userId);
-  return linkDto(updated);
+
+  const withPreview = await maybeFetchLinkMetadata(userId, updated);
+  await revalidateLinkOwner(userId);
+  return linkDto(withPreview);
 }
 
 export async function deleteLink(userId: string, id: string): Promise<void> {
   const result = await scoped(userId).links.update(id, { deletedAt: new Date() });
   if (result.count === 0) throw fail.notFound();
-  await revalidateOwner(userId);
+  await revalidateLinkOwner(userId);
 }
 
 export async function setLinkStatus(
@@ -181,7 +156,7 @@ export async function setLinkStatus(
   if (result.count === 0) throw fail.notFound();
   const updated = await scoped(userId).links.get(id);
   if (!updated) throw fail.notFound();
-  await revalidateOwner(userId);
+  await revalidateLinkOwner(userId);
   return linkDto(updated);
 }
 
@@ -219,5 +194,5 @@ export async function reorderLinks(
     }
   });
 
-  await revalidateOwner(userId);
+  await revalidateLinkOwner(userId);
 }

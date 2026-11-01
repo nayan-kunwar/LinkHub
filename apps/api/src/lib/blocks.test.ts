@@ -23,6 +23,16 @@ function link(overrides: Partial<Link> = {}): Link {
     url: "https://example.com",
     type: "link",
     config: {},
+    metadata: {
+      sourceUrl: "",
+      finalUrl: "",
+      title: "",
+      description: "",
+      imageUrl: "",
+      siteName: "",
+      fetchedAt: null,
+    },
+    previewImageUrl: "",
     description: "",
     categoryId: null,
     icon: "auto",
@@ -41,6 +51,7 @@ describe("block config", () => {
       layout: "classic",
       subtitle: "",
       imageUrl: "",
+      usePreviewImage: true,
     });
   });
 
@@ -58,6 +69,7 @@ describe("block config", () => {
       layout: "classic",
       subtitle: "",
       imageUrl: "",
+      usePreviewImage: true,
     });
     expect(parseLinkConfig("nope", {})).toEqual({});
     expect(defaultConfigFor("header")).toEqual({ subtitle: "" });

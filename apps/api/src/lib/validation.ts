@@ -101,7 +101,7 @@ export const safeSocialsSchema = z.object({
     .trim()
     .max(254)
     .refine(
-      (value) => value === "" || /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value),
+      (value) => value === "" || /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/i.test(value),
       "Use a mailto: link, for example mailto:you@example.com.",
     ),
 });

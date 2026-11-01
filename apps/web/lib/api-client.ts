@@ -8,6 +8,7 @@ import type {
   DailyPoint,
   Link,
   LinkFormValues,
+  LinkMetadata,
   Profile,
   SessionSummary,
 } from "@linkhub/shared";
@@ -383,6 +384,17 @@ export const api = {
         body,
       });
     },
+    previewMetadata: (url: string, signal?: AbortSignal) =>
+      request<LinkMetadata>("/links/metadata", {
+        method: "POST",
+        body: { url },
+        signal,
+      }),
+    refreshMetadata: (id: string, signal?: AbortSignal) =>
+      request<Link>(`/links/${encodeURIComponent(id)}/refresh-metadata`, {
+        method: "POST",
+        signal,
+      }),
     setStatus: (id: string, isActive: boolean) =>
       request<Link>(`/links/${encodeURIComponent(id)}/status`, {
         method: "PATCH",

@@ -1,5 +1,5 @@
 import { Globe2, Mail } from "lucide-react";
-import type { SocialLinks } from "@linkhub/shared";
+import { isMailtoUrl, type SocialLinks } from "@linkhub/shared";
 import { BrandIcon, isBrandName, type BrandName } from "./brand-icons";
 import { cn } from "@/lib/utils";
 
@@ -35,8 +35,8 @@ export function SocialIcons({
           <a
             key={key}
             href={href}
-            target={href.startsWith("mailto:") ? undefined : "_blank"}
-            rel={href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
+            target={isMailtoUrl(href) ? undefined : "_blank"}
+            rel={isMailtoUrl(href) ? undefined : "noopener noreferrer"}
             aria-label={label}
             title={label}
             className={cn(

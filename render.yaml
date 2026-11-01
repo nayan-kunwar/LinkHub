@@ -93,5 +93,11 @@ services:
         value: "60"
       - key: CLICK_DEDUPE_SECONDS
         value: "30"
+      # Server-owned link previews. Set METADATA_FETCH_ENABLED=false to stop
+      # all outbound OG/Twitter fetches without affecting saved links.
+      - key: METADATA_FETCH_ENABLED
+        value: "true"
+      - key: METADATA_SKIP_HOSTS
+        value: "instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co"
       - key: LOG_LEVEL
         value: info

@@ -1,6 +1,6 @@
 # Link Hub — Architecture & Implementation Specification
 
-**Version:** 2.6
+**Version:** 2.7
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
 **Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `linkhub-api-yphe.onrender.com` (reached by browsers only through the same-origin `/api/*` rewrite; a custom API domain is optional)
 **Status:** Owner-first, multi-tenant by design
@@ -8,6 +8,16 @@
 ---
 
 ## Changelog
+
+**v2.7 server-owned link previews (Release 2.1)**
+
+- Added `Link.metadata` JSON (`@default("{}")`) and migration `20261101000000_link_metadata`. Preview metadata is written only by the API; create/update payloads never persist client-supplied metadata. Changing a link URL resets `metadata` to `{}`.
+- Added `POST /links/metadata` (preview-only, never persists) and `POST /links/:id/refresh-metadata` (forces a fetch and persists). Rich/featured link blocks without a manual image fetch metadata server-side after create/update; failures never fail the save.
+- Added an SSRF-safe fetcher (`undici` + `cheerio`): http(s) only, no credentials, ports 80/443, private/loopback/link-local/CGNAT/IPv4-mapped/NAT64/6to4/Teredo/reserved ranges blocked, a custom DNS `lookup` that pins the checked address, and per-redirect revalidation.
+- Fetch limits: `Content-Type` checked before the body, 512 KiB maximum, 5-second whole-request deadline, charset-aware decoding, and no `response.text()`. Open Graph/Twitter fields are parsed with `<title>`/`description` fallbacks; relative images resolve against the final URL and only HTTPS images are accepted.
+- Preview cache is in-memory, keyed by user + normalised URL for 10 minutes, with in-flight deduplication, a shared 20 fetches/min/user budget, at most 4 concurrent fetches, a `METADATA_FETCH_ENABLED` kill switch, and a `METADATA_SKIP_HOSTS` list (Instagram/Amazon skip the fetch and keep the icon fallback).
+- The editor auto-fetches on paste/blur and when switching to rich/featured, offers a manual Fetch/Refresh action, suggests a title only when empty and a description only when empty, exposes a `usePreviewImage` toggle (default `true`), and treats a manual `imageUrl` as authoritative. `normalizeUrl` is shared by source URLs, cache keys, freshness checks and editor staleness.
+- Public rendering uses manual image → server-selected `previewImageUrl` → icon, through one lazy/async/no-referrer image component with an error fallback. The public DTO exposes only `previewImageUrl`, never the stored metadata. YouTube keeps its `videoId` thumbnail and loads the iframe only on click.
 
 **v2.6 profile blocks & appearance expansion (Release 1)**
 
@@ -130,6 +140,8 @@ It is built and used by the owner first, but the schema, authorization model and
 | Link CRUD, activate/deactivate, optional icon | MVP | Fixed icon set |
 | Link blocks (`link`, `header`, `youtube`, `contact`) | MVP | Immutable `type`; per-type `config` JSON validated by Zod; `header` is display-only |
 | Card styles (`classic`, `rich`, `featured`) | MVP | Manual `imageUrl` thumbnails; rich/featured titles centered |
+| Server-owned link previews | MVP (Release 2.1) | OG/Twitter title, description and HTTPS image; no screenshots, uploads, image proxy or paid API |
+| Automatic card thumbnails | MVP (Release 2.1) | Rich/featured cards use `previewImageUrl` unless a manual image or opt-out wins; Instagram/Amazon fall back to the icon; YouTube keeps its video thumbnail |
 | Profile layout, theme, font and shape controls | MVP | Flat/grouped; shared `DEFAULT_APPEARANCE`; `themeVars()` CSS variables |
 | Public profile Share button | MVP | Web Share API with clipboard fallback |
 | Drag-and-drop ordering | MVP | Transactional reorder |
@@ -651,6 +663,7 @@ model Link {
   url         String
   type        String           @default("link")   // immutable: link | header | youtube | contact
   config      Json             @default("{}")     // per-type settings, validated by linkConfigSchemas
+  metadata    Json             @default("{}")     // server-owned OG/Twitter preview; never client-supplied
   description String?
   icon        String           @default("auto")
   isActive    Boolean          @default(true) @map("is_active")
@@ -845,6 +858,8 @@ All account routes are authenticated except `POST /account/restore` (token is th
 
 **Links (own)**: `GET /links?search=&categoryId=&status=`, `POST /links`, `GET/PATCH/DELETE /links/:id`, `PATCH /links/:id/status`, `PUT /links/reorder` — MVP. Payloads include `title`, `url`, `description`, `categoryId`, `icon`, `isActive`; reorder is a full ordered set.
 
+**Link previews (own, Release 2.1)**: `POST /links/metadata` `{ url }` is read-only and returns `LinkMetadata` (`sourceUrl`, `finalUrl`, `title`, `description`, `imageUrl`, `siteName`, `fetchedAt`); it never persists anything. `POST /links/:id/refresh-metadata` forces a fresh fetch, persists `Link.metadata`, revalidates the public profile, and returns the updated link DTO. Create/update payloads never persist client-supplied `metadata` (updates reject unknown fields; creates ignore them). Save-time fetching applies only to `type=link` blocks whose layout is `rich` or `featured`, that have no manual `imageUrl`, have not set `usePreviewImage=false`, and are not skipped hosts; a fetch failure is logged and the save still succeeds. A URL change resets stored metadata to `{}` before the new fetch.
+
 **Categories (own)**: `GET/POST /categories`, `PATCH/DELETE /categories/:id`, `PUT /categories/reorder` — MVP. Payloads include `name`, `description`, `color`, `icon`, `isVisible`; delete detaches links in the same transaction.
 
 **Analytics**
@@ -882,6 +897,8 @@ All account routes are authenticated except `POST /account/restore` (token is th
 | 409 | `USERNAME_TAKEN`, `USERNAME_RESERVED`, `CONFLICT` |
 | 429 | `RATE_LIMITED` |
 | 500 | `INTERNAL_ERROR` |
+| 502 | `METADATA_UNAVAILABLE` (destination unreachable or timed out) |
+| 503 | `METADATA_DISABLED` (preview kill switch) |
 
 ---
 
@@ -982,7 +999,9 @@ Order:
 - CSRF: signed double-submit token (`__Host-lh.csrf` cookie + `X-CSRF-Token` header) **and** Origin check on **all non-GET requests**, including login/register/forgot/reset; the anonymous click route uses Origin only and always returns `204`. Authenticated tokens are HMAC-bound to `req.sessionID`, so a token minted for another session cannot satisfy the check; anonymous tokens are unbound because no session exists. Login regenerates the session, issues a new session-bound token, and logout clears both cookies.
 - Account-status enforcement on every authenticated request (§7.3).
 - Tenant isolation in repositories; 404 for non-owned; cross-tenant tests mandatory.
-- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; contact 5/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
+- Rate limits (keyed on `req.ip`, which depends on correct `TRUST_PROXY`): login 5/15 min (IP+email); register 5/h/IP; forgot-password & resend 3/h; verify-email 10/h/IP; email-change 5/h/user; password-change 5/h/user; account-delete 3/h/user; account-restore 10/h/IP; contact 5/h/IP; availability 30/min/IP; clicks 60/min/IP; authenticated API 300/min/user; public profile 120/min/IP; export 5/h/user. Preview fetches share one 20/min/user budget across preview, refresh and save-time fetches, with at most 4 concurrent outbound fetches. Normalize IPv6 keys to /64 (`ipKeyGenerator`) so rotating addresses cannot bypass limits. The click limiter's handler returns `204`. In-memory now (single instance); Redis **Later**.
+- **Server-side preview SSRF:** only `http`/`https`, no embedded credentials, only ports 80/443. Reject private, loopback, link-local, CGNAT, IPv4-mapped, NAT64, 6to4, Teredo and other reserved IPv4/IPv6 ranges, plus local/metadata hostnames. Resolve through a custom `lookup` that filters blocked addresses and pins the checked address for the connection; revalidate every redirect (max 3) before requesting it. Read `Content-Type` before the body, stop at 512 KiB, enforce a 5-second whole-chain deadline, decode using the declared/`<meta>` charset, and never call `response.text()`. Images are resolved against the final URL and must be HTTPS; the browser loads them directly with `referrerPolicy="no-referrer"`, and only `previewImageUrl` is exposed publicly.
+- **Preview abuse controls:** 10-minute in-memory cache keyed by user + normalised URL, in-flight deduplication, 20 fetches/min/user shared budget, 4-fetch concurrency cap, `METADATA_FETCH_ENABLED` kill switch, and `METADATA_SKIP_HOSTS` for Instagram/Amazon-style hosts that block server fetches. Fetch failures never fail a link save; manual refresh leaves the previous metadata intact.
 - Tokens: random 32 bytes, stored hashed, single-use consumed atomically, expiring; never logged. Password length 12–128 chars before argon2; unknown-email logins perform a dummy hash.
 - Revalidation: HMAC + timestamp window; secret server-only; optional nonce cache for replay; `INTERNAL_FETCH_TOKEN` for server-to-server public profile fetches.
 - No email enumeration on register/forgot-password; email change returns a generic success and never reveals whether the target address is registered.
@@ -1006,6 +1025,8 @@ Order:
 |---|---|
 | Reserved usernames | MVP |
 | URL scheme allowlist + private/localhost/metadata host denylist | MVP |
+| Server-side preview SSRF guard (pinned DNS, per-redirect validation, 512 KiB/5 s limits) | MVP (Release 2.1) |
+| Preview fetch budget (20/min/user, 4 concurrent) and kill switch | MVP (Release 2.1) |
 | Field length caps, theme schema, HTTPS-only avatar URLs with private-host denylist | MVP |
 | Availability endpoint rate limit | MVP |
 | Suspension via `status=suspended` (manual SQL/script) | MVP |
@@ -1095,6 +1116,7 @@ Order:
 | Public DTO / cache | Supertest | public profile response contains no email/status/plan/user_id and no `Set-Cookie`; `Cache-Control` is public on the profile endpoint and `no-store` on auth/dashboard; internal-token fetch bypasses the public limiter |
 | Export safety | Vitest | CSV cells starting with `= + - @` are escaped; zip contains the five CSVs (profile, links, categories, daily_stats, daily_breakdowns); JSON is `schemaVersion: 2`; export is tenant-scoped and excludes account email/password hashes/tokens/sessions |
 | Theme/avatar | Vitest + Supertest | invalid theme keys/CSS are rejected; non-HTTPS or private-host avatar URLs are rejected; link URLs reject private/localhost/metadata hosts |
+| Link previews | Vitest + Supertest | URL normalisation (default ports/hash/credentials), SSRF ranges incl. IPv4-mapped/NAT64/6to4/Teredo, safe DNS filtering, per-hop redirect validation, 512 KiB/5 s limits, Content-Type rejection, charset decoding, OG/Twitter precedence, HTTPS-only relative images, 10-minute per-user cache, in-flight dedupe, 20/min budget, skip hosts, kill switch, client metadata rejection, URL-change reset, save-time eligibility, manual-image/`usePreviewImage` precedence, YouTube fallback, public DTO exposes only `previewImageUrl` |
 | Rate limits | Supertest | IPv6 addresses in the same /64 share a bucket; availability endpoint is limited; click limiter returns 204 |
 | Accessibility | Playwright + axe | public profile and dashboard keyboard/focus/contrast; avatar alt text; no keyboard trap in reorder |
 | SEO | Playwright | published profile has canonical/OG metadata; unpublished profile returns 404/noindex; sitemap excludes unpublished profiles |
@@ -1111,6 +1133,7 @@ Order:
 - Clicks recorded via beacon without affecting navigation; bots and repeats ignored; `referrer_host` reflects the external source, not the profile page.
 - Revalidation only accepts signed, fresh requests; profile edits become visible after tag revalidation; the profile data fetch remains cacheable.
 - Public profile responses expose no account internals; CSV exports are formula-safe and contain the five v2 files.
+- Rich/featured link cards receive server-owned OG/Twitter previews without any client metadata; manual images and `usePreviewImage=false` win, Instagram/Amazon keep the icon fallback, YouTube keeps its video thumbnail, and the public DTO exposes only `previewImageUrl`. Preview fetches respect the SSRF, size, timeout and rate controls.
 - Analytics totals and country/device/referrer breakdowns are identical before/after purge and hash clearing; the nightly job is single-run and first-run safe.
 - Account deletion hides the profile immediately, restore works via login or the emailed link during the 30-day grace period, and the purge hard-deletes only expired accounts.
 - No excluded features present. No raw IPs stored.
@@ -1165,6 +1188,7 @@ role, free-tier limits, failure impact and the secrets register.
 - [ ] CI green (lint, typecheck, unit, integration, migration, build); staging uses a separate Neon branch
 - [x] Logs redact secrets and auth bodies (Pino redaction covers cookies, authorization, CSRF, proxy/internal headers, passwords, tokens, secrets and signatures; the HTTP serializer logs only method, path and user-agent, and error logs use request ID/user ID without request bodies or IPs)
 - [x] Vendor ToS/quota reviewed (2026-10-27; see §18.1). Render free is not documented for production, Vercel Hobby is non-commercial only, Neon Free has no full PITR and a 100 CU-hour cap, and Brevo Free is 300 emails/day. Public launch requires an explicit accept-or-migrate decision.
+- [ ] Release 2.1: apply migration `20261101000000_link_metadata`; confirm `METADATA_FETCH_ENABLED=true` and the skip-host list; smoke-test preview, refresh, URL-change reset, manual-image precedence, Instagram/Amazon icon fallback, YouTube thumbnail, public `previewImageUrl`, and the kill switch.
 
 ---
 
@@ -1272,6 +1296,10 @@ PASSWORD_RESET_TTL_MINUTES=60
 CLICK_DEDUPE_SECONDS=30
 ANALYTICS_HASH_SECRET=change-me-32-bytes-min   # derives in-memory daily dedupe key; never stored in DB
 
+# --- Link previews (Release 2.1) ---
+METADATA_FETCH_ENABLED=true              # false disables all outbound OG/Twitter fetches
+METADATA_SKIP_HOSTS=instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co  # icon fallback; no server fetch
+
 # --- Seed ---
 SEED_OWNER_EMAIL=owner@nayankunwar.com
 SEED_OWNER_PASSWORD=change-me-12-chars
@@ -1294,7 +1322,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · further theme presets beyond Release 1 · multiple link pages per user · shop/work blocks and Links/Shop tabs · server-side OG metadata fetching · image uploads (manual `imageUrl` only in Release 1).
+Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · further theme presets beyond Release 1 · multiple link pages per user · shop/work blocks and Links/Shop tabs · image uploads (manual `imageUrl` and server-selected previews only in Release 2.1).
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 

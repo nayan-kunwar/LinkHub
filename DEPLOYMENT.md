@@ -135,6 +135,9 @@ the API. API, `packages/shared`, `prisma` and lockfile changes still deploy.
    - optional: `GOOGLE_CLIENT_ID` for Google sign-in and sign-up. Leave it empty
      to keep the feature disabled; see **5.1 Google sign-in and sign-up
      (optional)**.
+   `METADATA_FETCH_ENABLED=true` and the default `METADATA_SKIP_HOSTS` are set
+   in `render.yaml`; no action is needed unless you want to change preview
+   behaviour.
 3. Confirm the service settings:
    - Region: Singapore
    - Plan: Free
@@ -210,6 +213,32 @@ step, the fallback is to disable Render auto-deploy, run the migration, then
 trigger the deploy (or merge only after `db:deploy` succeeds).
 
 Never run `prisma migrate dev` or `prisma db push` against production.
+
+### Link previews (Release 2.1)
+
+Rich/featured link cards use the destination page's Open Graph/Twitter image
+and text. Metadata is fetched and stored by the API only; the web app never
+sends it. The migration `20261101000000_link_metadata` adds the
+`links.metadata` JSONB column with a `{}` default and is applied by the normal
+`pnpm db:deploy` build step.
+
+Operational controls:
+
+- `METADATA_FETCH_ENABLED=true` is the normal setting. Set it to `false` and
+  redeploy the API to stop all outbound preview fetches during an incident;
+  saved links and public rendering keep working.
+- `METADATA_SKIP_HOSTS` defaults to Instagram and Amazon hosts. Those links
+  skip the network fetch and show the icon fallback.
+- The API allows 20 preview fetches per user per minute (shared across editor
+  preview, manual refresh and save-time fetches) with at most 4 concurrent
+  outbound requests. The in-memory cache is 10 minutes per user + URL.
+- Outbound requests are SSRF-guarded: only public addresses, ports 80/443,
+  no credentials, a pinned DNS lookup, per-redirect validation, 512 KiB body
+  limit and a 5-second deadline. Only HTTPS preview images are accepted.
+
+If a preview fetch fails during save, the link is still saved and the old
+metadata (if any) is kept. Manual refresh likewise leaves the previous metadata
+intact on failure.
 
 ### Nightly analytics
 
@@ -539,18 +568,31 @@ design, error codes and security notes are in
    In a private window, confirm the public page renders every block, the
    **Share** button works (native share or clipboard fallback), and the layout
    matches.
-5. Click the YouTube play button and a contact row, then confirm both appear in
+5. **Release 2.1 previews:** create a Featured link to a public page with Open
+   Graph tags (for example `https://github.com`), leave the image field empty,
+   paste/blur the URL and confirm the editor shows the fetched title/image.
+   Save, then open the public profile in a private window and confirm the card
+   uses the preview image. Set a manual image and confirm it wins; toggle
+   **Use page preview image** off and confirm the card falls back to the icon.
+   Click **Refresh** on a saved link and confirm the image updates. Change the
+   URL and confirm the old preview is not reused. Try an Instagram or Amazon
+   link and confirm the hint and icon fallback. Confirm a YouTube block still
+   shows its video thumbnail and loads the iframe only after clicking play.
+   Finally set `METADATA_FETCH_ENABLED=false` on Render, redeploy, and confirm
+   new preview requests return `503 METADATA_DISABLED` while saved cards still
+   render; restore `true` afterwards.
+6. Click the YouTube play button and a contact row, then confirm both appear in
    `/dashboard/analytics` after the 30-second dedupe window.
-6. Rename the profile and confirm the public page updates immediately (the
+7. Rename the profile and confirm the public page updates immediately (the
    `profile:<username>` tag is revalidated and the route re-renders with fresh
    data).
-7. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
+8. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
    reset.
-8. Open a classic link and check `/dashboard/analytics` for the click.
-9. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
-10. Check Render logs for errors and confirm no IP addresses or tokens appear.
+9. Open a classic link and check `/dashboard/analytics` for the click.
+10. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
+11. Check Render logs for errors and confirm no IP addresses or tokens appear.
     Confirm the expected `audit` events (`auth.login`, etc.) are present.
-11. If a password was shared in chat or a support ticket, rotate it immediately
+12. If a password was shared in chat or a support ticket, rotate it immediately
     from **Settings → Account** and store the new value only in your password
     manager. A password change revokes every other session.
 

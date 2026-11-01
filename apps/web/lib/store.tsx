@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import { LIMITS } from "@linkhub/shared";
+import { EMPTY_LINK_METADATA, LIMITS } from "@linkhub/shared";
 import type {
   AppearanceSettings,
   Category,
@@ -82,6 +82,10 @@ interface AppDataContextValue {
   logout: () => Promise<void>;
   addLink: (values: LinkFormValues) => Promise<boolean>;
   updateLink: (id: string, values: LinkFormValues) => Promise<boolean>;
+  refreshLinkMetadata: (
+    id: string,
+    signal?: AbortSignal,
+  ) => Promise<Link | null>;
   deleteLink: (id: string) => Promise<boolean>;
   toggleLink: (id: string) => Promise<boolean>;
   reorderLinks: (activeId: string, overId: string) => Promise<boolean>;
@@ -381,6 +385,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         url: values.url,
         type: values.type,
         config: values.config,
+        metadata: { ...EMPTY_LINK_METADATA },
+        previewImageUrl: "",
         description: values.description,
         categoryId: values.categoryId,
         icon: values.icon,
@@ -448,6 +454,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
     },
     [failMutation, state.links],
+  );
+
+  const refreshLinkMetadata = useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      try {
+        const updated = await api.links.refreshMetadata(id, signal);
+        setState((current) => ({
+          ...current,
+          links: current.links.map((link) =>
+            link.id === id ? updated : link,
+          ),
+        }));
+        return updated;
+      } catch (error) {
+        if (signal?.aborted) return null;
+        failMutation(error, "Could not refresh the preview.");
+        return null;
+      }
+    },
+    [failMutation],
   );
 
   const deleteLink = useCallback(
@@ -908,6 +934,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       logout,
       addLink,
       updateLink,
+      refreshLinkMetadata,
       deleteLink,
       toggleLink,
       reorderLinks,
@@ -941,6 +968,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       logout,
       addLink,
       updateLink,
+      refreshLinkMetadata,
       deleteLink,
       toggleLink,
       reorderLinks,

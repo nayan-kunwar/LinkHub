@@ -6,6 +6,7 @@ import { requireActiveUser } from "../../middleware/requireAuth";
 import { authenticatedApiLimiter } from "../../middleware/rateLimit";
 import {
   createLinkApiSchema,
+  linkMetadataPreviewApiSchema,
   linkStatusApiSchema,
   listLinksQuerySchema,
   reorderLinksApiSchema,
@@ -20,6 +21,10 @@ import {
   setLinkStatus,
   updateLink,
 } from "./links.service";
+import {
+  previewLinkMetadata,
+  refreshLinkMetadata,
+} from "./link-metadata.service";
 
 export const linksRouter = Router();
 
@@ -52,10 +57,30 @@ linksRouter.put(
   },
 );
 
+// Read-only preview for the editor. Defined before `/:id` routes so the path
+// is unambiguous even if more methods are added later.
+linksRouter.post(
+  "/metadata",
+  requireActiveUser,
+  validateBody(linkMetadataPreviewApiSchema),
+  async (req, res) => {
+    sendData(res, await previewLinkMetadata(req.user!.id, req.body.url));
+  },
+);
+
 linksRouter.get("/:id", requireActiveUser, async (req, res) => {
   const id = parseUuidParam(req.params.id);
   sendData(res, await getLink(req.user!.id, id));
 });
+
+linksRouter.post(
+  "/:id/refresh-metadata",
+  requireActiveUser,
+  async (req, res) => {
+    const id = parseUuidParam(req.params.id);
+    sendData(res, await refreshLinkMetadata(req.user!.id, id));
+  },
+);
 
 linksRouter.patch(
   "/:id",

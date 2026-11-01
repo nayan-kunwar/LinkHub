@@ -6,16 +6,13 @@ import type {
   FontChoice,
   ThemePresetDef,
 } from "@linkhub/shared";
-import { THEME_PRESETS } from "@linkhub/shared";
+import { themePresetFor } from "@linkhub/shared";
 
 export type ThemePreset = ThemePresetDef;
 
-export function themeFor(appearance: AppearanceSettings): ThemePreset {
-  return (
-    THEME_PRESETS.find((preset) => preset.id === appearance.theme) ??
-    THEME_PRESETS[0]
-  );
-}
+export const themeFor = themePresetFor;
+
+export { applyThemePreset } from "@linkhub/shared";
 
 /**
  * Resolves the public-profile background for a preset and background style.

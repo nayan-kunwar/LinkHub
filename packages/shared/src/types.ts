@@ -45,12 +45,24 @@ export interface Category {
   sortOrder: number;
 }
 
+export interface LinkMetadata {
+  sourceUrl: string;
+  finalUrl: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  siteName: string;
+  fetchedAt: string | null;
+}
+
 export interface Link {
   id: string;
   title: string;
   url: string;
   type: LinkType;
   config: Record<string, unknown>;
+  metadata: LinkMetadata;
+  previewImageUrl: string;
   description: string;
   categoryId: string | null;
   icon: LinkIconId;
@@ -88,7 +100,16 @@ export interface PublicProfile {
   links: Array<
     Pick<
       Link,
-      "id" | "title" | "url" | "type" | "config" | "description" | "categoryId" | "icon" | "sortOrder"
+      | "id"
+      | "title"
+      | "url"
+      | "type"
+      | "config"
+      | "description"
+      | "categoryId"
+      | "icon"
+      | "sortOrder"
+      | "previewImageUrl"
     >
   >;
 }

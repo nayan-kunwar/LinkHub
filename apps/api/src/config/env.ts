@@ -91,6 +91,15 @@ const envSchema = z.object({
   CLICK_DEDUPE_SECONDS: z.coerce.number().int().positive().default(30),
   ANALYTICS_HASH_SECRET: z.string().min(32, "ANALYTICS_HASH_SECRET must be at least 32 characters."),
 
+  // Server-owned link previews. The kill switch disables all outbound
+  // metadata fetches without affecting saved links or public rendering.
+  METADATA_FETCH_ENABLED: booleanString.default(true),
+  METADATA_SKIP_HOSTS: z
+    .string()
+    .default(
+      "instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co",
+    ),
+
   SEED_OWNER_EMAIL: z.string().email().optional(),
   SEED_OWNER_PASSWORD: z.string().min(12).optional(),
   SEED_OWNER_NAME: z.string().trim().min(1).max(60).default("Nayan Kunwar"),
@@ -105,6 +114,7 @@ export type Env = z.infer<typeof envSchema> & {
   sessionMaxAgeMs: number;
   webInternalUrl: string;
   directUrl: string;
+  metadataSkipHosts: string[];
 };
 
 function isLocalOrPrivateHost(hostname: string): boolean {
@@ -229,6 +239,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     sessionMaxAgeMs: parsed.data.SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
     webInternalUrl: (parsed.data.WEB_INTERNAL_URL ?? parsed.data.APP_URL).replace(/\/$/, ""),
     directUrl,
+    metadataSkipHosts: parsed.data.METADATA_SKIP_HOSTS.split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
   });
 }
 

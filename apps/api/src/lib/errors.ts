@@ -22,6 +22,8 @@ export const ERROR_CODES = [
   "USERNAME_RESERVED",
   "CONFLICT",
   "RATE_LIMITED",
+  "METADATA_DISABLED",
+  "METADATA_UNAVAILABLE",
   "INTERNAL_ERROR",
 ] as const;
 
@@ -102,6 +104,10 @@ export const fail = {
     new AppError(409, "CONFLICT", message),
   rateLimited: (message = "Too many requests. Try again later.") =>
     new AppError(429, "RATE_LIMITED", message),
+  metadataDisabled: (message = "Link previews are temporarily unavailable.") =>
+    new AppError(503, "METADATA_DISABLED", message),
+  metadataUnavailable: (message = "The destination did not return a readable preview.") =>
+    new AppError(502, "METADATA_UNAVAILABLE", message),
   internal: (message = "Something went wrong. Try again.") =>
     new AppError(500, "INTERNAL_ERROR", message),
 };

@@ -14,7 +14,12 @@ const httpsUrl = z
   .refine((value) => {
     try {
       const url = new URL(value);
-      return url.protocol === "https:" && url.hostname.includes(".");
+      return (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        url.hostname.includes(".")
+      );
     } catch {
       return false;
     }
@@ -30,6 +35,7 @@ export const linkConfigSchema = z.strictObject({
   layout: z.enum(LINK_LAYOUTS).default("classic"),
   subtitle: text(LIMITS.maxSubtitle).default(""),
   imageUrl: optionalHttpsUrl.default(""),
+  usePreviewImage: z.boolean().default(true),
 });
 
 export const headerConfigSchema = z.strictObject({

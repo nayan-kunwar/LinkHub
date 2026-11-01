@@ -31,6 +31,7 @@ export interface PublicProfileData {
     url: string;
     type: string;
     config: Record<string, unknown>;
+    previewImageUrl: string;
     description: string;
     categoryId: string | null;
     icon: string;

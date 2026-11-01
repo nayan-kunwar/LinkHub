@@ -12,7 +12,7 @@ import {
   Star,
   type LucideIcon,
 } from "lucide-react";
-import type { LinkIconId } from "@linkhub/shared";
+import { isMailtoUrl, type LinkIconId } from "@linkhub/shared";
 import { BrandIcon, isBrandName } from "./brand-icons";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ const ICONS: Partial<Record<LinkIconId, LucideIcon>> = {
 };
 
 export function detectIcon(url: string): LinkIconId {
-  if (url.startsWith("mailto:")) return "mail";
+  if (isMailtoUrl(url)) return "mail";
   const lower = url.toLowerCase();
   if (lower.includes("github.com")) return "github";
   if (lower.includes("linkedin.com")) return "linkedin";

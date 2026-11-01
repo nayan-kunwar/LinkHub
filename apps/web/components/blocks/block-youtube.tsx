@@ -13,6 +13,7 @@ export function BlockYouTube({
   onLinkClick,
 }: { link: Link; config: LinkConfigMap["youtube"] } & BlockProps) {
   const [active, setActive] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
   const id = config.videoId;
 
   return (
@@ -41,13 +42,23 @@ export function BlockYouTube({
             aria-label={`Play video: ${link.title}`}
             className="group absolute inset-0 focus-visible:ring-4 focus-visible:ring-violet-300"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- YouTube thumbnail */}
-            <img
-              src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`}
-              alt=""
-              loading="lazy"
-              className="size-full object-cover"
-            />
+            {thumbFailed ? (
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-950"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- YouTube thumbnail
+              <img
+                src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                onError={() => setThumbFailed(true)}
+                className="size-full object-cover"
+              />
+            )}
             <span className="absolute inset-0 grid place-items-center bg-black/20 transition group-hover:bg-black/30">
               <Play
                 aria-hidden="true"

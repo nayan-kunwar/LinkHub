@@ -155,6 +155,7 @@ model Link {
   url         String
   type        String    @default("link")
   config      Json      @default("{}")
+  metadata    Json      @default("{}")
   description String?
   icon        String    @default("auto")
   isActive    Boolean   @default(true) @map("is_active")

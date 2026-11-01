@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { isMailtoUrl } from "@linkhub/shared";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -110,7 +111,7 @@ export function slugifyDate(date = new Date()): string {
 }
 
 export function hostnameOf(url: string): string {
-  if (url.startsWith("mailto:")) return "Email";
+  if (isMailtoUrl(url)) return "Email";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
