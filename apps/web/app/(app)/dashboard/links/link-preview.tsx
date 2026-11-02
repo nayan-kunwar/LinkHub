@@ -288,7 +288,10 @@ export function LinkPreview({
       ) : null}
 
       <div aria-hidden="true" inert className="pointer-events-none select-none">
-        <PhoneFrame screenClassName="h-[440px] max-h-[calc(90vh_-_250px)]">
+        <PhoneFrame
+          className="max-w-full"
+          screenClassName="h-[440px] max-h-[calc(90vh_-_250px)]"
+        >
           <ProfileView
             profile={state.profile}
             categories={previewCategories}
