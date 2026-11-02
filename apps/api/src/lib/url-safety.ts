@@ -141,9 +141,10 @@ function isBlockedIpv6(bytes: Uint8Array): boolean {
   if (firstWord === 0x0100) return true;
   if (firstWord === 0x5f00) return true;
 
-  // Unique-local, link-local and multicast.
+  // Unique-local, link-local, deprecated site-local (fec0::/10) and multicast.
   if ((bytes[0] & 0xfe) === 0xfc) return true;
   if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true;
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0xc0) return true;
   if (bytes[0] === 0xff) return true;
 
   return false;
@@ -225,6 +226,23 @@ export function fetchableUrlError(url: URL): string | null {
     return "This URL points to a private or reserved host.";
   }
   return null;
+}
+
+/**
+ * Remote preview images are stricter than page fetches: HTTPS only, on the
+ * default port, and still subject to the same private/reserved host checks.
+ */
+export function previewImageUrlError(url: URL): string | null {
+  if (url.protocol !== "https:") {
+    return "Preview images must use https://.";
+  }
+  if (url.username || url.password) {
+    return "Preview image URLs cannot include credentials.";
+  }
+  if (url.port && url.port !== "443") {
+    return "Preview images must use port 443.";
+  }
+  return fetchableUrlError(url);
 }
 
 export function isFetchableUrl(url: URL): boolean {

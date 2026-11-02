@@ -123,10 +123,14 @@ cannot send it on create/update. Rich/featured link blocks without a manual
 image fetch it after save, and a URL change resets it. Outbound fetches are
 SSRF-guarded (public addresses only, pinned DNS lookup, per-redirect checks,
 ports 80/443, no credentials), read at most 512 KiB with a 5-second deadline,
-check `Content-Type` before the body, and accept only HTTPS images. Previews
-are cached in memory for 10 minutes per user + URL, share a 20/min/user budget
-and a 4-fetch concurrency cap, and can be disabled with
-`METADATA_FETCH_ENABLED=false`. Instagram/Amazon hosts in
+check `Content-Type` before the body, and accept only HTTPS images on port 443
+whose host passes the same public-address checks. Save-time fetches have a hard
+3-second cap and never wait for a queue slot or join an in-flight preview
+request, so a slow destination leaves `metadata` as `{}` instead of delaying the
+save. Link mutations start profile revalidation in the background and log
+failures without failing the save. Previews are cached in memory for 10 minutes
+per user + URL, share a 20/min/user budget and a 4-fetch concurrency cap, and
+can be disabled with `METADATA_FETCH_ENABLED=false`. Instagram/Amazon hosts in
 `METADATA_SKIP_HOSTS` keep the icon fallback without a network request.
 
 All non-GET requests require a matching `Origin` and an `X-CSRF-Token` header

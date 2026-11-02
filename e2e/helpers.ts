@@ -67,7 +67,7 @@ export async function mockLinkMetadata(page: Page): Promise<void> {
 
 /** Fulfils every external image/frame the public cards can request. */
 export async function mockRemoteAssets(page: Page): Promise<void> {
-  await page.route("https://images.example.test/**", (route) =>
+  await page.route("https://images.example.com/**", (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: TINY_PNG }),
   );
   await page.route("https://i.ytimg.com/**", (route) =>

@@ -12,7 +12,7 @@ import { fail } from "../../lib/errors";
 import { scoped } from "../../lib/tenant";
 import { mergeConfigInput, normaliseConfig } from "./links.config";
 import { maybeFetchLinkMetadata } from "./link-metadata.service";
-import { revalidateLinkOwner } from "./links.revalidate";
+import { revalidateLinkOwnerInBackground } from "./links.revalidate";
 import type {
   CreateLinkInput,
   ListLinksQuery,
@@ -80,7 +80,7 @@ export async function createLink(
   });
 
   const withPreview = await maybeFetchLinkMetadata(userId, link);
-  await revalidateLinkOwner(userId);
+  revalidateLinkOwnerInBackground(userId);
   return linkDto(withPreview);
 }
 
@@ -137,14 +137,14 @@ export async function updateLink(
   if (!updated) throw fail.notFound();
 
   const withPreview = await maybeFetchLinkMetadata(userId, updated);
-  await revalidateLinkOwner(userId);
+  revalidateLinkOwnerInBackground(userId);
   return linkDto(withPreview);
 }
 
 export async function deleteLink(userId: string, id: string): Promise<void> {
   const result = await scoped(userId).links.update(id, { deletedAt: new Date() });
   if (result.count === 0) throw fail.notFound();
-  await revalidateLinkOwner(userId);
+  revalidateLinkOwnerInBackground(userId);
 }
 
 export async function setLinkStatus(
@@ -156,7 +156,7 @@ export async function setLinkStatus(
   if (result.count === 0) throw fail.notFound();
   const updated = await scoped(userId).links.get(id);
   if (!updated) throw fail.notFound();
-  await revalidateLinkOwner(userId);
+  revalidateLinkOwnerInBackground(userId);
   return linkDto(updated);
 }
 
@@ -194,5 +194,5 @@ export async function reorderLinks(
     }
   });
 
-  await revalidateLinkOwner(userId);
+  revalidateLinkOwnerInBackground(userId);
 }

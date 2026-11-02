@@ -25,7 +25,7 @@ envVarGroups:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: 22.18.0
+        value: 22.20.0
       - key: DATABASE_URL
         sync: false
       - key: DIRECT_URL

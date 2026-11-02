@@ -2,6 +2,9 @@
   "name": "linkhub",
   "private": true,
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22.20.0"
+  },
   "scripts": {
     "dev": "pnpm --filter @linkhub/web dev",
     "build": "pnpm --filter @linkhub/web build",

@@ -79,6 +79,27 @@ describe("fetchMetadataForUser", () => {
     await expect(second).resolves.toEqual(metadata("https://example.com/a"));
   });
 
+  it("does not join an in-flight fetch in save-time mode", async () => {
+    let resolveFirst!: (value: LinkMetadata) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<LinkMetadata>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+
+    const preview = fetchMetadataForUser("user-1", "https://example.com/a");
+    const save = await fetchMetadataForUser("user-1", "https://example.com/a", {
+      saveTime: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(save).toEqual(metadata("https://example.com/a"));
+
+    resolveFirst(metadata("https://example.com/a"));
+    await expect(preview).resolves.toEqual(metadata("https://example.com/a"));
+  });
+
   it("enforces the shared 20 fetches per minute budget", async () => {
     for (let index = 0; index < 20; index += 1) {
       await fetchMetadataForUser(

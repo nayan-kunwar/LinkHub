@@ -16,7 +16,7 @@ import {
   metadataFetchFailure,
 } from "../../lib/metadata-fetch";
 import { scoped } from "../../lib/tenant";
-import { revalidateLinkOwner } from "./links.revalidate";
+import { revalidateLinkOwnerInBackground } from "./links.revalidate";
 
 /**
  * Save-time previews are only useful for cards that will actually render an
@@ -66,7 +66,9 @@ export async function maybeFetchLinkMetadata(
   if (current.sourceUrl === normalized && current.fetchedAt) return link;
 
   try {
-    const metadata = await fetchMetadataForUser(userId, normalized);
+    const metadata = await fetchMetadataForUser(userId, normalized, {
+      saveTime: true,
+    });
     if (metadata.sourceUrl !== normalized) return link;
     return await prisma.link.update({
       where: { id: link.id },
@@ -111,7 +113,7 @@ export async function refreshLinkMetadata(userId: string, id: string) {
 
     const updated = await scoped(userId).links.get(id);
     if (!updated) throw fail.notFound();
-    await revalidateLinkOwner(userId);
+    revalidateLinkOwnerInBackground(userId);
     return linkDto(updated);
   } catch (error) {
     metadataFetchFailure(error);

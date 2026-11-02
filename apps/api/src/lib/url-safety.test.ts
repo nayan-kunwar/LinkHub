@@ -3,6 +3,7 @@ import {
   fetchableUrlError,
   isBlockedHostname,
   isBlockedIp,
+  previewImageUrlError,
 } from "./url-safety";
 
 function errorFor(value: string): string | null {
@@ -44,6 +45,8 @@ describe("SSRF address checks", () => {
       "fc00::1",
       "fd12:3456::1",
       "fe80::1",
+      "fec0::1",
+      "feff::1",
       "::ffff:127.0.0.1",
       "::ffff:8.8.8.8",
       "64:ff9b::1",
@@ -59,6 +62,8 @@ describe("SSRF address checks", () => {
   it("allows public IPv6 addresses", () => {
     expect(isBlockedIp("2606:4700:4700::1111")).toBe(false);
     expect(isBlockedIp("2001:4860:4860::8888")).toBe(false);
+    // Outside both the fe80::/10 link-local and fec0::/10 site-local masks.
+    expect(isBlockedIp("fe7f::1")).toBe(false);
   });
 });
 
@@ -105,5 +110,28 @@ describe("SSRF URL checks", () => {
     expect(errorFor("http://example.com:80/")).toBeNull();
     expect(errorFor("https://8.8.8.8/")).toBeNull();
     expect(errorFor("https://[2606:4700:4700::1111]/")).toBeNull();
+  });
+});
+
+describe("preview image URL checks", () => {
+  it("requires HTTPS on port 443 and a public host", () => {
+    expect(
+      previewImageUrlError(new URL("https://cdn.example.com/card.png")),
+    ).toBeNull();
+    expect(
+      previewImageUrlError(new URL("https://cdn.example.com:443/card.png")),
+    ).toBeNull();
+    expect(
+      previewImageUrlError(new URL("http://cdn.example.com/card.png")),
+    ).toMatch(/https/i);
+    expect(
+      previewImageUrlError(new URL("https://cdn.example.com:8443/card.png")),
+    ).toMatch(/443/);
+    expect(
+      previewImageUrlError(new URL("https://127.0.0.1/card.png")),
+    ).toMatch(/private|reserved/i);
+    expect(
+      previewImageUrlError(new URL("https://printer.internal/card.png")),
+    ).toMatch(/private|reserved/i);
   });
 });

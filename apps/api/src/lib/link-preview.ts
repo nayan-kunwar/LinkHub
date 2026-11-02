@@ -5,6 +5,7 @@ import {
   parseLinkMetadata,
   parseYouTubeId,
 } from "@linkhub/shared";
+import { previewImageUrlError } from "./url-safety";
 
 export function youtubeThumbnail(videoId: string): string {
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -25,7 +26,12 @@ export function previewImageFor(
 
   const metadata = parseLinkMetadata(link.metadata);
   if (metadata.imageUrl && metadata.sourceUrl === normalizeUrl(link.url)) {
-    return metadata.imageUrl;
+    try {
+      const image = new URL(metadata.imageUrl);
+      if (!previewImageUrlError(image)) return metadata.imageUrl;
+    } catch {
+      // Fall through to the YouTube fallback or icon.
+    }
   }
 
   const videoId = parseYouTubeId(link.url);

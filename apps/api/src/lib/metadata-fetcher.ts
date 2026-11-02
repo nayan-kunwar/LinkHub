@@ -10,6 +10,7 @@ import {
 import {
   fetchableUrlError,
   isBlockedIp,
+  previewImageUrlError,
 } from "./url-safety";
 
 const MAX_BODY_BYTES = 512 * 1024;
@@ -88,9 +89,8 @@ function resolveImage(raw: string, baseUrl: string): string {
   if (!value) return "";
   try {
     const url = new URL(value, baseUrl);
-    if (url.protocol !== "https:") return "";
-    if (url.username || url.password) return "";
     if (!url.hostname) return "";
+    if (previewImageUrlError(url)) return "";
     url.hash = "";
     const normalized = url.toString();
     return normalized.length <= 2048 ? normalized : "";
@@ -399,6 +399,12 @@ export async function fetchLinkMetadata(
     throw asFetchError(error, signal);
   } finally {
     clearTimeout(timer);
-    await agent.close().catch(() => agent.destroy());
+    // A graceful close can wait for an in-flight socket. On the abort path the
+    // save-time cap must hold, so tear the agent down immediately instead.
+    if (signal.aborted) {
+      await agent.destroy().catch(() => undefined);
+    } else {
+      await agent.close().catch(() => agent.destroy());
+    }
   }
 }

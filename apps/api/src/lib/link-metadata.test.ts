@@ -122,6 +122,22 @@ describe("parseMetadataHtml", () => {
     expect(dataImage.imageUrl).toBe("");
   });
 
+  it("drops images on private, internal or non-443 hosts", () => {
+    for (const image of [
+      "https://127.0.0.1/image.png",
+      "https://metadata.google.internal/image.png",
+      "https://cdn.example.com:8443/image.png",
+    ]) {
+      const metadata = parseMetadataHtml(
+        `<meta property="og:image" content="${image}">`,
+        "https://example.com/",
+        "https://example.com/",
+        FETCHED_AT,
+      );
+      expect(metadata.imageUrl, image).toBe("");
+    }
+  });
+
   it("keeps useful text when no image is present", () => {
     const metadata = parseMetadataHtml(
       `<meta property="og:title" content="Only text">`,

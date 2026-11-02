@@ -14,6 +14,11 @@ const BUDGET_WINDOW_MS = 60_000;
 const BUDGET_LIMIT = 20;
 const MAX_CONCURRENT_FETCHES = 4;
 const QUEUE_TIMEOUT_MS = 15_000;
+/**
+ * Hard cap for a fetch that runs as part of a save. It is intentionally
+ * shorter than the normal request timeout and never waits behind the queue.
+ */
+const SAVE_TIME_TIMEOUT_MS = 3_000;
 
 interface CacheEntry {
   metadata: LinkMetadata;
@@ -119,6 +124,15 @@ export function isSkippedMetadataHost(rawUrl: string): boolean {
   );
 }
 
+interface FetchMetadataOptions {
+  force?: boolean;
+  /**
+   * Save-time fetches are best-effort: they use a hard 3 s cap, never wait for
+   * a concurrency slot, and never join an existing in-flight preview request.
+   */
+  saveTime?: boolean;
+}
+
 /**
  * Fetches (or reuses) preview metadata for one user.
  *
@@ -128,7 +142,7 @@ export function isSkippedMetadataHost(rawUrl: string): boolean {
 export async function fetchMetadataForUser(
   userId: string,
   rawUrl: string,
-  options: { force?: boolean } = {},
+  options: FetchMetadataOptions = {},
 ): Promise<LinkMetadata> {
   const normalized = normalizeUrl(rawUrl);
   if (!normalized) {
@@ -149,6 +163,25 @@ export async function fetchMetadataForUser(
   if (!options.force) {
     const cached = cachedMetadata(key);
     if (cached) return cached;
+  }
+
+  if (options.saveTime) {
+    // Never wait for a queue slot on the save path. If the fetch pool is busy,
+    // skip metadata rather than delaying the response.
+    if (activeFetches >= MAX_CONCURRENT_FETCHES) {
+      throw fail.metadataUnavailable(
+        "Preview requests are busy right now. Try again shortly.",
+      );
+    }
+
+    consumeBudget(userId);
+    const metadata = await withFetchSlot(() =>
+      fetchLinkMetadata(normalized, {
+        signal: AbortSignal.timeout(SAVE_TIME_TIMEOUT_MS),
+      }),
+    );
+    storeMetadata(key, metadata);
+    return metadata;
   }
 
   const existing = inFlight.get(key);

@@ -12,11 +12,11 @@ export const FIXTURE_FILE = path.resolve(
 export const TITLE_PREFIX = "E2E ";
 
 export const IMAGES = {
-  manual: "https://images.example.test/manual.png",
-  preview: "https://images.example.test/preview.png",
-  ignored: "https://images.example.test/ignored.png",
-  article: "https://images.example.test/article.png",
-  second: "https://images.example.test/second.png",
+  manual: "https://images.example.com/manual.png",
+  preview: "https://images.example.com/preview.png",
+  ignored: "https://images.example.com/ignored.png",
+  article: "https://images.example.com/article.png",
+  second: "https://images.example.com/second.png",
 } as const;
 
 export interface E2EFixtures {
