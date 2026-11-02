@@ -379,6 +379,6 @@ export const THEME_IDS = THEME_PRESETS.map((theme) => theme.id) as [
   ...(typeof THEME_PRESETS)[number]["id"][],
 ];
 
-export const EXPORT_SCHEMA_VERSION = 3;
+export const EXPORT_SCHEMA_VERSION = 4;
 
 export const SITE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://link.nayankunwar.com";

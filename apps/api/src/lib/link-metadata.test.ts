@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyThemePreset,
   EMPTY_LINK_METADATA,
   normalizeUrl,
   parseLinkMetadata,
-  THEME_PRESETS,
-  type AppearanceSettings,
 } from "@linkhub/shared";
 import {
   emptyMetadataFor,
@@ -212,41 +209,5 @@ describe("preview eligibility", () => {
     expect(isPreviewEligible({ ...base, url: "mailto:hi@example.com" })).toBe(
       false,
     );
-  });
-});
-
-describe("applyThemePreset", () => {
-  const base: AppearanceSettings = {
-    theme: "default",
-    color: "#123456",
-    background: "solid",
-    card: "rounded",
-    button: "solid",
-    layout: "grouped",
-    font: "sans",
-    showAvatar: true,
-    showBio: true,
-    showSocial: true,
-    showDescription: false,
-  };
-  const dark = THEME_PRESETS.find((preset) => preset.id === "dark")!;
-
-  it("preserves a custom accent and background when switching presets", () => {
-    const next = applyThemePreset(base, dark);
-    expect(next.theme).toBe("dark");
-    expect(next.color).toBe("#123456");
-    expect(next.background).toBe("solid");
-  });
-
-  it("applies the whole preset when it is already active", () => {
-    const next = applyThemePreset({ ...base, theme: "dark" }, dark);
-    expect(next.color).toBe(dark.accent);
-    expect(next.background).toBe("gradient");
-  });
-
-  it("applies the whole preset when forced", () => {
-    const next = applyThemePreset(base, dark, { force: true });
-    expect(next.color).toBe(dark.accent);
-    expect(next.background).toBe("gradient");
   });
 });

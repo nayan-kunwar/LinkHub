@@ -1,6 +1,6 @@
 # Link Hub — Architecture & Implementation Specification
 
-**Version:** 2.7
+**Version:** 2.8
 **Owner:** Nayan Kunwar (Backend Engineer, Node.js/TypeScript)
 **Domain:** `nayankunwar.com` · Web `link.nayankunwar.com` · API `linkhub-api-yphe.onrender.com` (reached by browsers only through the same-origin `/api/*` rewrite; a custom API domain is optional)
 **Status:** Owner-first, multi-tenant by design
@@ -8,6 +8,14 @@
 ---
 
 ## Changelog
+
+**v2.8 unique-click analytics & appearance UX (Releases 2.1.3 / 2.2)**
+
+- **Release 2.1.3:** selecting the already-active theme preset is a no-op; only **Reset to preset** (confirmed) re-applies it. `applyThemePreset` now preserves custom accent, background, font, card and button choices, adopts untouched values from the target preset, and treats `force` as an explicit reset to preset values (falling back to `DEFAULT_APPEARANCE`). Reset to default also asks for confirmation.
+- **Release 2.2:** added nullable `click_daily_stats.unique_count` (migration `20261102000000_click_unique_count`). The nightly job writes `COUNT(DISTINCT visitor_hash)` per link/day once, before hashes are cleared; re-rolls update `count` only, so partial or cleared hashes can never replace a known unique value. Rows rolled up before tracking stay `NULL` (“not tracked”), not zero.
+- Analytics API returns `uniqueCount` per day (raw or rollup, never both) and the dashboard shows a **Unique clicks** card, a chart line, a per-link column and export fields. Period totals are labeled **daily unique clicks** because summing daily uniques is not the same as distinct visitors across the range. Counting starts with the first rollup after deployment.
+- Export schema is now `schemaVersion: 4` with `totalUniqueClicks`, daily `uniqueClicks`, and a `unique_clicks` column in `daily_stats.csv`.
+- DB-backed rollup tests run in CI (`RUN_DB_TESTS=1`) and are skipped in ordinary local runs.
 
 **v2.7 server-owned link previews (Release 2.1)**
 
@@ -148,9 +156,10 @@ It is built and used by the owner first, but the schema, authorization model and
 | Categories (CRUD, ordering, description, color, icon, visibility) | MVP | Hidden category links stay off the public page |
 | Profile customization (name, headline, bio, avatar URL, socials, appearance) | MVP | URL-only avatar; validated `socials` JSON |
 | Click analytics (beacon, bot filter, dedupe, country code) | MVP | Country from trusted proxy header only |
+| Unique-click analytics | MVP (Release 2.2) | Daily `COUNT(DISTINCT visitor_hash)` per link, computed before hashes are cleared; period totals are summed daily uniques |
 | Analytics dashboard (overview, per-link, timeseries, breakdowns) | MVP | Own links only; countries/devices/referrers |
 | Search / filter links | MVP | |
-| Export own data (JSON + five-CSV zip) | MVP | `schemaVersion: 2` |
+| Export own data (JSON + five-CSV zip) | MVP | `schemaVersion: 4` |
 | Responsive UI | MVP | |
 | Login / logout, Postgres sessions | MVP | |
 | Account email change (pending verification) | MVP | `pending_email` + `email_change` token |
@@ -171,7 +180,6 @@ It is built and used by the owner first, but the schema, authorization model and
 | Advanced moderation / admin console | Later | `role=admin` reserved |
 | Safe Browsing URL screening | Later | |
 | Redis, analytics queue, partitioning | Later | |
-| Unique-visitor analytics | Later | Requires `unique_count` in `click_daily_stats`, computed before hashes are cleared |
 | Timezone-aware analytics | Later | MVP dashboard is UTC and labels it |
 | Multiple link pages per user (`/:username/:pageSlug`) | Later | Design note §21.1; MVP = one implicit default page per profile |
 
@@ -711,10 +719,12 @@ model JobState {           // single-row-per-job watermark for the nightly analy
 }
 
 model ClickDailyStat {
-  linkId String   @map("link_id") @db.Uuid
-  userId String   @map("user_id") @db.Uuid
-  day    DateTime @db.Date
-  count  Int      @default(0)
+  linkId      String   @map("link_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  day         DateTime @db.Date
+  count       Int      @default(0)
+  // Nullable: rows rolled up before unique tracking existed are unknown, not zero.
+  uniqueCount Int?     @map("unique_count")
   // Composite FK keeps link_id and user_id in the same tenant.
   link   Link     @relation(fields: [linkId, userId], references: [id, userId], onDelete: Cascade)
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -874,7 +884,7 @@ All account routes are authenticated except `POST /account/restore` (token is th
 
 `range` is a closed enum (`7d`, `30d`, `90d`, `365d`) capped by `analyticsHistoryDays`; `linkId` is resolved through the scoped repository, so another user's link is `404`. Breakdowns combine `click_daily_breakdowns` for rolled-up days with raw `click_events` for days after the watermark. Days are UTC and the dashboard labels that explicitly.
 
-**Export (own)**: `GET /export?format=json|csv` — MVP. JSON is `schemaVersion: 2`. CSV is a zip of `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv` and `daily_breakdowns.csv`; rate-limited 5/h; cells escaped per §14.
+**Export (own)**: `GET /export?format=json|csv` — MVP. JSON is `schemaVersion: 4`. CSV is a zip of `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv` and `daily_breakdowns.csv`; rate-limited 5/h; cells escaped per §14.
 
 **Ops**: `GET /api/v1/health` — MVP (readiness, includes DB) · `GET /api/v1/health/live` — liveness only, no DB check · `GET /debug/ip` — owner-only, disabled unless `DEBUG_IP_ENDPOINT=true` (deployment verification only)
 
@@ -966,16 +976,24 @@ One job (`jobs/analytics-nightly.ts`), triggered daily at 03:17 UTC by a free cr
 
 Order:
 
-1. **Roll up totals (a).** For every complete UTC day `d` from `watermark − 2` (re-cover a small window for late inserts) to `yesterday`: recompute from raw events and upsert
+1. **Roll up totals and uniques (a).** For every complete UTC day `d` from `watermark − 2` (re-cover a small window for late inserts) to `yesterday`: recompute from raw events and upsert
    ```sql
-   INSERT INTO click_daily_stats (link_id, user_id, day, count)
-   SELECT link_id, user_id, $d, count(*) FROM click_events
+   INSERT INTO click_daily_stats (link_id, user_id, day, count, unique_count)
+   SELECT
+     link_id,
+     user_id,
+     $d,
+     count(*),
+     CASE WHEN count(visitor_hash) = 0 THEN NULL
+          ELSE count(DISTINCT visitor_hash) END
+   FROM click_events
    WHERE clicked_at >= ($d::timestamp AT TIME ZONE 'UTC')
      AND clicked_at <  (($d + 1)::timestamp AT TIME ZONE 'UTC')
    GROUP BY link_id, user_id
    ON CONFLICT (link_id, day) DO UPDATE SET count = EXCLUDED.count;
    ```
-   then advance `watermark` to `yesterday` in the same transaction once every day in the window is upserted (on a first run, only after the batched backfill finishes). Because the recompute window is only `watermark − 2`, the free plan's 90-day retention makes it safe; before adding a shorter retention plan, enforce `rawEventRetentionDays >= lookback + 1` or compute a per-user lower bound so a purged day is never re-rolled. Counting does not use `visitor_hash`, so step 3 cannot affect it.
+   then advance `watermark` to `yesterday` in the same transaction once every day in the window is upserted (on a first run, only after the batched backfill finishes). Because the recompute window is only `watermark − 2`, the free plan's 90-day retention makes it safe; before adding a shorter retention plan, enforce `rawEventRetentionDays >= lookback + 1` or compute a per-user lower bound so a purged day is never re-rolled.
+   `unique_count` is **write-once per day**: the conflict branch updates `count` only. A re-roll after step 3 cleared hashes may see fewer hashes (or none), so writing `EXCLUDED.unique_count` would replace a correct value with a partial count or `NULL`. A late click in the two-day re-cover window therefore raises `count` but not `unique_count`; this small undercount is deliberate. If the first rollup of a day has no hashes at all, `unique_count` is `NULL` (“not tracked”), never a fabricated zero. Days with no stats row had zero clicks and therefore zero uniques.
 2. **Roll up breakdowns (b).** In the same transaction/window, recompute the `country`, `device` and `referrer` dimensions:
    ```sql
    INSERT INTO click_daily_breakdowns (link_id, user_id, day, dimension, value, count)
@@ -990,10 +1008,10 @@ Order:
    Repeat for `device` (`device_type`) and `referrer` (`referrer_host`). Null values are omitted rather than stored as an empty bucket. Delete rows for the day/dimension that no longer exist in the recompute window so a corrected rollup cannot leave stale values. Breakdowns must be written **before** raw events are purged; clearing hashes does not affect them.
 3. **Clear hashes (c).** `UPDATE click_events SET visitor_hash = NULL WHERE visitor_hash IS NOT NULL AND clicked_at < now() - interval '24 hours'`. UPDATE only; row counts unchanged. Use the partial index from §8.2.
 4. **Purge raw events (d).** Per user, `DELETE FROM click_events WHERE user_id = $u AND clicked_at < LEAST(now() - make_interval(days => $1), ((watermark + 1)::timestamp AT TIME ZONE 'UTC'))` where `$1 = rawEventRetentionDays`. Retention comes from `entitlementsFor(user.plan).rawEventRetentionDays`, and the `watermark + 1` bound guarantees only rolled-up days are deleted. Batch with `ctid IN (SELECT ctid FROM click_events WHERE ... LIMIT 5000)`; repeat until no rows.
-5. **Daily stats and breakdowns (e).** `click_daily_stats` and `click_daily_breakdowns` follow their own policy: kept for the life of the link (removed by cascade on link hard-purge). `analyticsHistoryDays` bounds dashboard ranges, not storage. Unique-visitor counts are **not** stored in MVP; adding them later requires a `unique_count` column computed during rollup before step 3 clears hashes.
+5. **Daily stats and breakdowns (e).** `click_daily_stats` and `click_daily_breakdowns` follow their own policy: kept for the life of the link (removed by cascade on link hard-purge). `analyticsHistoryDays` bounds dashboard ranges, not storage. `unique_count` is computed in step 1, before step 3 clears hashes; it is never recomputed destructively. Unique tracking begins with the first rollup after the `20261102000000_click_unique_count` migration is deployed. Rows written earlier remain `NULL`, and the dashboard renders those days as `—` rather than zero.
 6. Then the existing prune tasks: expired `verification_tokens`, expired `sessions`, soft-deleted rows past 30 days, and users whose `deletion_scheduled_for` has passed (hard delete, with the same session cleanup). The user purge also deletes sessions by `sess->>'userId'` because there is no FK from `sessions` to `users`.
 
-**Dashboard reads:** totals = `SUM(click_daily_stats.count)` for days `≤ watermark` **+** `COUNT(click_events)` for days `> watermark` (today and any not-yet-rolled-up days). Breakdowns use `click_daily_breakdowns` for days `≤ watermark` **+** raw `click_events` grouped by the dimension for days `> watermark`. Because raw events are only purged for days `≤ watermark`, totals and breakdowns are identical before and after a purge, and before and after hash clearing. Dashboard ranges are capped by `analyticsHistoryDays`; days are UTC and the UI labels that explicitly.
+**Dashboard reads:** totals = `SUM(click_daily_stats.count)` for days `≤ watermark` **+** `COUNT(click_events)` for days `> watermark` (today and any not-yet-rolled-up days). Unique clicks use `click_daily_stats.unique_count` for days `≤ watermark` and `COUNT(DISTINCT visitor_hash)` for days `> watermark`; each day comes from exactly one source. A rolled-up day whose `unique_count` is `NULL` propagates as `NULL`, so the period total shows `—` instead of a partial sum. Breakdowns use `click_daily_breakdowns` for days `≤ watermark` **+** raw `click_events` grouped by the dimension for days `> watermark`. Because raw events are only purged for days `≤ watermark`, totals and breakdowns are identical before and after a purge, and before and after hash clearing. Dashboard ranges are capped by `analyticsHistoryDays`; days are UTC and the UI labels that explicitly.
 
 ---
 
@@ -1049,24 +1067,24 @@ Order:
 
 **Export (MVP).** `GET /api/v1/export?format=json|csv` returns the signed-in user's own data, tenant-scoped, and never includes the account email, password hash, sessions, tokens, `user_id` or other users' data. The profile's optional public `socials.email` is exported because it is profile content, not the account address. Exports are rate-limited 5/h/user and filenames are sanitized.
 
-- **JSON** (`format=json`) uses `schemaVersion: 2`:
+- **JSON** (`format=json`) uses `schemaVersion: 4`:
   ```json
   {
-    "schemaVersion": 2,
+    "schemaVersion": 4,
     "exportedAt": "2026-10-25T00:00:00.000Z",
     "profile": { "username": "…", "displayName": "…", "headline": "…", "bio": "…", "avatarUrl": "…", "socials": {}, "isPublished": true, "url": "/…" },
     "appearance": { "theme": "default", "color": "#7c3aed", "background": "gradient", "card": "rounded", "button": "solid", "showAvatar": true, "showBio": true, "showSocial": true, "showDescription": true },
     "links": [{ "position": 1, "title": "…", "url": "…", "description": "…", "category": "…", "icon": "auto", "isActive": true, "createdAt": "…", "clicksLast365Days": 0 }],
     "categories": [{ "position": 1, "name": "…", "description": "…", "color": "#7c3aed", "icon": "folder", "isVisible": true }],
-    "analytics": { "historyDays": 365, "totalClicks": 0, "daily": [{ "date": "2026-10-24", "clicks": 0 }] }
+    "analytics": { "historyDays": 365, "totalClicks": 0, "totalUniqueClicks": 0, "daily": [{ "date": "2026-10-24", "clicks": 0, "uniqueClicks": 0 }] }
   }
   ```
-  Sections can be omitted by the UI include toggles; the profile-only variant includes profile, appearance and links.
+  `totalUniqueClicks` and a day's `uniqueClicks` are `null` when any included day predates unique tracking. Sections can be omitted by the UI include toggles; the profile-only variant includes profile, appearance and links.
 - **CSV** (`format=csv`) is a zip containing five files, each with a header row and UTF-8 content:
   - `profile.csv` — `name,username,headline,bio,avatar_url,url,published,website,github,linkedin,x,medium,email`
   - `links.csv` — `position,title,url,description,category,icon,active,created_at[,clicks_last_365_days]`
   - `categories.csv` — `position,name,description,color,icon,visible`
-  - `daily_stats.csv` — `date,link_id,link_title,clicks`
+  - `daily_stats.csv` — `date,link_id,link_title,clicks,unique_clicks`
   - `daily_breakdowns.csv` — `date,link_id,dimension,value,clicks`
   `daily_stats.csv` and `daily_breakdowns.csv` are included only when analytics is selected. Breakdown rows cover `country`, `device` and `referrer`; daily totals remain the source of truth if a breakdown allocation is rounded.
 - **Formula injection:** every CSV cell beginning with `=`, `+`, `-`, `@`, tab or CR is prefixed with `'` before quoting; cells containing `"`, comma, LF or CR are quoted with doubled quotes. JSON is not executable and is emitted as-is. The zip is streamed and built in memory only for the free-plan size.
@@ -1109,7 +1127,7 @@ Order:
 | Account status | Supertest | pending blocked from links API (403); suspended cannot log in; suspending an active user kills the live session on next request; suspended profile 404 |
 | Tenant isolation | Supertest | user B cannot read/update/delete/reorder A's links/categories, read A's profile settings, analytics or export → 404 |
 | Cross-tenant references | Supertest | B creates a link with A's `categoryId` → 404, no row; B updates own link to A's `categoryId` → 404, link unchanged; reorder payload containing A's link/category IDs → 404, no order change; DB-level insert bypassing service violates the category composite FK and the analytics `(link_id, user_id)` composite FKs; deleting a category detaches its links (user_id intact) |
-| Analytics job | Vitest + test DB | clearing `visitor_hash` leaves `click_events` row count and dashboard totals unchanged; rollup before vs after hash clearing → identical `click_daily_stats`; breakdowns for country/device/referrer match raw groupings; breakdown rows are written before raw purge; stale breakdown values are removed on recompute; rollup rerun is idempotent (same rows/counts, watermark unchanged); first run backfills historical raw days; purge never deletes days `> watermark` (simulate a missed rollup); dashboard totals/breakdowns equal before and after purge; per-user `rawEventRetentionDays` respected; short-retention user never has a purged day re-rolled to zero; concurrent second run exits on the run-level lock |
+| Analytics job | Vitest + test DB | clearing `visitor_hash` leaves `click_events` row count and dashboard totals unchanged; rollup before vs after hash clearing → identical `click_daily_stats`; unique counts are written once and survive partial or full hash clearing; a first rollup with no hashes stores `NULL`; raw/rollup windows are split; dashboard unique totals are `NULL` when any day predates tracking; breakdowns for country/device/referrer match raw groupings; breakdown rows are written before raw purge; stale breakdown values are removed on recompute; rollup rerun is idempotent (same rows/counts, watermark unchanged); first run backfills historical raw days; purge never deletes days `> watermark` (simulate a missed rollup); dashboard totals/breakdowns equal before and after purge; per-user `rawEventRetentionDays` respected; short-retention user never has a purged day re-rolled to zero; concurrent second run exits on the run-level lock |
 | Visitor hash | Vitest | same ip/ua/link same day → same hash; different link or day → different; daily key never persisted; `referrer_host` comes from the body's `document.referrer`, not the request `Referer` |
 | Country code | Supertest | valid `X-Web-Proxy-Secret` + `x-vercel-ip-country` stores a two-letter code; missing/wrong secret ignores the header and stores null; lowercase/invalid values are rejected; direct API requests cannot spoof country; no IP is stored or logged |
 | Proxy trust | Supertest | with configured `trust proxy`, spoofed leftmost `X-Forwarded-For` does not change `req.ip` |
@@ -1118,7 +1136,7 @@ Order:
 | Revalidation | Vitest (route handler) | valid signature → 204 + `revalidateTag` called; bad signature, stale timestamp, bad tag → 401/400; rename revalidates old and new tags; replay within the window is bounded by the nonce cache if enabled; public profile fetch sends the internal token and is exempt from the public rate limit |
 | Session store | Supertest + test DB | `connect-pg-simple` reads/writes the Prisma-created `sessions` table; `sess->>'userId'` index is used; status change/password reset deletes all user sessions; orphan sessions removed on user purge |
 | Public DTO / cache | Supertest | public profile response contains no email/status/plan/user_id and no `Set-Cookie`; `Cache-Control` is public on the profile endpoint and `no-store` on auth/dashboard; internal-token fetch bypasses the public limiter |
-| Export safety | Vitest | CSV cells starting with `= + - @` are escaped; zip contains the five CSVs (profile, links, categories, daily_stats, daily_breakdowns); JSON is `schemaVersion: 2`; export is tenant-scoped and excludes account email/password hashes/tokens/sessions |
+| Export safety | Vitest | CSV cells starting with `= + - @` are escaped; zip contains the five CSVs (profile, links, categories, daily_stats, daily_breakdowns); JSON is `schemaVersion: 4` with `totalUniqueClicks`, daily `uniqueClicks` and a `unique_clicks` CSV column; export is tenant-scoped and excludes account email/password hashes/tokens/sessions |
 | Theme/avatar | Vitest + Supertest | invalid theme keys/CSS are rejected; non-HTTPS or private-host avatar URLs are rejected; link URLs reject private/localhost/metadata hosts |
 | Link previews | Vitest + Supertest | URL normalisation (default ports/hash/credentials), SSRF ranges incl. IPv4-mapped/NAT64/6to4/Teredo/`fec0::/10`, safe DNS filtering, per-hop redirect validation, 512 KiB/5 s limits, Content-Type rejection, charset decoding, OG/Twitter precedence, HTTPS-only relative images, image host/private-IP/port screening at parse and read time, 10-minute per-user cache, in-flight dedupe, 20/min budget, save-time 3 s cap and queue bypass, skip hosts, kill switch, client metadata rejection, URL-change reset, save-time eligibility, manual-image/`usePreviewImage` precedence, YouTube fallback, public DTO exposes only `previewImageUrl` |
 | Rate limits | Supertest | IPv6 addresses in the same /64 share a bucket; availability endpoint is limited; click limiter returns 204 |
@@ -1330,7 +1348,7 @@ Analytics raw/history retention comes from entitlements, not env. In production,
 
 ## 21. Later (deferred until explicitly approved)
 
-Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · unique-visitor analytics · timezone-aware analytics · further theme presets beyond Release 1 · multiple link pages per user · shop/work blocks and Links/Shop tabs · image uploads (manual `imageUrl` and server-selected previews only in Release 2.1).
+Billing/paid plans · GitHub OAuth · custom domains · advanced moderation/admin console · Safe Browsing screening · CAPTCHA · notification preferences · Redis · analytics queue · `click_events` partitioning · cross-day distinct visitors · timezone-aware analytics · further theme presets beyond Release 1 · multiple link pages per user · shop/work blocks and Links/Shop tabs · image uploads (manual `imageUrl` and server-selected previews only in Release 2.1).
 
 ### 21.1 Design Note: Multiple Link Pages per User (Later)
 
@@ -1374,7 +1392,7 @@ Each user could own several shareable pages, e.g. `/nayankunwar` (default) and `
 16. Use `nayankunwar.com` domains everywhere.
 17. Do not use `prisma db push` in production; migrations only, with a backup/PITR checkpoint and a forward-fix plan.
 18. Account lifecycle: email changes use `pending_email` + a single-use 24 h `email_change` token; password changes revoke all other sessions; session revoke is tenant-scoped; deletion schedules a 30-day grace (`deletion_scheduled_for`), unpublishes immediately, is idempotent, and is cancelled by login or a single-use restore token. Restoring never republishes. Only the prune job hard-deletes.
-19. Export is `schemaVersion: 2` and, for CSV, exactly five files: `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv`, `daily_breakdowns.csv`. Escape formula-leading cells. Never export account email, password hashes, sessions or tokens.
+19. Export is `schemaVersion: 4` and, for CSV, exactly five files: `profile.csv`, `links.csv`, `categories.csv`, `daily_stats.csv`, `daily_breakdowns.csv`. Include `totalUniqueClicks`, daily `uniqueClicks` and `unique_clicks`, using `null` when any included day predates unique tracking. Escape formula-leading cells. Never export account email, password hashes, sessions or tokens.
 20. The UI-first milestone uses typed mocks and a demo `lh.sid` cookie; `/preview` must be gated by `ALLOW_DEMO_PREVIEW` and disabled in production. Replace mock auth with the API session, keep `proxy.ts` as a presence check only, and preserve the prototype layout, violet/Inter design, dashboard shell, phone preview and all approved states.
 21. Analytics job order is fixed: totals → breakdowns → clear hashes → purge raw → prune. Breakdowns and totals must be identical before/after purge; never purge a day that has not been rolled up.
 

@@ -60,7 +60,7 @@ function resolveDays(range: RangeKey, plan: Plan): number {
   return Math.min(requested, cap);
 }
 
-interface Period {
+export interface Period {
   start: Date;
   endExclusive: Date;
   days: number;
@@ -81,7 +81,7 @@ interface Window {
   endExclusive: Date;
 }
 
-function windowFor(period: Period, watermark: Date | null): Window {
+export function windowFor(period: Period, watermark: Date | null): Window {
   const lastDay = addDays(period.endExclusive, -1);
   const statsEnd = watermark ? minDate(watermark, lastDay) : addDays(period.start, -1);
   const hasStats = statsEnd.getTime() >= period.start.getTime();
@@ -151,57 +151,94 @@ async function totalFor(
   return rolled + raw;
 }
 
+interface DayTotals {
+  count: number;
+  uniqueCount: number | null;
+}
+
 async function seriesFor(
   userId: string,
   linkId: string | undefined,
   period: Period,
   window: Window,
 ): Promise<DailyPoint[]> {
-  const days = new Map<string, number>();
+  const days = new Map<string, DayTotals>();
   for (let index = 0; index < period.days; index += 1) {
-    days.set(isoDay(addDays(period.start, index)), 0);
+    // A rolled-up day with no stats row had zero clicks, so zero uniques is
+    // known. Rows that predate unique tracking stay null instead of becoming 0.
+    days.set(isoDay(addDays(period.start, index)), {
+      count: 0,
+      uniqueCount: 0,
+    });
   }
 
+  const linkFilter = linkId
+    ? Prisma.sql`AND link_id = ${linkId}::uuid`
+    : Prisma.empty;
+
   if (window.hasStats) {
-    const rows = await prisma.clickDailyStat.groupBy({
-      by: ["day"],
-      where: {
-        userId,
-        ...(linkId ? { linkId } : {}),
-        day: { gte: window.statsStart, lte: window.statsEnd },
-      },
-      _sum: { count: true },
-    });
+    const rows = await prisma.$queryRaw<
+      Array<{ day: unknown; count: number; unique_count: number | null }>
+    >(Prisma.sql`
+      SELECT
+        day,
+        sum(count)::int AS count,
+        CASE
+          WHEN count(*) FILTER (WHERE unique_count IS NULL) = 0
+          THEN coalesce(sum(unique_count), 0)::int
+          ELSE NULL
+        END AS unique_count
+      FROM click_daily_stats
+      WHERE user_id = ${userId}::uuid
+        AND day >= (${window.statsStart}::timestamptz AT TIME ZONE 'UTC')::date
+        AND day <= (${window.statsEnd}::timestamptz AT TIME ZONE 'UTC')::date
+        ${linkFilter}
+      GROUP BY day
+    `);
     for (const row of rows) {
-      const key = isoDay(row.day);
-      days.set(key, (days.get(key) ?? 0) + (row._sum.count ?? 0));
+      const key = dayKey(row.day);
+      const current = days.get(key);
+      if (!current) continue;
+      days.set(key, {
+        count: current.count + Number(row.count),
+        uniqueCount:
+          row.unique_count === null ? null : Number(row.unique_count),
+      });
     }
   }
 
   if (window.hasRaw) {
-    const linkFilter = linkId
-      ? Prisma.sql`AND link_id = ${linkId}::uuid`
-      : Prisma.empty;
-    const rows = await prisma.$queryRaw<Array<{ day: unknown; count: number }>>(
-      Prisma.sql`
-        SELECT (clicked_at AT TIME ZONE 'UTC')::date AS day, count(*)::int AS count
-        FROM click_events
-        WHERE user_id = ${userId}::uuid
-          AND clicked_at >= ${window.rawStart}
-          AND clicked_at < ${window.endExclusive}
-          ${linkFilter}
-        GROUP BY 1
-      `,
-    );
+    const rows = await prisma.$queryRaw<
+      Array<{ day: unknown; count: number; unique_count: number | null }>
+    >(Prisma.sql`
+      SELECT
+        (clicked_at AT TIME ZONE 'UTC')::date AS day,
+        count(*)::int AS count,
+        CASE
+          WHEN count(visitor_hash) = 0 THEN NULL
+          ELSE count(DISTINCT visitor_hash)::int
+        END AS unique_count
+      FROM click_events
+      WHERE user_id = ${userId}::uuid
+        AND clicked_at >= ${window.rawStart}
+        AND clicked_at < ${window.endExclusive}
+        ${linkFilter}
+      GROUP BY 1
+    `);
     for (const row of rows) {
       const key = dayKey(row.day);
-      days.set(key, (days.get(key) ?? 0) + Number(row.count));
+      // The stats and raw windows never overlap, so assign rather than add.
+      days.set(key, {
+        count: Number(row.count),
+        uniqueCount:
+          row.unique_count === null ? null : Number(row.unique_count),
+      });
     }
   }
 
   return Array.from(days.entries())
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, count]) => ({ date, count }));
+    .map(([date, totals]) => ({ date, ...totals }));
 }
 
 async function breakdownFor(
@@ -565,7 +602,12 @@ export async function getLinkAnalytics(
 
 export interface ExportHistory {
   linkTotals: Map<string, number>;
-  daily: Array<{ date: string; linkId: string; count: number }>;
+  daily: Array<{
+    date: string;
+    linkId: string;
+    count: number;
+    uniqueCount: number | null;
+  }>;
   breakdowns: Array<{
     date: string;
     linkId: string;
@@ -591,31 +633,63 @@ export async function getExportHistory(
 
   const linkTotals = await linkCounts(userId, undefined, window);
 
-  const daily = new Map<string, { date: string; linkId: string; count: number }>();
+  const daily = new Map<
+    string,
+    { date: string; linkId: string; count: number; uniqueCount: number | null }
+  >();
   if (window.hasStats) {
-    const rows = await prisma.clickDailyStat.groupBy({
-      by: ["day", "linkId"],
-      where: {
-        userId,
-        day: { gte: window.statsStart, lte: window.statsEnd },
-      },
-      _sum: { count: true },
-    });
+    const rows = await prisma.$queryRaw<
+      Array<{
+        day: unknown;
+        link_id: string;
+        count: number;
+        unique_count: number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        day,
+        link_id,
+        sum(count)::int AS count,
+        CASE
+          WHEN count(*) FILTER (WHERE unique_count IS NULL) = 0
+          THEN coalesce(sum(unique_count), 0)::int
+          ELSE NULL
+        END AS unique_count
+      FROM click_daily_stats
+      WHERE user_id = ${userId}::uuid
+        AND day >= (${window.statsStart}::timestamptz AT TIME ZONE 'UTC')::date
+        AND day <= (${window.statsEnd}::timestamptz AT TIME ZONE 'UTC')::date
+      GROUP BY day, link_id
+    `);
     for (const row of rows) {
-      const date = isoDay(row.day);
-      const key = `${date}|${row.linkId}`;
+      const date = dayKey(row.day);
+      const key = `${date}|${row.link_id}`;
       daily.set(key, {
         date,
-        linkId: row.linkId,
-        count: row._sum.count ?? 0,
+        linkId: row.link_id,
+        count: Number(row.count),
+        uniqueCount:
+          row.unique_count === null ? null : Number(row.unique_count),
       });
     }
   }
   if (window.hasRaw) {
     const rows = await prisma.$queryRaw<
-      Array<{ day: unknown; link_id: string; count: number }>
+      Array<{
+        day: unknown;
+        link_id: string;
+        count: number;
+        unique_count: number | null;
+      }>
     >(Prisma.sql`
-      SELECT (clicked_at AT TIME ZONE 'UTC')::date AS day, link_id, count(*)::int AS count
+      SELECT
+        (clicked_at AT TIME ZONE 'UTC')::date AS day,
+        link_id,
+        count(*)::int AS count,
+        CASE
+          WHEN count(visitor_hash) = 0 THEN NULL
+          ELSE count(DISTINCT visitor_hash)::int
+        END AS unique_count
       FROM click_events
       WHERE user_id = ${userId}::uuid
         AND clicked_at >= ${window.rawStart}
@@ -630,6 +704,10 @@ export async function getExportHistory(
         date,
         linkId: row.link_id,
         count: (existing?.count ?? 0) + Number(row.count),
+        uniqueCount:
+          row.unique_count === null
+            ? null
+            : (existing?.uniqueCount ?? 0) + Number(row.unique_count),
       });
     }
   }

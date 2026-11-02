@@ -117,6 +117,11 @@ export interface PublicProfile {
 export interface DailyPoint {
   date: string;
   count: number;
+  /**
+   * Distinct visitor hashes for this day. `null` means the day was rolled up
+   * before unique-click tracking existed, so it is not known rather than zero.
+   */
+  uniqueCount: number | null;
 }
 
 export interface BreakdownSlice {

@@ -57,6 +57,9 @@ jobs:
       SEED_OWNER_PASSWORD: e2e-owner-password-2026
       SEED_OWNER_NAME: E2E Owner
       E2E_USE_BUILT_SERVERS: "true"
+      # CI applies migrations before pnpm api:test; opt in to the DB-backed
+      # nightly rollup tests. They are skipped during ordinary local runs.
+      RUN_DB_TESTS: "1"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

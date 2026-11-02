@@ -19,6 +19,14 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import {
   applyThemePreset,
@@ -65,12 +73,15 @@ export function AppearanceView() {
   const { state, hydrated, setAppearance } = useAppData();
   const { pending, run } = usePendingAction();
   const [draft, setDraft] = useState<AppearanceSettings>(() => structuredClone(state.appearance));
+  const [resetTarget, setResetTarget] = useState<"preset" | "default" | null>(null);
 
   useEffect(() => {
     if (hydrated) setDraft(structuredClone(state.appearance));
   }, [hydrated, state.appearance]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(state.appearance);
+  const currentPresetName =
+    THEME_PRESETS.find((preset) => preset.id === draft.theme)?.name ?? "this preset";
 
   useEffect(() => {
     if (!dirty) return;
@@ -89,16 +100,17 @@ export function AppearanceView() {
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const applyPreset = (id: ThemeId, force = false) => {
+  const applyPreset = (id: ThemeId) => {
     const preset = THEME_PRESETS.find((candidate) => candidate.id === id);
     if (!preset) return;
-    setDraft((current) => applyThemePreset(current, preset, { force }));
+    setDraft((current) => applyThemePreset(current, preset));
   };
 
   const resetToPreset = () => {
     const preset = THEME_PRESETS.find((candidate) => candidate.id === draft.theme);
     if (!preset) return;
     setDraft((current) => applyThemePreset(current, preset, { force: true }));
+    setResetTarget(null);
     toast.info("Preset values restored — save to apply");
   };
 
@@ -109,6 +121,7 @@ export function AppearanceView() {
 
   const resetDraft = () => {
     setDraft(defaultAppearance());
+    setResetTarget(null);
     toast.info("Reset to default — save to apply");
   };
 
@@ -129,7 +142,11 @@ export function AppearanceView() {
             >
               {dirty ? "● Unsaved changes" : "Saved"}
             </span>
-            <Button variant="secondary" onClick={resetDraft} disabled={pending !== null}>
+            <Button
+              variant="secondary"
+              onClick={() => setResetTarget("default")}
+              disabled={pending !== null}
+            >
               Reset to default
             </Button>
             <Button
@@ -159,7 +176,7 @@ export function AppearanceView() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={resetToPreset}
+                  onClick={() => setResetTarget("preset")}
                   disabled={pending !== null}
                 >
                   Reset to preset
@@ -171,13 +188,7 @@ export function AppearanceView() {
                 aria-labelledby="appearance-theme"
               >
                 {THEME_PRESETS.map((preset) => (
-                  <label
-                    key={preset.id}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      if (draft.theme === preset.id) applyPreset(preset.id, true);
-                    }}
-                  >
+                  <label key={preset.id} className="cursor-pointer">
                     <input
                       type="radio"
                       name="appearance-theme"
@@ -473,6 +484,47 @@ export function AppearanceView() {
         Backgrounds are rendered with CSS; no image upload is required. The Brand
         button style fills every link card with your primary color.
       </p>
+
+      <Dialog
+        open={resetTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setResetTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {resetTarget === "preset" ? "Reset to preset?" : "Reset to default?"}
+            </DialogTitle>
+            <DialogDescription>
+              {resetTarget === "preset" ? (
+                <>
+                  This replaces your custom colors, background, font, card and
+                  button choices with the <strong>{currentPresetName}</strong>{" "}
+                  preset values. Layout and visibility switches are kept.
+                </>
+              ) : (
+                <>
+                  This restores every appearance setting, including the theme
+                  preset, to its default value. Your unsaved choices are
+                  discarded.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setResetTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={resetTarget === "preset" ? resetToPreset : resetDraft}
+              disabled={resetTarget === null}
+            >
+              Reset appearance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardFrame>
   );
 }

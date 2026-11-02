@@ -29,6 +29,22 @@ export function sumSeries(points: DailyPoint[] | undefined): number {
   return points.reduce((total, point) => total + point.count, 0);
 }
 
+/**
+ * Sums daily unique clicks. Returns null when any day in the range predates
+ * unique tracking, because a partial sum would understate the period total.
+ */
+export function sumUniqueSeries(
+  points: DailyPoint[] | undefined,
+): number | null {
+  if (!points) return 0;
+  let total = 0;
+  for (const point of points) {
+    if (point.uniqueCount === null) return null;
+    total += point.uniqueCount;
+  }
+  return total;
+}
+
 interface AsyncState<T> {
   data: T | null;
   loading: boolean;

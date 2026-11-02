@@ -1,8 +1,8 @@
 # LinkHub API
 
-Express 5 API for LinkHub v2.7 (Release 2.1). It serves the JSON API consumed by
-the Next.js web app in `apps/web` and is the only process that talks to
-PostgreSQL.
+Express 5 API for LinkHub v2.8 (Releases 2.1.3 / 2.2). It serves the JSON API
+consumed by the Next.js web app in `apps/web` and is the only process that talks
+to PostgreSQL.
 
 - **Runtime:** Node.js 22, TypeScript, Express 5
 - **Data:** PostgreSQL 18 on Neon in production (PostgreSQL 16 for the local Docker example) through Prisma 6
@@ -155,16 +155,39 @@ grace period also restores the account. Restoring never republishes.
 ## Testing
 
 ```bash
-pnpm api:test          # Vitest, no database required
+pnpm api:test          # Vitest; DB-backed rollup tests are skipped
 pnpm typecheck:all
 pnpm api:build
 pnpm build
+
+# Include the four rollup tests (needs a migrated PostgreSQL):
+set -a; source .env; set +a
+RUN_DB_TESTS=1 pnpm api:test
 ```
+
+CI applies migrations and sets `RUN_DB_TESTS=1`, so the rollup tests always
+run there. Locally they are opt-in; point `DATABASE_URL`/`DIRECT_URL` at a test
+database, never at production.
 
 For a manual smoke test, start PostgreSQL and the API, then exercise login,
 links/categories, analytics, export and the account lifecycle. The local
 `.mail-outbox` contains verification/reset/restore tokens when
 `EMAIL_PROVIDER=console`.
+
+## Analytics and export notes
+
+- `GET /analytics/...` daily points include `uniqueCount`. Each day is read from
+  `click_daily_stats.unique_count` when it has been rolled up, otherwise from
+  `COUNT(DISTINCT visitor_hash)` over raw events; the windows never overlap.
+  A `null` means the day predates unique tracking, so the dashboard and export
+  show `—`/`null` rather than zero.
+- The nightly rollup writes `unique_count` once, before hashes are cleared. On
+  conflict it updates `count` only, so a later partial or empty hash set cannot
+  replace a known value. Unique counting starts with the first rollup after the
+  `20261102000000_click_unique_count` migration.
+- `GET /export` uses `schemaVersion: 4`: JSON includes `totalUniqueClicks` and
+  per-day `uniqueClicks`; the CSV zip's `daily_stats.csv` includes
+  `unique_clicks`.
 
 ## Deployment
 

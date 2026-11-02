@@ -208,10 +208,13 @@ model JobState {
 }
 
 model ClickDailyStat {
-  linkId String   @map("link_id") @db.Uuid
-  userId String   @map("user_id") @db.Uuid
-  day    DateTime @db.Date
-  count  Int      @default(0)
+  linkId      String   @map("link_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  day         DateTime @db.Date
+  count       Int      @default(0)
+  // Nullable because rows rolled up before unique tracking existed are unknown,
+  // not zero. New rows are written once during the nightly rollup.
+  uniqueCount Int?     @map("unique_count")
 
   link   Link     @relation(fields: [linkId, userId], references: [id, userId], onDelete: Cascade)
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)

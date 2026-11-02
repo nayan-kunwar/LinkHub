@@ -4,14 +4,14 @@ import { useMemo, useState } from "react";
 import { Check, Clipboard, Download, FileJson, FileSpreadsheet, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
 import type { DailyPoint, Profile } from "@linkhub/shared";
-import { APP_NAME, LIMITS } from "@linkhub/shared";
+import { APP_NAME, EXPORT_SCHEMA_VERSION, LIMITS } from "@linkhub/shared";
 import { PageHeader } from "@/components/page-header";
 import { DashboardFrame } from "@/components/dashboard-frame";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/input";
-import { sumSeries, useAnalytics } from "@/lib/analytics";
+import { sumSeries, sumUniqueSeries, useAnalytics } from "@/lib/analytics";
 import { api, type ExportFormat, type ExportSection } from "@/lib/api-client";
 import type { AppState } from "@/lib/app-state";
 import { useAppData } from "@/lib/store";
@@ -134,7 +134,7 @@ function buildJson(
 
   if (format === "profile") {
     return {
-      schemaVersion: 2,
+      schemaVersion: EXPORT_SCHEMA_VERSION,
       exportedAt,
       profile: publicProfile(state.profile),
       appearance: state.appearance,
@@ -145,7 +145,7 @@ function buildJson(
   const categories = new Map(state.categories.map((category) => [category.id, category]));
 
   return {
-    schemaVersion: 2,
+    schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt,
     preview: true,
     ...(include.profile
@@ -183,7 +183,12 @@ function buildJson(
             note: "Preview uses your current dashboard range. The downloaded export contains the full 365-day history.",
             historyDays: LIMITS.analyticsHistoryDays,
             totalClicks: sumSeries(previewSeries),
-            daily: previewSeries,
+            totalUniqueClicks: sumUniqueSeries(previewSeries),
+            daily: previewSeries.map((point) => ({
+              date: point.date,
+              clicks: point.count,
+              uniqueClicks: point.uniqueCount,
+            })),
           },
         }
       : {}),
@@ -281,9 +286,15 @@ function buildCsvFiles(
 
   if (include.analytics) {
     files["daily_stats.csv"] = [
-      csvRow(["date", "link_id", "link_title", "clicks"]),
+      csvRow(["date", "link_id", "link_title", "clicks", "unique_clicks"]),
       ...previewSeries.map((point) =>
-        csvRow([point.date, "", "All links", point.count]),
+        csvRow([
+          point.date,
+          "",
+          "All links",
+          point.count,
+          point.uniqueCount,
+        ]),
       ),
     ].join("\n");
 

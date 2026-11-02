@@ -214,6 +214,31 @@ trigger the deploy (or merge only after `db:deploy` succeeds).
 
 Never run `prisma migrate dev` or `prisma db push` against production.
 
+### Unique-click analytics (Release 2.2)
+
+The migration `20261102000000_click_unique_count` adds a nullable
+`click_daily_stats.unique_count`. It is additive and backward-compatible, but
+the API and web app must be deployed in this order:
+
+1. Apply the migration (`pnpm db:deploy`).
+2. Deploy the API, which starts returning `uniqueCount` on daily points.
+3. Deploy the web app, which renders the new card, chart line and per-link
+   column.
+
+Applying the migration before the API deploy is safe for the old API: the new
+column is nullable and unused until the new code ships. Deploy the web app only
+after the new API is live; otherwise every day renders as untracked. Unique
+counting begins with the first nightly rollup after the migration. Earlier days
+stay `NULL` and render as `—`, never as zero.
+
+**Avoid deploying across 03:17 UTC.** The nightly job at 03:17 UTC rolls up
+totals and uniques and then clears hashes. Deploying or restarting Render in
+that window can interrupt the run; the advisory lock makes a rerun safe, but
+apply this migration either well before 03:00 UTC or after the workflow
+completes. A day that was already rolled up before the migration keeps
+`unique_count = NULL` even when it is re-covered; that is expected, because its
+hashes may already have been cleared.
+
 ### Link previews (Release 2.1)
 
 Rich/featured link cards use the destination page's Open Graph/Twitter image
@@ -270,6 +295,12 @@ returned both). The PAT is fine-grained, scoped to this repository only,
 granted **Actions: Read and write**, and set to expire; store it only in
 cron-job.org and rotate it before expiry. Never commit it or paste it into an
 issue.
+
+The job writes `COUNT(DISTINCT visitor_hash)` into
+`click_daily_stats.unique_count` once per link/day and then clears hashes.
+Schedule migration or API deploys outside the 03:17 UTC window so the run is
+not interrupted in the middle of a rollup. Recovered days keep their existing
+`unique_count`; only `count` is recomputed.
 
 GitHub's own `schedule` trigger is deliberately not used. On 2026-10-27 the
 03:00 UTC run never appeared (zero `schedule`-triggered runs through 04:20 UTC)
@@ -626,25 +657,41 @@ unset in production; the API keeps using the `__Host-lh.sid` cookie.
    Finally set `METADATA_FETCH_ENABLED=false` on Render, redeploy, and confirm
    new preview requests return `503 METADATA_DISABLED` while saved cards still
    render; restore `true` afterwards.
-6. Click the YouTube play button and a contact row, then confirm both appear in
+6. **Release 2.1.3 appearance:** in **Appearance**, click the already-selected
+   theme preset and confirm nothing changes. Change the font and card shape,
+   switch to another preset, and confirm the custom choices survive while the
+   preset's accent applies if you had not changed it. Click **Reset to preset**
+   and confirm the dialog names the current preset; cancel once, then confirm
+   the reset applies the full preset. Click **Reset to default**, cancel once,
+   then confirm every setting returns to the default.
+7. Click the YouTube play button and a contact row, then confirm both appear in
    `/dashboard/analytics` after the 30-second dedupe window.
-7. Rename the profile and confirm the public page updates immediately (the
+8. **Release 2.2 unique clicks:** `/dashboard/analytics` shows the **Unique
+   clicks** card with the **Daily unique clicks** sub-label (or `—` with “Not
+   tracked for part of this range”), a pink unique line in **Clicks over time**,
+   and a **Unique clicks** column per link. Days before the first post-migration
+   rollup show `—`; after the next 03:17 UTC run, new days carry values. Download
+   a JSON export and confirm `schemaVersion: 4`, `totalUniqueClicks` and daily
+   `uniqueClicks`; download the CSV zip and confirm `daily_stats.csv` has a
+   `unique_clicks` column.
+9. Rename the profile and confirm the public page updates immediately (the
    `profile:<username>` tag is revalidated and the route re-renders with fresh
    data).
-8. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
-   reset.
-9. Open a classic link and check `/dashboard/analytics` for the click.
-10. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
-11. Check Render logs for errors and confirm no IP addresses or tokens appear.
+10. Trigger **Forgot password** and confirm the Brevo email arrives; complete the
+    reset.
+11. Open a classic link and check `/dashboard/analytics` for the click.
+12. Confirm `https://link.nayankunwar.com/api/v1/health` returns `200`.
+13. Check Render logs for errors and confirm no IP addresses or tokens appear.
     Confirm the expected `audit` events (`auth.login`, etc.) are present.
-12. If a password was shared in chat or a support ticket, rotate it immediately
+14. If a password was shared in chat or a support ticket, rotate it immediately
     from **Settings → Account** and store the new value only in your password
     manager. A password change revokes every other session.
 
 Run the nightly job once from **GitHub → Actions → Nightly analytics → Run
 workflow** and confirm it exits successfully, the `Ping heartbeat` step passes,
 and Healthchecks.io records the ping. A failed run should create or update a
-`nightly-failure` issue.
+`nightly-failure` issue. After the run, confirm `click_daily_stats.unique_count`
+is populated for a link that received a click on a complete UTC day.
 
 ---
 

@@ -34,7 +34,7 @@ export interface ExportArtifact {
 }
 
 const ANALYTICS_NOTE =
-  "Recorded clicks are estimates; known bots and rapid repeat taps are filtered out. Days are UTC.";
+  "Recorded clicks are estimates; known bots and rapid repeat taps are filtered out. Unique clicks are distinct visitor hashes per link per UTC day and begin with the first rollup after unique tracking was deployed; earlier days are null. Days are UTC.";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -168,19 +168,37 @@ function fullCategories(data: ExportData) {
 }
 
 function analyticsSection(history: ExportHistory, historyDays: number) {
-  const dailyMap = new Map<string, number>();
+  const dailyMap = new Map<
+    string,
+    { clicks: number; uniqueClicks: number; tracked: boolean }
+  >();
   for (const row of history.daily) {
-    dailyMap.set(row.date, (dailyMap.get(row.date) ?? 0) + row.count);
+    const entry = dailyMap.get(row.date) ?? {
+      clicks: 0,
+      uniqueClicks: 0,
+      tracked: true,
+    };
+    entry.clicks += row.count;
+    if (row.uniqueCount === null) entry.tracked = false;
+    else entry.uniqueClicks += row.uniqueCount;
+    dailyMap.set(row.date, entry);
   }
 
   const daily = Array.from(dailyMap.entries())
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, clicks]) => ({ date, clicks }));
+    .map(([date, totals]) => ({
+      date,
+      clicks: totals.clicks,
+      uniqueClicks: totals.tracked ? totals.uniqueClicks : null,
+    }));
 
   return {
     note: ANALYTICS_NOTE,
     historyDays,
     totalClicks: daily.reduce((sum, row) => sum + row.clicks, 0),
+    totalUniqueClicks: daily.some((row) => row.uniqueClicks === null)
+      ? null
+      : daily.reduce((sum, row) => sum + (row.uniqueClicks ?? 0), 0),
     daily,
   };
 }
@@ -314,13 +332,14 @@ function buildCsvFiles(
     const history = data.history as ExportHistory;
 
     files["daily_stats.csv"] = [
-      csvRow(["date", "link_id", "link_title", "clicks"]),
+      csvRow(["date", "link_id", "link_title", "clicks", "unique_clicks"]),
       ...history.daily.map((row) =>
         csvRow([
           row.date,
           row.linkId,
           data.linkTitles.get(row.linkId) ?? "Deleted link",
           row.count,
+          row.uniqueCount,
         ]),
       ),
     ].join("\n");

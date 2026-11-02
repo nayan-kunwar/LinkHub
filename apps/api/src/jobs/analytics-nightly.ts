@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import pg from "pg";
 import type { Plan } from "@prisma/client";
 import { audit } from "../lib/audit";
@@ -37,42 +38,65 @@ function parseDateOnly(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
 }
 
-async function rollup(
+export interface RollupOptions {
+  /** Injectable clock for tests; production uses the current time. */
+  now?: Date;
+  /** Optional first day to recompute (inclusive). Overrides the watermark window. */
+  from?: Date;
+  /** Last day to recompute (inclusive); defaults to yesterday in UTC. */
+  through?: Date;
+  /** Set false for tests that must not touch the shared watermark row. */
+  updateWatermark?: boolean;
+}
+
+export async function rollup(
   client: pg.Client,
-  yesterday: Date,
+  options: RollupOptions = {},
 ): Promise<{ days: number; watermark: string }> {
+  const now = options.now ?? new Date();
+  const yesterday = addDays(startOfUtcDay(now), -1);
+  const through = options.through
+    ? startOfUtcDay(options.through)
+    : yesterday;
+
   await client.query("BEGIN");
   try {
-    await client.query(
-      `
-        INSERT INTO job_state (name, watermark, updated_at)
-        SELECT
-          $1,
-          COALESCE(
-            (SELECT (MIN(clicked_at) AT TIME ZONE 'UTC')::date - 1 FROM click_events),
-            (now() AT TIME ZONE 'UTC')::date - 1
-          ),
-          now()
-        WHERE NOT EXISTS (SELECT 1 FROM job_state WHERE name = $1)
-      `,
-      [JOB_NAME],
-    );
+    let day: Date;
+    if (options.from) {
+      day = startOfUtcDay(options.from);
+    } else {
+      await client.query(
+        `
+          INSERT INTO job_state (name, watermark, updated_at)
+          SELECT
+            $1,
+            COALESCE(
+              (SELECT (MIN(clicked_at) AT TIME ZONE 'UTC')::date - 1 FROM click_events),
+              (now() AT TIME ZONE 'UTC')::date - 1
+            ),
+            now()
+          WHERE NOT EXISTS (SELECT 1 FROM job_state WHERE name = $1)
+        `,
+        [JOB_NAME],
+      );
 
-    const state = await client.query<{ watermark: string }>(
-      `SELECT watermark::text AS watermark FROM job_state WHERE name = $1`,
-      [JOB_NAME],
-    );
-    const watermarkText = state.rows[0]?.watermark;
-    if (!watermarkText) {
-      throw new Error("The analytics watermark row could not be created.");
+      const state = await client.query<{ watermark: string }>(
+        `SELECT watermark::text AS watermark FROM job_state WHERE name = $1`,
+        [JOB_NAME],
+      );
+      const watermarkText = state.rows[0]?.watermark;
+      if (!watermarkText) {
+        throw new Error("The analytics watermark row could not be created.");
+      }
+
+      const watermark = parseDateOnly(watermarkText);
+      // Re-cover two days before the watermark so late inserts are recomputed.
+      day = addDays(watermark, -2);
     }
 
-    const watermark = parseDateOnly(watermarkText);
-    // Re-cover two days before the watermark so late inserts are recomputed.
-    let day = addDays(watermark, -2);
     let rolledUpDays = 0;
 
-    for (; day.getTime() <= yesterday.getTime(); day = addDays(day, 1)) {
+    for (; day.getTime() <= through.getTime(); day = addDays(day, 1)) {
       const dayText = dateOnly(day);
       const nextText = dateOnly(addDays(day, 1));
 
@@ -95,8 +119,16 @@ async function rollup(
 
       await client.query(
         `
-          INSERT INTO click_daily_stats (link_id, user_id, day, count)
-          SELECT link_id, user_id, $1::date, count(*)::int
+          INSERT INTO click_daily_stats (link_id, user_id, day, count, unique_count)
+          SELECT
+            link_id,
+            user_id,
+            $1::date,
+            count(*)::int,
+            CASE
+              WHEN count(visitor_hash) = 0 THEN NULL
+              ELSE count(DISTINCT visitor_hash)::int
+            END
           FROM click_events
           WHERE clicked_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
             AND clicked_at < ($2::date::timestamp AT TIME ZONE 'UTC')
@@ -132,17 +164,20 @@ async function rollup(
       rolledUpDays += 1;
     }
 
-    await client.query(
-      `
-        UPDATE job_state
-        SET watermark = GREATEST(watermark, $2::date), updated_at = now()
-        WHERE name = $1
-      `,
-      [JOB_NAME, dateOnly(yesterday)],
-    );
+    const updateWatermark = options.updateWatermark ?? options.from === undefined;
+    if (updateWatermark) {
+      await client.query(
+        `
+          UPDATE job_state
+          SET watermark = GREATEST(watermark, $2::date), updated_at = now()
+          WHERE name = $1
+        `,
+        [JOB_NAME, dateOnly(through)],
+      );
+    }
     await client.query("COMMIT");
 
-    return { days: rolledUpDays, watermark: dateOnly(yesterday) };
+    return { days: rolledUpDays, watermark: dateOnly(through) };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -308,8 +343,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    const yesterday = addDays(startOfUtcDay(new Date()), -1);
-    const rolledUp = await rollup(client, yesterday);
+    const rolledUp = await rollup(client, { now: new Date() });
     const hashesCleared = await clearHashes(client);
     const raw = await purgeRawEvents(client, rolledUp.watermark);
     const pruned = await prune(client);
@@ -337,11 +371,14 @@ async function main(): Promise<void> {
   }
 }
 
-main()
-  .then(() => {
-    process.exit(0);
-  })
-  .catch((error: unknown) => {
-    logger.error({ err: error }, "analytics nightly job failed");
-    process.exit(1);
-  });
+const entrypoint = process.argv[1];
+if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
+  main()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((error: unknown) => {
+      logger.error({ err: error }, "analytics nightly job failed");
+      process.exit(1);
+    });
+}

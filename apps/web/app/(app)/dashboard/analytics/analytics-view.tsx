@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
-import { BarChart3, Heart, Link2, PieChart, Star } from "lucide-react";
+import { BarChart3, Heart, Link2, PieChart, Star, Users } from "lucide-react";
 import { LIMITS } from "@linkhub/shared";
 import { CategoryPill } from "@/components/category-pill";
 import { ClicksChart } from "@/components/charts/clicks-chart";
@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import {
   formatSeriesLabel,
   sumSeries,
+  sumUniqueSeries,
   useAnalytics,
   useLinkSeries,
 } from "@/lib/analytics";
@@ -32,6 +33,9 @@ import { formatNumber } from "@/lib/utils";
 const CLICKS_TIP =
   "Recorded clicks count taps on your links. Known bots and repeat taps within a few seconds are filtered out, so treat totals as close estimates, not exact visitor counts.";
 
+const UNIQUE_TIP =
+  "Unique clicks estimate distinct visitors per link per UTC day using a short-lived, day-scoped hash. The card sums those daily unique clicks for the range. Counting starts with the first nightly rollup after tracking was deployed, so earlier days show —.";
+
 export function AnalyticsFallback() {
   return (
     <DashboardFrame preview={<DashboardPreview />}>
@@ -39,8 +43,8 @@ export function AnalyticsFallback() {
         title="Analytics"
         description="Track your link performance and understand where your audience comes from."
       />
-      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4" aria-hidden="true">
-        {Array.from({ length: 4 }).map((_, index) => (
+      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-5" aria-hidden="true">
+        {Array.from({ length: 5 }).map((_, index) => (
           <Card key={index} className="h-28 animate-pulse bg-violet-50/40" />
         ))}
       </div>
@@ -77,6 +81,7 @@ export function AnalyticsView() {
   );
 
   const allTotal = allOverview?.total ?? 0;
+  const uniqueTotal = sumUniqueSeries(overview?.series);
   const linkRows = useMemo(() => {
     const rows = (linkFilter ? [linkFilter] : state.links).map((link) => {
       const series = seriesById.get(link.id) ?? [];
@@ -84,6 +89,7 @@ export function AnalyticsView() {
       return {
         link,
         count,
+        uniqueCount: sumUniqueSeries(series),
         series: series.map((point) => point.count),
         share: allTotal === 0 ? 0 : count / allTotal,
       };
@@ -131,7 +137,7 @@ export function AnalyticsView() {
         </Card>
       ) : null}
 
-      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-5">
         <StatCard
           label="Total recorded clicks"
           value={formatNumber(overview?.total ?? 0)}
@@ -139,6 +145,24 @@ export function AnalyticsView() {
           icon={BarChart3}
           tip={CLICKS_TIP}
           sparkline={(overview?.series ?? []).map((point) => point.count)}
+        />
+        <StatCard
+          label="Unique clicks"
+          value={uniqueTotal === null ? "—" : formatNumber(uniqueTotal)}
+          sub={
+            uniqueTotal === null
+              ? "Not tracked for part of this range"
+              : "Daily unique clicks"
+          }
+          icon={Users}
+          tip={UNIQUE_TIP}
+          sparkline={
+            uniqueTotal === null
+              ? undefined
+              : (overview?.series ?? []).map(
+                  (point) => point.uniqueCount ?? 0,
+                )
+          }
         />
         <StatCard
           label="Avg clicks / day"
@@ -176,7 +200,12 @@ export function AnalyticsView() {
             <h2 className="font-bold text-zinc-900">Clicks over time</h2>
             <span className="text-xs text-zinc-500">UTC</span>
           </div>
-          <ClicksChart data={overview?.series ?? []} rangeDays={range} height={224} />
+          <ClicksChart
+            data={overview?.series ?? []}
+            rangeDays={range}
+            height={224}
+            showUnique
+          />
         </Card>
 
         <Card className="p-5">
@@ -306,7 +335,7 @@ export function AnalyticsView() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">
               <caption className="sr-only">
-                Recorded clicks per link in the selected range
+                Recorded clicks and daily unique clicks per link in the selected range
               </caption>
               <thead>
                 <tr className="border-b border-violet-100 text-left text-xs text-zinc-600">
@@ -321,6 +350,9 @@ export function AnalyticsView() {
                   </th>
                   <th scope="col" className="text-right font-semibold">
                     Clicks
+                  </th>
+                  <th scope="col" className="text-right font-semibold">
+                    Unique clicks
                   </th>
                   <th scope="col" className="text-right font-semibold">
                     Share
@@ -357,6 +389,11 @@ export function AnalyticsView() {
                       {formatNumber(row.count)}
                     </td>
                     <td className="py-2.5 text-right text-zinc-600">
+                      {row.uniqueCount === null
+                        ? "—"
+                        : formatNumber(row.uniqueCount)}
+                    </td>
+                    <td className="py-2.5 text-right text-zinc-600">
                       {Math.round(row.share * 100)}%
                     </td>
                     <td className="py-2.5 pl-6">
@@ -371,7 +408,10 @@ export function AnalyticsView() {
       </Card>
 
       <p className="mt-4 text-xs text-zinc-500">
-        Days are UTC. Recorded clicks exclude known bots and repeat taps within a few seconds.
+        Days are UTC. Recorded clicks exclude known bots and repeat taps within a
+        few seconds. Unique clicks count distinct visitors per link per day; they
+        start with the first nightly rollup after unique tracking was deployed,
+        so earlier days show —.
       </p>
     </DashboardFrame>
   );

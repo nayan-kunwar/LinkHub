@@ -2,9 +2,11 @@
 
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,10 +20,13 @@ export function ClicksChart({
   data,
   height = 224,
   rangeDays,
+  showUnique = false,
 }: {
   data: DailyPoint[];
   height?: number;
   rangeDays: number;
+  /** Draw the daily unique-click line. The home dashboard keeps bars only. */
+  showUnique?: boolean;
 }) {
   if (data.length === 0) {
     return (
@@ -36,7 +41,11 @@ export function ClicksChart({
   return (
     <div style={{ height }} className="w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -18 }} accessibilityLayer>
+        <ComposedChart
+          data={data}
+          margin={{ top: 8, right: 4, bottom: 0, left: -18 }}
+          accessibilityLayer
+        >
           <CartesianGrid vertical={false} stroke="#f1effa" />
           <XAxis
             dataKey="date"
@@ -64,14 +73,40 @@ export function ClicksChart({
             }}
             labelStyle={{ color: "#3f3f46", fontWeight: 600 }}
             labelFormatter={(label) => formatSeriesLabel(String(label))}
-            formatter={(value) => [`${formatNumber(Number(value))} clicks`, "Recorded clicks"]}
+            formatter={(value, name) => {
+              const label = String(name);
+              return [
+                `${formatNumber(Number(value))} ${label === "Daily unique clicks" ? "unique" : "clicks"}`,
+                label,
+              ];
+            }}
           />
-          <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={rangeDays > 30 ? 10 : 18} isAnimationActive={false}>
+          {showUnique ? <Legend iconType="plainline" wrapperStyle={{ fontSize: 12 }} /> : null}
+          <Bar
+            dataKey="count"
+            name="Recorded clicks"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={rangeDays > 30 ? 10 : 18}
+            isAnimationActive={false}
+          >
             {data.map((point) => (
               <Cell key={point.date} fill={point.count === peak ? "#6d28d9" : "#a78bfa"} />
             ))}
           </Bar>
-        </BarChart>
+          {showUnique ? (
+            <Line
+              type="monotone"
+              dataKey="uniqueCount"
+              name="Daily unique clicks"
+              stroke="#db2777"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          ) : null}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

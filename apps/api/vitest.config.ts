@@ -10,8 +10,10 @@ export default defineConfig({
       LOG_LEVEL: "silent",
       APP_URL: "http://localhost:3100",
       DATABASE_URL:
+        process.env.DATABASE_URL ??
         "postgresql://linkhub:linkhub@localhost:5432/linkhub_test?schema=public",
       DIRECT_URL:
+        process.env.DIRECT_URL ??
         "postgresql://linkhub:linkhub@localhost:5432/linkhub_test?schema=public",
       SESSION_SECRET: "test-session-secret-0123456789abcdef0123456789",
       SESSION_MAX_AGE_DAYS: "7",
