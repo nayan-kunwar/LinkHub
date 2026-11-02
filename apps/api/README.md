@@ -89,7 +89,7 @@ Core environment variables:
 | `APP_URL` | Web origin used for Origin/CSRF checks |
 | `PORT` | API port (default `4000`) |
 | `METADATA_FETCH_ENABLED` | Kill switch for outbound OG/Twitter fetches; defaults to `true` |
-| `METADATA_SKIP_HOSTS` | Comma-separated hosts that skip server previews (default: Instagram/Amazon) |
+| `METADATA_SKIP_HOSTS` | Comma-separated hosts that skip server previews; a trailing `.*` matches any public suffix (default: Instagram/Amazon) |
 
 Useful feature flags: `ALLOW_SIGNUP`, `ALLOW_DEMO_PREVIEW` (web),
 `TRUST_PROXY` (verified hop count, never `true`), `DEBUG_IP_ENDPOINT`
@@ -131,7 +131,15 @@ save. Link mutations start profile revalidation in the background and log
 failures without failing the save. Previews are cached in memory for 10 minutes
 per user + URL, share a 20/min/user budget and a 4-fetch concurrency cap, and
 can be disabled with `METADATA_FETCH_ENABLED=false`. Instagram/Amazon hosts in
-`METADATA_SKIP_HOSTS` keep the icon fallback without a network request.
+`METADATA_SKIP_HOSTS` keep the icon fallback without a network request; a
+trailing `.*` matches any public suffix, so `amazon.*` covers every storefront
+and `amzn.*` covers every short-link domain. A non-HTML response is cached as an
+empty completed result so later saves do not retry it.
+
+A destination that cannot be read or times out returns
+`502 METADATA_UNAVAILABLE`, not `422`: the request and URL are valid, and the
+upstream page is at fault. A manual refresh that fails leaves the previous
+metadata intact.
 
 All non-GET requests require a matching `Origin` and an `X-CSRF-Token` header
 that matches the readable `lh.csrf` cookie. The one exception is the anonymous

@@ -20,7 +20,7 @@ vi.mock("../../lib/db", () => {
       $transaction: vi.fn((callback: (client: typeof tx) => unknown) =>
         callback(tx),
       ),
-      link: { update: updateMock },
+      link: { update: updateMock, updateMany: updateMock },
       profile: { findUnique: vi.fn() },
     },
   };

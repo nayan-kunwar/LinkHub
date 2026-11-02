@@ -15,7 +15,7 @@
 - Added `POST /links/metadata` (preview-only, never persists) and `POST /links/:id/refresh-metadata` (forces a fetch and persists). Rich/featured link blocks without a manual image fetch metadata server-side after create/update; failures never fail the save.
 - Added an SSRF-safe fetcher (`undici` + `cheerio`): http(s) only, no credentials, ports 80/443, private/loopback/link-local/CGNAT/IPv4-mapped/NAT64/6to4/Teredo/reserved ranges and deprecated site-local `fec0::/10` blocked, a custom DNS `lookup` that pins the checked address, and per-redirect revalidation.
 - Fetch limits: `Content-Type` checked before the body, 512 KiB maximum, 5-second whole-request deadline, charset-aware decoding, and no `response.text()`. Open Graph/Twitter fields are parsed with `<title>`/`description` fallbacks; relative images resolve against the final URL and only HTTPS images are accepted.
-- Preview cache is in-memory, keyed by user + normalised URL for 10 minutes, with in-flight deduplication, a shared 20 fetches/min/user budget, at most 4 concurrent fetches, a `METADATA_FETCH_ENABLED` kill switch, and a `METADATA_SKIP_HOSTS` list (Instagram/Amazon skip the fetch and keep the icon fallback).
+- Preview cache is in-memory, keyed by user + normalised URL for 10 minutes, with in-flight deduplication, a shared 20 fetches/min/user budget, at most 4 concurrent fetches, a `METADATA_FETCH_ENABLED` kill switch, and a `METADATA_SKIP_HOSTS` list (Instagram/Amazon skip the fetch and keep the icon fallback; trailing `.*` wildcards cover all Amazon storefronts and short-link domains).
 - The editor auto-fetches on paste/blur and when switching to rich/featured, offers a manual Fetch/Refresh action, suggests a title only when empty and a description only when empty, exposes a `usePreviewImage` toggle (default `true`), and treats a manual `imageUrl` as authoritative. `normalizeUrl` is shared by source URLs, cache keys, freshness checks and editor staleness.
 - Public rendering uses manual image → server-selected `previewImageUrl` → icon, through one lazy/async/no-referrer image component with an error fallback. The public DTO exposes only `previewImageUrl`, never the stored metadata. YouTube keeps its `videoId` thumbnail and loads the iframe only on click.
 
@@ -858,7 +858,7 @@ All account routes are authenticated except `POST /account/restore` (token is th
 
 **Links (own)**: `GET /links?search=&categoryId=&status=`, `POST /links`, `GET/PATCH/DELETE /links/:id`, `PATCH /links/:id/status`, `PUT /links/reorder` — MVP. Payloads include `title`, `url`, `description`, `categoryId`, `icon`, `isActive`; reorder is a full ordered set.
 
-**Link previews (own, Release 2.1)**: `POST /links/metadata` `{ url }` is read-only and returns `LinkMetadata` (`sourceUrl`, `finalUrl`, `title`, `description`, `imageUrl`, `siteName`, `fetchedAt`); it never persists anything. `POST /links/:id/refresh-metadata` forces a fresh fetch, persists `Link.metadata`, revalidates the public profile, and returns the updated link DTO. Create/update payloads never persist client-supplied `metadata` (updates reject unknown fields; creates ignore them). Save-time fetching applies only to `type=link` blocks whose layout is `rich` or `featured`, that have no manual `imageUrl`, have not set `usePreviewImage=false`, and are not skipped hosts; a fetch failure is logged and the save still succeeds. Save-time fetches have a hard 3 s cap, never wait for a concurrency slot and never join an in-flight preview request, so a slow destination leaves `metadata` as `{}` and cannot hold up the save. A URL change resets stored metadata to `{}` before the new fetch. Link mutations start profile revalidation in the background and never fail the save if it fails.
+**Link previews (own, Release 2.1)**: `POST /links/metadata` `{ url }` is read-only and returns `LinkMetadata` (`sourceUrl`, `finalUrl`, `title`, `description`, `imageUrl`, `siteName`, `fetchedAt`); it never persists anything. `POST /links/:id/refresh-metadata` forces a fresh fetch, persists `Link.metadata`, revalidates the public profile, and returns the updated link DTO. Create/update payloads never persist client-supplied `metadata` (updates reject unknown fields; creates ignore them). Save-time fetching applies only to `type=link` blocks whose layout is `rich` or `featured`, that have no manual `imageUrl`, have not set `usePreviewImage=false`, and are not skipped hosts; a fetch failure is logged and the save still succeeds. Save-time fetches have a hard 3 s cap, never wait for a concurrency slot and never join an in-flight preview request, so a slow destination leaves `metadata` as `{}` and cannot hold up the save. A URL change resets stored metadata to `{}` before the new fetch, and a metadata write is conditional on the row still having the fetched URL so a concurrent edit cannot attach stale metadata. A non-HTML response is cached as an empty completed result, so later saves do not retry it. Link mutations start profile revalidation in the background and never fail the save if it fails. `METADATA_SKIP_HOSTS` supports a trailing `.*` wildcard; the default `amazon.*`/`amzn.*` entries cover every Amazon storefront and short-link domain.
 
 **Categories (own)**: `GET/POST /categories`, `PATCH/DELETE /categories/:id`, `PUT /categories/reorder` — MVP. Payloads include `name`, `description`, `color`, `icon`, `isVisible`; delete detaches links in the same transaction.
 
@@ -899,6 +899,10 @@ All account routes are authenticated except `POST /account/restore` (token is th
 | 500 | `INTERNAL_ERROR` |
 | 502 | `METADATA_UNAVAILABLE` (destination unreachable or timed out) |
 | 503 | `METADATA_DISABLED` (preview kill switch) |
+
+Preview failures deliberately use `502`, not `422`: the request and URL are
+syntactically and semantically valid, and the upstream page could not be read.
+`422` is not used anywhere in this API.
 
 ---
 
@@ -1300,7 +1304,7 @@ ANALYTICS_HASH_SECRET=change-me-32-bytes-min   # derives in-memory daily dedupe 
 
 # --- Link previews (Release 2.1) ---
 METADATA_FETCH_ENABLED=true              # false disables all outbound OG/Twitter fetches
-METADATA_SKIP_HOSTS=instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co  # icon fallback; no server fetch
+METADATA_SKIP_HOSTS=instagram.com,instagr.am,amazon.*,amzn.*,a.co  # icon fallback; trailing .* matches any public suffix
 
 # --- Seed ---
 SEED_OWNER_EMAIL=owner@nayankunwar.com

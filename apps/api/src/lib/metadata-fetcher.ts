@@ -1,7 +1,12 @@
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import type { LookupFunction } from "node:net";
 import * as cheerio from "cheerio";
-import { Agent, fetch as undiciFetch, type Response } from "undici";
+import {
+  Agent,
+  fetch as undiciFetch,
+  type Dispatcher,
+  type Response,
+} from "undici";
 import {
   normalizeUrl,
   parseLinkMetadata,
@@ -42,6 +47,7 @@ export class MetadataFetchError extends Error {
 export function emptyMetadataFor(
   sourceUrl: string,
   finalUrl = sourceUrl,
+  fetchedAt: string | null = null,
 ): LinkMetadata {
   return {
     sourceUrl: normalizeUrl(sourceUrl) ?? "",
@@ -50,7 +56,7 @@ export function emptyMetadataFor(
     description: "",
     imageUrl: "",
     siteName: "",
-    fetchedAt: null,
+    fetchedAt,
   };
 }
 
@@ -209,38 +215,48 @@ async function readBody(response: Response): Promise<Uint8Array> {
  * A DNS lookup that refuses to hand undici a private or reserved address.
  * Node's lookup supports both the legacy single-address callback and the
  * `all: true` array form; both are handled so the agent cannot bypass checks.
+ *
+ * The resolver is injectable so the filtering can be tested without real DNS.
  */
-const safeLookup: LookupFunction = (hostname, options, callback) => {
-  dnsLookup(
-    hostname,
-    { ...options, all: true, verbatim: true },
-    (error, addresses) => {
-      if (error) {
-        callback(error, "");
-        return;
-      }
+export function createSafeLookup(
+  resolver: typeof dnsLookup = dnsLookup,
+): LookupFunction {
+  return (hostname, options, callback) => {
+    resolver(
+      hostname,
+      { ...options, all: true, verbatim: true },
+      (error, addresses) => {
+        if (error) {
+          callback(error, "");
+          return;
+        }
 
-      const list = Array.isArray(addresses)
-        ? (addresses as LookupAddress[])
-        : [];
-      const safe = list.filter((entry) => !isBlockedIp(entry.address));
-      if (safe.length === 0) {
-        const blocked = Object.assign(
-          new Error("The destination resolves to a private or reserved address."),
-          { code: "EBLOCKEDADDRESS" },
-        );
-        callback(blocked, "");
-        return;
-      }
+        const list = Array.isArray(addresses)
+          ? (addresses as LookupAddress[])
+          : [];
+        const safe = list.filter((entry) => !isBlockedIp(entry.address));
+        if (safe.length === 0) {
+          const blocked = Object.assign(
+            new Error(
+              "The destination resolves to a private or reserved address.",
+            ),
+            { code: "EBLOCKEDADDRESS" },
+          );
+          callback(blocked, "");
+          return;
+        }
 
-      if (options.all) {
-        callback(null, safe);
-        return;
-      }
-      callback(null, safe[0].address, safe[0].family);
-    },
-  );
-};
+        if (options.all) {
+          callback(null, safe);
+          return;
+        }
+        callback(null, safe[0].address, safe[0].family);
+      },
+    );
+  };
+}
+
+export const safeLookup: LookupFunction = createSafeLookup();
 
 function isRedirect(status: number): boolean {
   return status >= 300 && status < 400;
@@ -281,9 +297,17 @@ function asFetchError(error: unknown, signal: AbortSignal): MetadataFetchError {
  * - Content-Type is checked before the body is read
  * - at most 512 KiB and 5 seconds are spent on the whole chain
  */
+export interface FetchLinkMetadataOptions {
+  signal?: AbortSignal;
+  /** Injectable for tests; production always uses the pinned safe Agent. */
+  dispatcher?: Dispatcher;
+  /** Overrides the 5 s request deadline, primarily for tests. */
+  timeoutMs?: number;
+}
+
 export async function fetchLinkMetadata(
   rawUrl: string,
-  options: { signal?: AbortSignal } = {},
+  options: FetchLinkMetadataOptions = {},
 ): Promise<LinkMetadata> {
   const normalized = normalizeUrl(rawUrl);
   if (!normalized) {
@@ -297,20 +321,25 @@ export async function fetchLinkMetadata(
     throw new MetadataFetchError(initialError, "blocked");
   }
 
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
   const signal = options.signal
     ? AbortSignal.any([controller.signal, options.signal])
     : controller.signal;
 
-  const agent = new Agent({
-    connect: { lookup: safeLookup, timeout: REQUEST_TIMEOUT_MS },
-    headersTimeout: REQUEST_TIMEOUT_MS,
-    bodyTimeout: REQUEST_TIMEOUT_MS,
-    keepAliveTimeout: 1,
-    keepAliveMaxTimeout: 1,
-    connections: 1,
-  });
+  const ownsDispatcher = options.dispatcher === undefined;
+  const agent: Dispatcher =
+    options.dispatcher ??
+    new Agent({
+      connect: { lookup: safeLookup, timeout: timeoutMs },
+      headersTimeout: timeoutMs,
+      bodyTimeout: timeoutMs,
+      keepAliveTimeout: 1,
+      keepAliveMaxTimeout: 1,
+      connections: 1,
+    });
 
   try {
     const visited = new Set<string>();
@@ -378,7 +407,14 @@ export async function fetchLinkMetadata(
       const mime = contentType.split(";")[0].trim().toLowerCase();
       if (mime !== "text/html" && mime !== "application/xhtml+xml") {
         await response.body?.cancel().catch(() => undefined);
-        return emptyMetadataFor(sourceUrl, current.toString());
+        // Mark the fetch as complete even though there is nothing to show.
+        // Otherwise every later save treats this URL as unfetched and tries
+        // again, while the preview cache can only hide that for 10 minutes.
+        return emptyMetadataFor(
+          sourceUrl,
+          current.toString(),
+          new Date().toISOString(),
+        );
       }
 
       const bytes = await readBody(response);
@@ -399,12 +435,14 @@ export async function fetchLinkMetadata(
     throw asFetchError(error, signal);
   } finally {
     clearTimeout(timer);
-    // A graceful close can wait for an in-flight socket. On the abort path the
-    // save-time cap must hold, so tear the agent down immediately instead.
-    if (signal.aborted) {
-      await agent.destroy().catch(() => undefined);
-    } else {
-      await agent.close().catch(() => agent.destroy());
+    if (ownsDispatcher) {
+      // A graceful close can wait for an in-flight socket. On the abort path
+      // the save-time cap must hold, so tear the agent down immediately.
+      if (signal.aborted) {
+        await agent.destroy().catch(() => undefined);
+      } else {
+        await agent.close().catch(() => agent.destroy());
+      }
     }
   }
 }

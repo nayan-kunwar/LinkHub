@@ -28,6 +28,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<LinkMetadata>>();
 const budgets = new Map<string, number[]>();
+let nextBudgetPruneAt = 0;
 
 function cacheKey(userId: string, normalizedUrl: string): string {
   return `${userId}:${normalizedUrl}`;
@@ -54,9 +55,25 @@ function storeMetadata(key: string, metadata: LinkMetadata): void {
   });
 }
 
+/**
+ * Drop users whose whole window has expired. Without this the map grows with
+ * every user who ever previewed a link, even though their budget is unusable.
+ */
+function pruneExpiredBudgets(now: number): void {
+  if (now < nextBudgetPruneAt) return;
+  nextBudgetPruneAt = now + BUDGET_WINDOW_MS;
+  for (const [userId, timestamps] of budgets) {
+    const last = timestamps[timestamps.length - 1];
+    if (last === undefined || now - last >= BUDGET_WINDOW_MS) {
+      budgets.delete(userId);
+    }
+  }
+}
+
 /** Programmatic budget shared by preview, refresh and save-time fetches. */
 function consumeBudget(userId: string): void {
   const now = Date.now();
+  pruneExpiredBudgets(now);
   const recent = (budgets.get(userId) ?? []).filter(
     (timestamp) => now - timestamp < BUDGET_WINDOW_MS,
   );
@@ -115,12 +132,31 @@ export function isMetadataFetchEnabled(): boolean {
   return env.METADATA_FETCH_ENABLED;
 }
 
+/**
+ * Skip entries are either exact registrable hosts (`instagram.com`, which also
+ * covers subdomains) or a wildcard final label (`amazon.*`, `amzn.*`). The
+ * wildcard allows one- and two-label public suffixes (`amazon.com`,
+ * `amazon.co.uk`) while still rejecting a host such as `amazon.com.evil.com`.
+ */
+function matchesSkipHost(host: string, candidate: string): boolean {
+  if (candidate.endsWith(".*")) {
+    const base = candidate.slice(0, -2);
+    if (!base || base.includes("*")) return false;
+    const labels = host.split(".");
+    const index = labels.indexOf(base);
+    if (index === -1) return false;
+    const suffixLabels = labels.length - index - 1;
+    return suffixLabels >= 1 && suffixLabels <= 2;
+  }
+  return host === candidate || host.endsWith(`.${candidate}`);
+}
+
 export function isSkippedMetadataHost(rawUrl: string): boolean {
   const normalized = normalizeUrl(rawUrl);
   if (!normalized) return false;
-  const host = new URL(normalized).hostname.toLowerCase();
-  return env.metadataSkipHosts.some(
-    (candidate) => host === candidate || host.endsWith(`.${candidate}`),
+  const host = new URL(normalized).hostname.toLowerCase().replace(/\.$/, "");
+  return env.metadataSkipHosts.some((candidate) =>
+    matchesSkipHost(host, candidate),
   );
 }
 
@@ -200,7 +236,13 @@ export async function fetchMetadataForUser(
   return promise;
 }
 
-/** Maps fetcher failures to the API's stable error envelope. */
+/**
+ * Maps fetcher failures to the API's stable error envelope.
+ *
+ * A destination that cannot be read or times out is a 502, not a 422: the
+ * request and URL are valid, and the upstream page is at fault. Only input
+ * that must never be fetched (blocked or invalid) is a 400.
+ */
 export function metadataFetchFailure(error: unknown): never {
   if (error instanceof MetadataFetchError) {
     if (error.kind === "blocked" || error.kind === "invalid") {
@@ -221,4 +263,10 @@ export function resetMetadataFetchStateForTests(): void {
   cache.clear();
   inFlight.clear();
   budgets.clear();
+  nextBudgetPruneAt = 0;
+}
+
+/** Test-only inspection; production code never calls this. */
+export function metadataFetchBudgetUsersForTests(): number {
+  return budgets.size;
 }

@@ -5,7 +5,6 @@ import {
   parseLinkMetadata,
   type LinkMetadata,
 } from "@linkhub/shared";
-import { prisma } from "../../lib/db";
 import { linkDto } from "../../lib/dto";
 import { fail } from "../../lib/errors";
 import { logger } from "../../lib/logger";
@@ -70,10 +69,18 @@ export async function maybeFetchLinkMetadata(
       saveTime: true,
     });
     if (metadata.sourceUrl !== normalized) return link;
-    return await prisma.link.update({
-      where: { id: link.id },
-      data: { metadata: metadata as unknown as Prisma.InputJsonValue },
-    });
+    // A concurrent edit may have changed the URL while the fetch was running.
+    // Only write when the row still points at the URL this metadata describes.
+    const result = await scoped(userId).links.updateMetadata(
+      link.id,
+      link.url,
+      metadata as unknown as Prisma.InputJsonValue,
+    );
+    if (result.count === 0) return link;
+    return {
+      ...link,
+      metadata: metadata as unknown as Prisma.JsonValue,
+    };
   } catch (error) {
     logger.warn(
       { err: error, linkId: link.id },
@@ -106,10 +113,16 @@ export async function refreshLinkMetadata(userId: string, id: string) {
     const metadata = await fetchMetadataForUser(userId, normalized, {
       force: true,
     });
-    const result = await scoped(userId).links.update(id, {
-      metadata: metadata as unknown as Prisma.InputJsonValue,
-    });
-    if (result.count === 0) throw fail.notFound();
+    const result = await scoped(userId).links.updateMetadata(
+      id,
+      link.url,
+      metadata as unknown as Prisma.InputJsonValue,
+    );
+    if (result.count === 0) {
+      throw fail.conflict(
+        "The link changed while its preview was refreshing. Try again.",
+      );
+    }
 
     const updated = await scoped(userId).links.get(id);
     if (!updated) throw fail.notFound();

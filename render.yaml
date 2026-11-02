@@ -98,6 +98,6 @@ services:
       - key: METADATA_FETCH_ENABLED
         value: "true"
       - key: METADATA_SKIP_HOSTS
-        value: "instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co"
+        value: "instagram.com,instagr.am,amazon.*,amzn.*,a.co"
       - key: LOG_LEVEL
         value: info

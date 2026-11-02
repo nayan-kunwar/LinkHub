@@ -103,9 +103,7 @@ const envSchema = z.object({
   METADATA_FETCH_ENABLED: booleanString.default(true),
   METADATA_SKIP_HOSTS: z
     .string()
-    .default(
-      "instagram.com,instagr.am,amazon.com,amazon.in,amzn.to,amzn.in,a.co",
-    ),
+    .default("instagram.com,instagr.am,amazon.*,amzn.*,a.co"),
 
   SEED_OWNER_EMAIL: z.string().email().optional(),
   SEED_OWNER_PASSWORD: z.string().min(12).optional(),

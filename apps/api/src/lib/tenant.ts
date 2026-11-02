@@ -16,6 +16,17 @@ export const scoped = (userId: string) => ({
       prisma.link.findFirst({ where: { id, userId, deletedAt: null } }),
     update: (id: string, data: Prisma.LinkUncheckedUpdateManyInput) =>
       prisma.link.updateMany({ where: { id, userId, deletedAt: null }, data }),
+    // Metadata belongs to one destination URL. The extra URL predicate makes
+    // a slow fetch a no-op if a concurrent edit replaced the URL.
+    updateMetadata: (
+      id: string,
+      url: string,
+      metadata: Prisma.InputJsonValue,
+    ) =>
+      prisma.link.updateMany({
+        where: { id, userId, url, deletedAt: null },
+        data: { metadata },
+      }),
     count: () => prisma.link.count({ where: { userId, deletedAt: null } }),
   },
   categories: {

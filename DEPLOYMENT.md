@@ -228,7 +228,9 @@ Operational controls:
   redeploy the API to stop all outbound preview fetches during an incident;
   saved links and public rendering keep working.
 - `METADATA_SKIP_HOSTS` defaults to Instagram and Amazon hosts. Those links
-  skip the network fetch and show the icon fallback.
+  skip the network fetch and show the icon fallback. A trailing `.*` matches
+  any public suffix, so `amazon.*` covers `amazon.com`, `amazon.co.uk` and
+  their subdomains, and `amzn.*` covers the short-link domains.
 - The API allows 20 preview fetches per user per minute (shared across editor
   preview, manual refresh and save-time fetches) with at most 4 concurrent
   outbound requests. The in-memory cache is 10 minutes per user + URL.
@@ -238,7 +240,11 @@ Operational controls:
 
 If a preview fetch fails during save, the link is still saved and the old
 metadata (if any) is kept. Manual refresh likewise leaves the previous metadata
-intact on failure.
+intact on failure. Unreachable or timed-out destinations return
+`502 METADATA_UNAVAILABLE`; `422` is deliberately not used because the URL is
+valid and the upstream is at fault. A non-HTML response (for example a PDF) is
+cached as an empty completed result, so later saves do not retry it until the
+user refreshes or changes the URL.
 
 ### Nightly analytics
 
