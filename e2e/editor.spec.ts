@@ -155,6 +155,37 @@ test("updates the live preview while the block is edited", async ({ page }) => {
     preview.getByText("Inactive — this block stays off your public profile."),
   ).toBeVisible();
   await expect(preview).toContainText("Live preview card");
+
+  const scroller = preview.locator("[data-phone-scroll]");
+  await expect(scroller).toHaveCSS("pointer-events", "auto");
+  await expect(preview.locator("a").first()).toHaveCSS("pointer-events", "none");
+  expect(
+    await preview.getByTestId("link-live-preview-phone").getAttribute("inert"),
+  ).toBeNull();
+
+  await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const scrollTop = await scroller.evaluate((element) => element.scrollTop);
+  expect(scrollTop).toBeGreaterThan(0);
+  await scroller.hover();
+  await page.mouse.wheel(0, -240);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeLessThan(scrollTop);
+
+  await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
+  const urlBeforeClick = page.url();
+  const popup = page.waitForEvent("popup", { timeout: 500 }).catch(() => null);
+  const firstLink = preview.locator("a").first();
+  const firstLinkBox = await firstLink.boundingBox();
+  expect(firstLinkBox).not.toBeNull();
+  await page.mouse.click(
+    firstLinkBox!.x + firstLinkBox!.width / 2,
+    firstLinkBox!.y + firstLinkBox!.height / 2,
+  );
+  expect(page.url()).toBe(urlBeforeClick);
+  expect(await popup).toBeNull();
 });
 
 test("previews an existing block while editing", async ({ page }) => {
@@ -189,6 +220,19 @@ test("keeps form state when switching to the mobile preview", async ({
   const preview = dialog.getByTestId("link-live-preview");
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("Mobile preview card");
+
+  const scroller = preview.locator("[data-phone-scroll]");
+  await expect(scroller).toHaveCSS("pointer-events", "auto");
+  const scrollTop = await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrollTop).toBeGreaterThan(0);
+  await scroller.hover();
+  await page.mouse.wheel(0, -160);
+  await expect
+    .poll(() => scroller.evaluate((element) => element.scrollTop))
+    .toBeLessThan(scrollTop);
 
   await dialog.getByRole("button", { name: "Fields", exact: true }).click();
   await expect(dialog.locator("#link-title")).toHaveValue("Mobile preview card");

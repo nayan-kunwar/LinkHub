@@ -203,6 +203,23 @@ export function LinkPreview({
         )
       : state.categories;
 
+  // Keep the visual preview out of the keyboard tab order without using
+  // `inert`: inert also blocks touch scrolling inside the phone frame.
+  useEffect(() => {
+    const scroller = containerRef.current?.querySelector<HTMLElement>(
+      "[data-phone-scroll]",
+    );
+    if (!scroller) return;
+
+    scroller
+      .querySelectorAll<HTMLElement>(
+        "a[href], button, input, select, textarea, [tabindex]",
+      )
+      .forEach((element) => {
+        element.setAttribute("tabindex", "-1");
+      });
+  });
+
   useEffect(() => {
     const root = containerRef.current;
     const scroller = root?.querySelector<HTMLElement>("[data-phone-scroll]");
@@ -287,10 +304,22 @@ export function LinkPreview({
         </p>
       ) : null}
 
-      <div aria-hidden="true" inert className="pointer-events-none select-none">
+      <div
+        aria-hidden="true"
+        data-testid="link-live-preview-phone"
+        className="select-none"
+        onClickCapture={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onAuxClickCapture={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
         <PhoneFrame
           className="max-w-full"
-          screenClassName="h-[440px] max-h-[calc(90vh_-_250px)]"
+          screenClassName="h-[440px] max-h-[calc(90vh_-_250px)] overscroll-contain"
         >
           <ProfileView
             profile={state.profile}
@@ -298,6 +327,7 @@ export function LinkPreview({
             links={previewLinks}
             appearance={state.appearance}
             variant="phone"
+            className="pointer-events-none"
           />
         </PhoneFrame>
       </div>
