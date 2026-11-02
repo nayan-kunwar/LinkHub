@@ -49,7 +49,7 @@ export function BrandIcon({
       aria-hidden="true"
       viewBox="0 0 24 24"
       fill="currentColor"
-      className={cn("size-4 shrink-0", !monochrome && BRAND_COLORS[name], className)}
+      className={cn("size-4 shrink-0", className, !monochrome && BRAND_COLORS[name])}
     >
       <path d={PATHS[name]} />
     </svg>
