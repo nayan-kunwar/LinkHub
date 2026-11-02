@@ -133,6 +133,13 @@ export function LinkPreview({
     0,
   );
 
+  const blockVisualKey = [
+    draft.type,
+    configString(draft.config, "layout"),
+    configString(draft.config, "imageUrl"),
+    usePreviewImage ? "preview" : "no-preview",
+  ].join(":");
+
   const previewLinkId = link?.id ?? DRAFT_ID;
   const draftLink = useMemo<LinkRecord>(
     () => ({
@@ -214,6 +221,7 @@ export function LinkPreview({
     const top = targetRect.top - scrollerRect.top + scroller.scrollTop;
     scroller.scrollTo({ top: Math.max(top - 16, 0), behavior: "smooth" });
   }, [
+    blockVisualKey,
     canRenderDraft,
     draft.categoryId,
     draft.isActive,
@@ -280,7 +288,7 @@ export function LinkPreview({
       ) : null}
 
       <div aria-hidden="true" inert className="pointer-events-none select-none">
-        <PhoneFrame screenClassName="h-[440px] xl:h-[500px]">
+        <PhoneFrame screenClassName="h-[440px] max-h-[calc(90vh_-_250px)]">
           <ProfileView
             profile={state.profile}
             categories={previewCategories}
