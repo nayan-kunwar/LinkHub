@@ -1,7 +1,15 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export function PhoneFrame({ children, className }: { children: ReactNode; className?: string }) {
+export function PhoneFrame({
+  children,
+  className,
+  screenClassName,
+}: {
+  children: ReactNode;
+  className?: string;
+  screenClassName?: string;
+}) {
   return (
     <div
       className={cn(
@@ -9,7 +17,15 @@ export function PhoneFrame({ children, className }: { children: ReactNode; class
         className,
       )}
     >
-      <div className="phone-scroll relative h-[560px] overflow-y-auto rounded-[2rem]">{children}</div>
+      <div
+        data-phone-scroll=""
+        className={cn(
+          "phone-scroll relative h-[560px] overflow-y-auto rounded-[2rem]",
+          screenClassName,
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

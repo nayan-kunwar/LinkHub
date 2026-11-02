@@ -198,7 +198,7 @@ export function ProfileView({
               ) : null}
               <ul className={isPage ? "space-y-2.5" : "space-y-1.5"}>
                 {group.links.map((link) => (
-                  <li key={link.id}>
+                  <li key={link.id} data-link-id={link.id}>
                     <BlockRenderer
                       link={link}
                       isPage={isPage}

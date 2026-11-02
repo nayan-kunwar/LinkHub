@@ -32,7 +32,7 @@ test("fetches a preview on blur and never overwrites typed text", async ({
     "Mocked preview description.",
   );
   await expect(
-    dialog.locator(`img[src="${IMAGES.article}"]`),
+    dialog.locator("form").locator(`img[src="${IMAGES.article}"]`),
   ).toBeVisible();
 
   await dialog.locator("#link-title").fill("My custom title");
@@ -43,7 +43,9 @@ test("fetches a preview on blur and never overwrites typed text", async ({
   await expect(dialog.locator("#link-description")).toHaveValue(
     "My custom note",
   );
-  await expect(dialog.locator(`img[src="${IMAGES.second}"]`)).toBeVisible();
+  await expect(
+    dialog.locator("form").locator(`img[src="${IMAGES.second}"]`),
+  ).toBeVisible();
 });
 
 test("manual image and preview opt-out both take precedence", async ({
@@ -57,7 +59,9 @@ test("manual image and preview opt-out both take precedence", async ({
   await expect(
     dialog.getByText("Manual image — always wins over the page preview."),
   ).toBeVisible();
-  await expect(dialog.locator(`img[src="${IMAGES.manual}"]`)).toBeVisible();
+  await expect(
+    dialog.locator("form").locator(`img[src="${IMAGES.manual}"]`),
+  ).toBeVisible();
   await expect(dialog.getByText("Page preview", { exact: true })).toHaveCount(
     0,
   );
@@ -67,7 +71,7 @@ test("manual image and preview opt-out both take precedence", async ({
     dialog.getByText("Page preview", { exact: true }),
   ).toBeVisible();
   await expect(
-    dialog.locator(`img[src="${IMAGES.article}"]`),
+    dialog.locator("form").locator(`img[src="${IMAGES.article}"]`),
   ).toBeVisible();
 
   await dialog.locator("#link-use-preview").click();
@@ -77,7 +81,7 @@ test("manual image and preview opt-out both take precedence", async ({
     ),
   ).toBeVisible();
   await expect(
-    dialog.locator(`img[src="${IMAGES.article}"]`),
+    dialog.locator("form").locator(`img[src="${IMAGES.article}"]`),
   ).toHaveCount(0);
 
   await dialog.locator("#link-use-preview").click();
@@ -119,4 +123,73 @@ test("saves a rich block without calling the metadata fetcher", async ({
 
   await expect(dialog).toBeHidden();
   await expect(page.getByText("E2E editor saved card").first()).toBeVisible();
+});
+
+test("updates the live preview while the block is edited", async ({ page }) => {
+  const dialog = await openAddLinkDialog(page);
+  const preview = dialog.getByTestId("link-live-preview");
+
+  await expect(preview).toHaveAttribute("data-preview-layout", "classic");
+  await dialog.locator("#link-title").fill("Live preview card");
+  await expect(preview).toContainText("Live preview card");
+
+  await selectRichLayout(dialog);
+  await expect(preview).toHaveAttribute("data-preview-layout", "rich");
+
+  await fillUrlAndWaitForPreview(page, dialog, ARTICLE_URL);
+  const draftCard = preview
+    .locator("a")
+    .filter({ hasText: "Live preview card" });
+  await expect(draftCard.locator(`img[src="${IMAGES.article}"]`)).toBeVisible();
+
+  await dialog.locator("#link-image").fill(IMAGES.manual);
+  await expect(draftCard.locator(`img[src="${IMAGES.manual}"]`)).toBeVisible();
+
+  await dialog
+    .locator('label:has(input[name="link-layout"][value="featured"])')
+    .click();
+  await expect(preview).toHaveAttribute("data-preview-layout", "featured");
+
+  await dialog.locator("#link-active").click();
+  await expect(
+    preview.getByText("Inactive — this block stays off your public profile."),
+  ).toBeVisible();
+  await expect(preview).toContainText("Live preview card");
+});
+
+test("previews an existing block while editing", async ({ page }) => {
+  await page.goto("/dashboard/links");
+  await page
+    .getByRole("button", { name: "Edit E2E preview image card" })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const preview = dialog.getByTestId("link-live-preview");
+
+  await expect(preview).toContainText("E2E preview image card");
+  await expect(preview.locator(`img[src="${IMAGES.preview}"]`)).toBeVisible();
+  await expect(preview).toHaveAttribute("data-preview-layout", "featured");
+
+  await dialog.locator("#link-title").fill("Edited preview card");
+  await expect(preview).toContainText("Edited preview card");
+  await expect(preview).not.toContainText("E2E preview image card");
+
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
+});
+
+test("keeps form state when switching to the mobile preview", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const dialog = await openAddLinkDialog(page);
+
+  await dialog.locator("#link-title").fill("Mobile preview card");
+  await dialog.getByRole("button", { name: "Preview", exact: true }).click();
+
+  const preview = dialog.getByTestId("link-live-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("Mobile preview card");
+
+  await dialog.getByRole("button", { name: "Fields", exact: true }).click();
+  await expect(dialog.locator("#link-title")).toHaveValue("Mobile preview card");
 });

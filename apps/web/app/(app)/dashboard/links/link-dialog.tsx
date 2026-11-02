@@ -49,6 +49,8 @@ import {
 import { Input, Label, FieldError, FieldHint, Select, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { LinkPreview } from "./link-preview";
+import type { LinkDraft } from "./link-draft";
 
 const ICON_LABELS: Record<LinkIconId, string> = {
   auto: "Auto-detect",
@@ -121,17 +123,6 @@ const LAYOUT_OPTIONS: Array<{
   { value: "featured", label: "Featured", blurb: "Large image card" },
 ];
 
-interface LinkDraft {
-  type: LinkType;
-  title: string;
-  url: string;
-  categoryId: string | null;
-  description: string;
-  icon: LinkIconId;
-  isActive: boolean;
-  config: Record<string, unknown>;
-}
-
 function emptyValues(type: LinkType): LinkDraft {
   const config = defaultConfigFor(type);
   if (type === "youtube") config.videoId = "";
@@ -201,6 +192,7 @@ export function LinkDialog({
   ) => Promise<LinkRecord | null>;
 }) {
   const [step, setStep] = useState<"type" | "form">(link ? "form" : "type");
+  const [mobileView, setMobileView] = useState<"form" | "preview">("form");
   const [draft, setDraft] = useState<LinkDraft>(() =>
     link ? valuesFromLink(link) : emptyValues("link"),
   );
@@ -230,6 +222,7 @@ export function LinkDialog({
         : null;
     setDraft(initial);
     setStep(link ? "form" : "type");
+    setMobileView("form");
     setErrors({});
     setLimitError("");
     setPreview(initialPreview);
@@ -273,6 +266,7 @@ export function LinkDialog({
     setDraft(emptyValues(nextType));
     setErrors({});
     setStep("form");
+    setMobileView("form");
   };
 
   const updateUrl = (value: string) => {
@@ -502,8 +496,13 @@ export function LinkDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          "flex max-h-[90vh] w-[92vw] flex-col overflow-hidden p-0",
+          step === "form" ? "max-w-4xl" : "max-w-lg",
+        )}
+      >
+        <DialogHeader className="mb-0 shrink-0 px-6 pb-5 pt-6">
           <DialogTitle>
             {isEditing ? `Edit ${TYPE_LABELS[type].toLowerCase()} block` : "Add block"}
           </DialogTitle>
@@ -517,502 +516,560 @@ export function LinkDialog({
         </DialogHeader>
 
         {step === "type" ? (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {TYPE_OPTIONS.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.type}
-                  type="button"
-                  onClick={() => pickType(option.type)}
-                  className="group flex items-start gap-3 rounded-xl border-2 border-zinc-200 bg-white p-3 text-left transition hover:border-violet-400 hover:bg-violet-50/60 focus-visible:ring-4 focus-visible:ring-violet-200"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-800">
-                    <Icon aria-hidden="true" className="size-4.5" />
-                  </span>
-                  <span>
-                    <span className="block text-sm font-bold text-zinc-900">{option.label}</span>
-                    <span className="mt-0.5 block text-xs leading-snug text-zinc-600">
-                      {option.blurb}
+          <div className="min-h-0 overflow-y-auto px-6 pb-6">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {TYPE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.type}
+                    type="button"
+                    onClick={() => pickType(option.type)}
+                    className="group flex items-start gap-3 rounded-xl border-2 border-zinc-200 bg-white p-3 text-left transition hover:border-violet-400 hover:bg-violet-50/60 focus-visible:ring-4 focus-visible:ring-violet-200"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-800">
+                      <Icon aria-hidden="true" className="size-4.5" />
                     </span>
-                  </span>
-                </button>
-              );
-            })}
+                    <span>
+                      <span className="block text-sm font-bold text-zinc-900">{option.label}</span>
+                      <span className="mt-0.5 block text-xs leading-snug text-zinc-600">
+                        {option.blurb}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : (
-          <form onSubmit={submit} noValidate>
-            {isEditing ? (
-              <p className="mb-4 inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                {TYPE_LABELS[type]} block
-              </p>
-            ) : null}
-
-            {limitReached || limitError ? (
-              <div
-                role="alert"
-                className="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  {limitReached
-                    ? `You've reached the ${LIMITS.maxLinks}-link limit on the free plan. Delete a link before adding another.`
-                    : limitError}
-                </span>
-              </div>
-            ) : null}
-
-            <div className="mb-3.5">
-              <Label htmlFor="link-title">{titleLabel}</Label>
-              <Input
-                id="link-title"
-                value={draft.title}
-                onChange={(event) => update("title", event.target.value)}
-                placeholder={titlePlaceholder}
-                maxLength={LIMITS.maxLinkTitle}
-                aria-invalid={Boolean(errors.title)}
-                aria-describedby={errors.title ? "link-title-error" : undefined}
-                autoFocus
-              />
-              <FieldError>
-                {errors.title ? <span id="link-title-error">{errors.title}</span> : null}
-              </FieldError>
+          <>
+            <div
+              role="group"
+              aria-label="Block editor view"
+              className="mx-6 mb-3 flex shrink-0 rounded-xl bg-zinc-100 p-1 lg:hidden"
+            >
+              {(
+                [
+                  ["form", "Fields"],
+                  ["preview", "Preview"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={mobileView === value}
+                  onClick={() => setMobileView(value)}
+                  className={cn(
+                    "flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition focus-visible:ring-4 focus-visible:ring-violet-200",
+                    mobileView === value
+                      ? "bg-white text-violet-900 shadow-sm"
+                      : "text-zinc-600 hover:text-violet-900",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            {type === "link" || type === "youtube" ? (
-              <div className="mb-3.5">
-                <Label htmlFor="link-url">
-                  {type === "youtube" ? "YouTube URL" : "URL"}
-                </Label>
-                <Input
-                  id="link-url"
-                  value={draft.url}
-                  onChange={(event) => updateUrl(event.target.value)}
-                  onBlur={type === "link" ? handleUrlBlur : undefined}
-                  onPaste={type === "link" ? handleUrlPaste : undefined}
-                  placeholder={
-                    type === "youtube"
-                      ? "https://youtube.com/watch?v=…"
-                      : "https://… or mailto:…"
-                  }
-                  aria-invalid={Boolean(errors.url || errors["config.videoId"])}
-                  aria-describedby="link-url-hint link-url-error"
-                  spellCheck={false}
-                />
-                <FieldHint>
-                  <span id="link-url-hint">
-                    {type === "youtube"
-                      ? "Paste a YouTube video, Shorts or youtu.be link."
-                      : "Allowed: http://, https:// or mailto: links."}
-                  </span>
-                </FieldHint>
-                <FieldError>
-                  {errors.url || errors["config.videoId"] ? (
-                    <span id="link-url-error">
-                      {errors.url ?? errors["config.videoId"]}
-                    </span>
+            <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_310px]">
+              <form
+                onSubmit={submit}
+                noValidate
+                className={cn(
+                  "flex min-h-0 flex-col",
+                  mobileView === "preview" && "hidden lg:block",
+                )}
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+                  {isEditing ? (
+                    <p className="mb-4 inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                      {TYPE_LABELS[type]} block
+                    </p>
                   ) : null}
-                </FieldError>
-                {type === "youtube" && youtubeId ? (
-                  <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
-                    <PreviewImage
-                      src={`https://i.ytimg.com/vi/${youtubeId}/default.jpg`}
-                      alt=""
-                      className="h-12 w-20 rounded object-cover"
-                      fallback={
-                        <span className="flex h-12 w-20 items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500">
-                          No preview
-                        </span>
-                      }
-                    />
-                    <span className="text-xs text-zinc-600">
-                      Video ready to embed on your profile.
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
 
-            {type === "link" ? (
-              <>
-                <fieldset className="mb-3.5">
-                  <legend className="mb-2 text-sm font-semibold text-zinc-800">Card layout</legend>
-                  <div className="grid grid-cols-3 gap-2">
-                    {LAYOUT_OPTIONS.map((option) => (
-                      <label key={option.value} className="cursor-pointer">
-                        <input
-                          type="radio"
-                          name="link-layout"
-                          value={option.value}
-                          checked={layout === option.value}
-                          onChange={() => changeLayout(option.value)}
-                          className="peer sr-only"
-                        />
-                        <span className="block rounded-lg border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:bg-violet-50 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
-                          <span className="mx-auto mb-1.5 block h-8 w-14 rounded-md border border-violet-200 bg-violet-100" />
-                          <span className="block">{option.label}</span>
-                          <span className="mt-0.5 block text-[10px] font-normal leading-tight text-zinc-500">
-                            {option.blurb}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <div className="mb-3.5">
-                  <Label htmlFor="link-subtitle">Subtitle (optional)</Label>
-                  <Input
-                    id="link-subtitle"
-                    value={configString(draft.config, "subtitle")}
-                    onChange={(event) => updateConfig("subtitle", event.target.value)}
-                    placeholder="YouTube · New video"
-                    maxLength={LIMITS.maxSubtitle}
-                    aria-invalid={Boolean(errors["config.subtitle"])}
-                  />
-                  <FieldError>{errors["config.subtitle"]}</FieldError>
-                </div>
-
-                {layout !== "classic" ? (
-                  <div className="mb-3.5 space-y-3">
-                    <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-zinc-50 px-3 py-2.5">
-                      <div>
-                        <Label
-                          htmlFor="link-use-preview"
-                          className="mb-0 cursor-pointer font-medium"
-                        >
-                          Use page preview image
-                        </Label>
-                        <p className="text-xs text-zinc-500">
-                          Pull the image, title and description from the
-                          destination page.
-                        </p>
-                      </div>
-                      <Switch
-                        id="link-use-preview"
-                        checked={usePreviewImage}
-                        onCheckedChange={toggleUsePreviewImage}
-                        aria-label="Use page preview image"
-                      />
+                  {limitReached || limitError ? (
+                    <div
+                      role="alert"
+                      className="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
+                    >
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                      <span>
+                        {limitReached
+                          ? `You've reached the ${LIMITS.maxLinks}-link limit on the free plan. Delete a link before adding another.`
+                          : limitError}
+                      </span>
                     </div>
+                  ) : null}
 
-                    <div>
-                      <Label htmlFor="link-image">Image URL (optional)</Label>
+                  <div className="mb-3.5">
+                    <Label htmlFor="link-title">{titleLabel}</Label>
+                    <Input
+                      id="link-title"
+                      value={draft.title}
+                      onChange={(event) => update("title", event.target.value)}
+                      placeholder={titlePlaceholder}
+                      maxLength={LIMITS.maxLinkTitle}
+                      aria-invalid={Boolean(errors.title)}
+                      aria-describedby={errors.title ? "link-title-error" : undefined}
+                      autoFocus
+                    />
+                    <FieldError>
+                      {errors.title ? <span id="link-title-error">{errors.title}</span> : null}
+                    </FieldError>
+                  </div>
+
+                  {type === "link" || type === "youtube" ? (
+                    <div className="mb-3.5">
+                      <Label htmlFor="link-url">
+                        {type === "youtube" ? "YouTube URL" : "URL"}
+                      </Label>
                       <Input
-                        id="link-image"
-                        value={imageUrl}
-                        onChange={(event) =>
-                          updateConfig("imageUrl", event.target.value)
+                        id="link-url"
+                        value={draft.url}
+                        onChange={(event) => updateUrl(event.target.value)}
+                        onBlur={type === "link" ? handleUrlBlur : undefined}
+                        onPaste={type === "link" ? handleUrlPaste : undefined}
+                        placeholder={
+                          type === "youtube"
+                            ? "https://youtube.com/watch?v=…"
+                            : "https://… or mailto:…"
                         }
-                        placeholder="https://…/thumbnail.jpg"
+                        aria-invalid={Boolean(errors.url || errors["config.videoId"])}
+                        aria-describedby="link-url-hint link-url-error"
                         spellCheck={false}
-                        aria-invalid={Boolean(errors["config.imageUrl"])}
                       />
                       <FieldHint>
-                        Use a public https:// image. A manual image always
-                        overrides the page preview.
+                        <span id="link-url-hint">
+                          {type === "youtube"
+                            ? "Paste a YouTube video, Shorts or youtu.be link."
+                            : "Allowed: http://, https:// or mailto: links."}
+                        </span>
                       </FieldHint>
-                      <FieldError>{errors["config.imageUrl"]}</FieldError>
-                      {manualImage ? (
+                      <FieldError>
+                        {errors.url || errors["config.videoId"] ? (
+                          <span id="link-url-error">
+                            {errors.url ?? errors["config.videoId"]}
+                          </span>
+                        ) : null}
+                      </FieldError>
+                      {type === "youtube" && youtubeId ? (
                         <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
                           <PreviewImage
-                            src={manualImage}
+                            src={`https://i.ytimg.com/vi/${youtubeId}/default.jpg`}
                             alt=""
-                            className={cn(
-                              "rounded object-cover",
-                              layout === "featured" ? "h-16 w-28" : "size-12",
-                            )}
+                            className="h-12 w-20 rounded object-cover"
                             fallback={
-                              <span
-                                className={cn(
-                                  "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
-                                  layout === "featured"
-                                    ? "h-16 w-28"
-                                    : "size-12",
-                                )}
-                              >
+                              <span className="flex h-12 w-20 items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500">
                                 No preview
                               </span>
                             }
                           />
                           <span className="text-xs text-zinc-600">
-                            Manual image — always wins over the page preview.
+                            Video ready to embed on your profile.
                           </span>
                         </div>
                       ) : null}
                     </div>
+                  ) : null}
 
-                    {!manualImage && usePreviewImage ? (
-                      <div className="rounded-lg border border-line bg-zinc-50 p-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-zinc-800">
-                              Page preview
-                            </p>
-                            <p className="text-xs text-zinc-500">
-                              Fetched by Link Hub; no screenshots or uploads.
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() =>
-                              void fetchPreview(draft.url, { manual: true })
-                            }
-                            disabled={
-                              previewStatus === "loading" ||
-                              !normalizeUrl(draft.url) ||
-                              isMailtoUrl(draft.url)
-                            }
-                          >
-                            {previewStatus === "loading" ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <RefreshCw className="size-4" />
-                            )}
-                            {previewMatches ? "Refresh" : "Fetch preview"}
-                          </Button>
-                        </div>
-
-                        {previewMayBeBlocked ? (
-                          <p className="mt-2 flex gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-                            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                            {provider?.label} often blocks previews. Add an
-                            image manually or the card will show its icon.
-                          </p>
-                        ) : null}
-
-                        {previewStatus === "loading" ? (
-                          <p
-                            className="mt-2 flex items-center gap-2 text-xs text-zinc-600"
-                            role="status"
-                          >
-                            <Loader2 className="size-3.5 animate-spin" />
-                            Looking for a preview…
-                          </p>
-                        ) : previewStatus === "error" ? (
-                          <p
-                            className="mt-2 flex gap-1.5 text-xs text-red-700"
-                            role="alert"
-                          >
-                            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                            {previewError}
-                          </p>
-                        ) : previewMatches && preview?.imageUrl ? (
-                          <div className="mt-2 flex items-center gap-3">
-                            <PreviewImage
-                              src={preview.imageUrl}
-                              alt=""
-                              className={cn(
-                                "rounded object-cover",
-                                layout === "featured"
-                                  ? "h-16 w-28"
-                                  : "size-12",
-                              )}
-                              fallback={
-                                <span
-                                  className={cn(
-                                    "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
-                                    layout === "featured"
-                                      ? "h-16 w-28"
-                                      : "size-12",
-                                  )}
-                                >
-                                  No preview
+                  {type === "link" ? (
+                    <>
+                      <fieldset className="mb-3.5">
+                        <legend className="mb-2 text-sm font-semibold text-zinc-800">Card layout</legend>
+                        <div className="grid grid-cols-3 gap-2">
+                          {LAYOUT_OPTIONS.map((option) => (
+                            <label key={option.value} className="cursor-pointer">
+                              <input
+                                type="radio"
+                                name="link-layout"
+                                value={option.value}
+                                checked={layout === option.value}
+                                onChange={() => changeLayout(option.value)}
+                                className="peer sr-only"
+                              />
+                              <span className="block rounded-lg border-2 border-zinc-200 bg-white p-2 text-center text-xs font-semibold text-zinc-700 transition peer-checked:border-violet-700 peer-checked:bg-violet-50 peer-focus-visible:ring-4 peer-focus-visible:ring-violet-200">
+                                <span className="mx-auto mb-1.5 block h-8 w-14 rounded-md border border-violet-200 bg-violet-100" />
+                                <span className="block">{option.label}</span>
+                                <span className="mt-0.5 block text-[10px] font-normal leading-tight text-zinc-500">
+                                  {option.blurb}
                                 </span>
-                              }
-                            />
-                            <div className="min-w-0 text-xs text-zinc-600">
-                              <p className="truncate font-medium text-zinc-800">
-                                {preview.siteName || "Page preview"}
-                              </p>
-                              <p>
-                                Used automatically when no manual image is set.
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+
+                      <div className="mb-3.5">
+                        <Label htmlFor="link-subtitle">Subtitle (optional)</Label>
+                        <Input
+                          id="link-subtitle"
+                          value={configString(draft.config, "subtitle")}
+                          onChange={(event) => updateConfig("subtitle", event.target.value)}
+                          placeholder="YouTube · New video"
+                          maxLength={LIMITS.maxSubtitle}
+                          aria-invalid={Boolean(errors["config.subtitle"])}
+                        />
+                        <FieldError>{errors["config.subtitle"]}</FieldError>
+                      </div>
+
+                      {layout !== "classic" ? (
+                        <div className="mb-3.5 space-y-3">
+                          <div className="flex items-start justify-between gap-3 rounded-lg border border-line bg-zinc-50 px-3 py-2.5">
+                            <div>
+                              <Label
+                                htmlFor="link-use-preview"
+                                className="mb-0 cursor-pointer font-medium"
+                              >
+                                Use page preview image
+                              </Label>
+                              <p className="text-xs text-zinc-500">
+                                Pull the image, title and description from the
+                                destination page.
                               </p>
                             </div>
+                            <Switch
+                              id="link-use-preview"
+                              checked={usePreviewImage}
+                              onCheckedChange={toggleUsePreviewImage}
+                              aria-label="Use page preview image"
+                            />
                           </div>
-                        ) : previewMatches ? (
-                          <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
-                            <ImageOff className="mt-0.5 size-3.5 shrink-0" />
-                            No preview image found on this page. The card will
-                            use its icon.
-                          </p>
-                        ) : (
-                          <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
-                            <Sparkles className="mt-0.5 size-3.5 shrink-0" />
-                            Paste a URL and leave the field to look for a
-                            preview.
-                          </p>
-                        )}
-                      </div>
-                    ) : !manualImage ? (
-                      <p className="rounded-lg border border-line bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-                        Page previews are off for this block. The card will use
-                        its icon.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
 
-                <div className="mb-3.5">
-                  <Label htmlFor="link-icon">Icon</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-line bg-violet-50 text-violet-800">
-                      {iconPreview}
-                    </span>
+                          <div>
+                            <Label htmlFor="link-image">Image URL (optional)</Label>
+                            <Input
+                              id="link-image"
+                              value={imageUrl}
+                              onChange={(event) =>
+                                updateConfig("imageUrl", event.target.value)
+                              }
+                              placeholder="https://…/thumbnail.jpg"
+                              spellCheck={false}
+                              aria-invalid={Boolean(errors["config.imageUrl"])}
+                            />
+                            <FieldHint>
+                              Use a public https:// image. A manual image always
+                              overrides the page preview.
+                            </FieldHint>
+                            <FieldError>{errors["config.imageUrl"]}</FieldError>
+                            {manualImage ? (
+                              <div className="mt-2 flex items-center gap-3 rounded-lg border border-line bg-zinc-50 p-2">
+                                <PreviewImage
+                                  src={manualImage}
+                                  alt=""
+                                  className={cn(
+                                    "rounded object-cover",
+                                    layout === "featured" ? "h-16 w-28" : "size-12",
+                                  )}
+                                  fallback={
+                                    <span
+                                      className={cn(
+                                        "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
+                                        layout === "featured"
+                                          ? "h-16 w-28"
+                                          : "size-12",
+                                      )}
+                                    >
+                                      No preview
+                                    </span>
+                                  }
+                                />
+                                <span className="text-xs text-zinc-600">
+                                  Manual image — always wins over the page preview.
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {!manualImage && usePreviewImage ? (
+                            <div className="rounded-lg border border-line bg-zinc-50 p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-zinc-800">
+                                    Page preview
+                                  </p>
+                                  <p className="text-xs text-zinc-500">
+                                    Fetched by Link Hub; no screenshots or uploads.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() =>
+                                    void fetchPreview(draft.url, { manual: true })
+                                  }
+                                  disabled={
+                                    previewStatus === "loading" ||
+                                    !normalizeUrl(draft.url) ||
+                                    isMailtoUrl(draft.url)
+                                  }
+                                >
+                                  {previewStatus === "loading" ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="size-4" />
+                                  )}
+                                  {previewMatches ? "Refresh" : "Fetch preview"}
+                                </Button>
+                              </div>
+
+                              {previewMayBeBlocked ? (
+                                <p className="mt-2 flex gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                                  {provider?.label} often blocks previews. Add an
+                                  image manually or the card will show its icon.
+                                </p>
+                              ) : null}
+
+                              {previewStatus === "loading" ? (
+                                <p
+                                  className="mt-2 flex items-center gap-2 text-xs text-zinc-600"
+                                  role="status"
+                                >
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                  Looking for a preview…
+                                </p>
+                              ) : previewStatus === "error" ? (
+                                <p
+                                  className="mt-2 flex gap-1.5 text-xs text-red-700"
+                                  role="alert"
+                                >
+                                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                                  {previewError}
+                                </p>
+                              ) : previewMatches && preview?.imageUrl ? (
+                                <div className="mt-2 flex items-center gap-3">
+                                  <PreviewImage
+                                    src={preview.imageUrl}
+                                    alt=""
+                                    className={cn(
+                                      "rounded object-cover",
+                                      layout === "featured"
+                                        ? "h-16 w-28"
+                                        : "size-12",
+                                    )}
+                                    fallback={
+                                      <span
+                                        className={cn(
+                                          "flex items-center justify-center rounded bg-zinc-200 text-[10px] text-zinc-500",
+                                          layout === "featured"
+                                            ? "h-16 w-28"
+                                            : "size-12",
+                                        )}
+                                      >
+                                        No preview
+                                      </span>
+                                    }
+                                  />
+                                  <div className="min-w-0 text-xs text-zinc-600">
+                                    <p className="truncate font-medium text-zinc-800">
+                                      {preview.siteName || "Page preview"}
+                                    </p>
+                                    <p>
+                                      Used automatically when no manual image is set.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : previewMatches ? (
+                                <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
+                                  <ImageOff className="mt-0.5 size-3.5 shrink-0" />
+                                  No preview image found on this page. The card will
+                                  use its icon.
+                                </p>
+                              ) : (
+                                <p className="mt-2 flex gap-1.5 text-xs text-zinc-600">
+                                  <Sparkles className="mt-0.5 size-3.5 shrink-0" />
+                                  Paste a URL and leave the field to look for a
+                                  preview.
+                                </p>
+                              )}
+                            </div>
+                          ) : !manualImage ? (
+                            <p className="rounded-lg border border-line bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                              Page previews are off for this block. The card will use
+                              its icon.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className="mb-3.5">
+                        <Label htmlFor="link-icon">Icon</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-line bg-violet-50 text-violet-800">
+                            {iconPreview}
+                          </span>
+                          <Select
+                            id="link-icon"
+                            value={draft.icon}
+                            onChange={(event) => update("icon", event.target.value as LinkIconId)}
+                            className="w-40"
+                          >
+                            {LINK_ICON_IDS.map((icon) => (
+                              <option key={icon} value={icon}>
+                                {ICON_LABELS[icon]}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <div className="flex items-end justify-between">
+                          <Label htmlFor="link-description">Description (optional)</Label>
+                          <span className="mb-1.5 text-xs text-zinc-500">
+                            {draft.description.length} / {LIMITS.maxLinkDescription}
+                          </span>
+                        </div>
+                        <Textarea
+                          id="link-description"
+                          value={draft.description}
+                          onChange={(event) => update("description", event.target.value)}
+                          maxLength={LIMITS.maxLinkDescription}
+                          placeholder="A short note shown when descriptions are enabled."
+                          className="min-h-20"
+                        />
+                        <FieldError>{errors.description}</FieldError>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {type === "header" ? (
+                    <div className="mb-4">
+                      <Label htmlFor="header-subtitle">Subtitle (optional)</Label>
+                      <Input
+                        id="header-subtitle"
+                        value={configString(draft.config, "subtitle")}
+                        onChange={(event) => updateConfig("subtitle", event.target.value)}
+                        placeholder="A short line under the heading"
+                        maxLength={LIMITS.maxSubtitle}
+                        aria-invalid={Boolean(errors["config.subtitle"])}
+                      />
+                      <FieldError>{errors["config.subtitle"]}</FieldError>
+                    </div>
+                  ) : null}
+
+                  {type === "contact" ? (
+                    <div className="mb-4 space-y-3">
+                      <div>
+                        <Label htmlFor="contact-email">Email</Label>
+                        <Input
+                          id="contact-email"
+                          type="email"
+                          value={configString(draft.config, "email")}
+                          onChange={(event) => updateConfig("email", event.target.value)}
+                          placeholder="you@example.com"
+                          aria-invalid={Boolean(errors["config.email"] || errors.config)}
+                        />
+                        <FieldError>{errors["config.email"]}</FieldError>
+                      </div>
+                      <div>
+                        <Label htmlFor="contact-phone">Phone</Label>
+                        <Input
+                          id="contact-phone"
+                          type="tel"
+                          value={configString(draft.config, "phone")}
+                          onChange={(event) => updateConfig("phone", event.target.value)}
+                          placeholder="+91 98765 43210"
+                          aria-invalid={Boolean(errors["config.phone"] || errors.config)}
+                        />
+                        <FieldError>{errors["config.phone"]}</FieldError>
+                      </div>
+                      <div>
+                        <Label htmlFor="contact-whatsapp">WhatsApp</Label>
+                        <Input
+                          id="contact-whatsapp"
+                          type="tel"
+                          value={configString(draft.config, "whatsapp")}
+                          onChange={(event) => updateConfig("whatsapp", event.target.value)}
+                          placeholder="+91 98765 43210"
+                          aria-invalid={Boolean(errors["config.whatsapp"] || errors.config)}
+                        />
+                        <FieldError>{errors["config.whatsapp"]}</FieldError>
+                      </div>
+                      <FieldError>{errors.config}</FieldError>
+                      <FieldHint>
+                        These details are visible to anyone who opens your public page.
+                      </FieldHint>
+                    </div>
+                  ) : null}
+
+                  <div className="mb-3.5">
+                    <Label htmlFor="block-category">Category</Label>
                     <Select
-                      id="link-icon"
-                      value={draft.icon}
-                      onChange={(event) => update("icon", event.target.value as LinkIconId)}
-                      className="w-40"
+                      id="block-category"
+                      value={draft.categoryId ?? ""}
+                      onChange={(event) => update("categoryId", event.target.value || null)}
                     >
-                      {LINK_ICON_IDS.map((icon) => (
-                        <option key={icon} value={icon}>
-                          {ICON_LABELS[icon]}
+                      <option value="">Uncategorized</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                          {category.isVisible ? "" : " (hidden)"}
                         </option>
                       ))}
                     </Select>
                   </div>
-                </div>
 
-                <div className="mb-4">
-                  <div className="flex items-end justify-between">
-                    <Label htmlFor="link-description">Description (optional)</Label>
-                    <span className="mb-1.5 text-xs text-zinc-500">
-                      {draft.description.length} / {LIMITS.maxLinkDescription}
-                    </span>
+                  <div className="mb-5 flex items-start gap-2.5">
+                    <Checkbox
+                      id="link-active"
+                      checked={draft.isActive}
+                      onCheckedChange={(checked) => update("isActive", checked === true)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <Label htmlFor="link-active" className="mb-0 cursor-pointer font-medium">
+                        Active
+                      </Label>
+                      <p className="text-xs text-zinc-500">Show this block on your public profile.</p>
+                    </div>
                   </div>
-                  <Textarea
-                    id="link-description"
-                    value={draft.description}
-                    onChange={(event) => update("description", event.target.value)}
-                    maxLength={LIMITS.maxLinkDescription}
-                    placeholder="A short note shown when descriptions are enabled."
-                    className="min-h-20"
-                  />
-                  <FieldError>{errors.description}</FieldError>
-                </div>
-              </>
-            ) : null}
 
-            {type === "header" ? (
-              <div className="mb-4">
-                <Label htmlFor="header-subtitle">Subtitle (optional)</Label>
-                <Input
-                  id="header-subtitle"
-                  value={configString(draft.config, "subtitle")}
-                  onChange={(event) => updateConfig("subtitle", event.target.value)}
-                  placeholder="A short line under the heading"
-                  maxLength={LIMITS.maxSubtitle}
-                  aria-invalid={Boolean(errors["config.subtitle"])}
-                />
-                <FieldError>{errors["config.subtitle"]}</FieldError>
-              </div>
-            ) : null}
+                </div>
 
-            {type === "contact" ? (
-              <div className="mb-4 space-y-3">
-                <div>
-                  <Label htmlFor="contact-email">Email</Label>
-                  <Input
-                    id="contact-email"
-                    type="email"
-                    value={configString(draft.config, "email")}
-                    onChange={(event) => updateConfig("email", event.target.value)}
-                    placeholder="you@example.com"
-                    aria-invalid={Boolean(errors["config.email"] || errors.config)}
-                  />
-                  <FieldError>{errors["config.email"]}</FieldError>
-                </div>
-                <div>
-                  <Label htmlFor="contact-phone">Phone</Label>
-                  <Input
-                    id="contact-phone"
-                    type="tel"
-                    value={configString(draft.config, "phone")}
-                    onChange={(event) => updateConfig("phone", event.target.value)}
-                    placeholder="+91 98765 43210"
-                    aria-invalid={Boolean(errors["config.phone"] || errors.config)}
-                  />
-                  <FieldError>{errors["config.phone"]}</FieldError>
-                </div>
-                <div>
-                  <Label htmlFor="contact-whatsapp">WhatsApp</Label>
-                  <Input
-                    id="contact-whatsapp"
-                    type="tel"
-                    value={configString(draft.config, "whatsapp")}
-                    onChange={(event) => updateConfig("whatsapp", event.target.value)}
-                    placeholder="+91 98765 43210"
-                    aria-invalid={Boolean(errors["config.whatsapp"] || errors.config)}
-                  />
-                  <FieldError>{errors["config.whatsapp"]}</FieldError>
-                </div>
-                <FieldError>{errors.config}</FieldError>
-                <FieldHint>
-                  These details are visible to anyone who opens your public page.
-                </FieldHint>
-              </div>
-            ) : null}
+                <DialogFooter className="mt-0 shrink-0 border-t border-line bg-white px-6 py-4">
+                  {!isEditing ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setStep("type")}
+                      disabled={submitting}
+                    >
+                      Back
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => onOpenChange(false)}
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button type="submit" disabled={limitReached || submitting} loading={submitting}>
+                    {isEditing ? "Save block" : "Add block"}
+                  </Button>
+                </DialogFooter>
+              </form>
 
-            <div className="mb-3.5">
-              <Label htmlFor="block-category">Category</Label>
-              <Select
-                id="block-category"
-                value={draft.categoryId ?? ""}
-                onChange={(event) => update("categoryId", event.target.value || null)}
+              <aside
+                className={cn(
+                  "min-h-0 overflow-y-auto border-line bg-zinc-50/60 px-4 py-5 lg:border-l",
+                  mobileView === "form" && "hidden lg:block",
+                )}
               >
-                <option value="">Uncategorized</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                    {category.isVisible ? "" : " (hidden)"}
-                  </option>
-                ))}
-              </Select>
+                <LinkPreview
+                  draft={draft}
+                  link={link}
+                  metadata={preview}
+                  view={mobileView}
+                />
+              </aside>
             </div>
-
-            <div className="mb-5 flex items-start gap-2.5">
-              <Checkbox
-                id="link-active"
-                checked={draft.isActive}
-                onCheckedChange={(checked) => update("isActive", checked === true)}
-                className="mt-0.5"
-              />
-              <div>
-                <Label htmlFor="link-active" className="mb-0 cursor-pointer font-medium">
-                  Active
-                </Label>
-                <p className="text-xs text-zinc-500">Show this block on your public profile.</p>
-              </div>
-            </div>
-
-            <DialogFooter>
-              {!isEditing ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => setStep("type")}
-                  disabled={submitting}
-                >
-                  Back
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => onOpenChange(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-              )}
-              <Button type="submit" disabled={limitReached || submitting} loading={submitting}>
-                {isEditing ? "Save block" : "Add block"}
-              </Button>
-            </DialogFooter>
-          </form>
+          </>
         )}
       </DialogContent>
     </Dialog>
