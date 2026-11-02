@@ -187,7 +187,7 @@ function buildJson(
             daily: previewSeries.map((point) => ({
               date: point.date,
               clicks: point.count,
-              uniqueClicks: point.uniqueCount,
+              uniqueClicks: point.uniqueCount ?? null,
             })),
           },
         }

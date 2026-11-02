@@ -389,7 +389,7 @@ export function AnalyticsView() {
                       {formatNumber(row.count)}
                     </td>
                     <td className="py-2.5 text-right text-zinc-600">
-                      {row.uniqueCount === null
+                      {row.uniqueCount === null || row.uniqueCount === undefined
                         ? "—"
                         : formatNumber(row.uniqueCount)}
                     </td>
