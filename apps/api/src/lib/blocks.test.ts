@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appearanceSchema,
+  AUTO_COLOR,
   contactConfigSchema,
   defaultConfigFor,
   detectProvider,
@@ -142,6 +143,74 @@ describe("appearance compatibility", () => {
         showSocial: true,
         showDescription: false,
       }).success,
+    ).toBe(false);
+  });
+
+  it("accepts optional palette overrides including auto text colours", () => {
+    const parsed = appearanceSchema.parse({
+      theme: "ocean",
+      color: "#0284c7",
+      background: "gradient",
+      card: "rounded",
+      button: "brand",
+      layout: "grouped",
+      font: "sans",
+      showAvatar: true,
+      showBio: true,
+      showSocial: true,
+      showDescription: false,
+      backgroundColor: "#e0f2fe",
+      buttonTextColor: AUTO_COLOR,
+      pageTextColor: "#123456",
+      titleColor: "#abcdef",
+    });
+    expect(parsed.backgroundColor).toBe("#e0f2fe");
+    expect(parsed.buttonTextColor).toBe(AUTO_COLOR);
+    expect(parsed.pageTextColor).toBe("#123456");
+    expect(parsed.titleColor).toBe("#abcdef");
+  });
+
+  it("leaves missing palette overrides undefined for older profiles", () => {
+    const parsed = appearanceSchema.parse({
+      theme: "default",
+      color: "#7c3aed",
+      background: "gradient",
+      card: "rounded",
+      button: "solid",
+      showAvatar: true,
+      showBio: true,
+      showSocial: true,
+      showDescription: false,
+    });
+    expect(parsed.backgroundColor).toBeUndefined();
+    expect(parsed.buttonTextColor).toBeUndefined();
+    expect(parsed.pageTextColor).toBeUndefined();
+    expect(parsed.titleColor).toBeUndefined();
+  });
+
+  it("rejects auto for the background and malformed text colours", () => {
+    const base = {
+      theme: "default",
+      color: "#7c3aed",
+      background: "gradient",
+      card: "rounded",
+      button: "solid",
+      showAvatar: true,
+      showBio: true,
+      showSocial: true,
+      showDescription: false,
+    };
+    expect(
+      appearanceSchema.safeParse({ ...base, backgroundColor: AUTO_COLOR }).success,
+    ).toBe(false);
+    expect(
+      appearanceSchema.safeParse({ ...base, buttonTextColor: "#abc" }).success,
+    ).toBe(false);
+    expect(
+      appearanceSchema.safeParse({ ...base, pageTextColor: "#gggggg" }).success,
+    ).toBe(false);
+    expect(
+      appearanceSchema.safeParse({ ...base, titleColor: "auto " }).success,
     ).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyThemePreset,
+  AUTO_COLOR,
   DEFAULT_APPEARANCE,
   THEME_PRESETS,
   type AppearanceSettings,
@@ -115,5 +116,56 @@ describe("applyThemePreset", () => {
     expect(next.font).toBe(DEFAULT_APPEARANCE.font);
     expect(next.card).toBe(DEFAULT_APPEARANCE.card);
     expect(next.button).toBe(DEFAULT_APPEARANCE.button);
+  });
+
+  it("clears every palette override when force-applying a preset", () => {
+    const next = applyThemePreset(
+      {
+        ...base,
+        backgroundColor: "#abcdef",
+        buttonTextColor: AUTO_COLOR,
+        pageTextColor: "#123456",
+        titleColor: AUTO_COLOR,
+      },
+      dark,
+      { force: true },
+    );
+    expect(next.backgroundColor).toBeUndefined();
+    expect(next.buttonTextColor).toBeUndefined();
+    expect(next.pageTextColor).toBeUndefined();
+    expect(next.titleColor).toBeUndefined();
+  });
+
+  it("keeps palette overrides when switching presets without force", () => {
+    const current: AppearanceSettings = {
+      ...base,
+      backgroundColor: "#abcdef",
+      buttonTextColor: AUTO_COLOR,
+      pageTextColor: "#123456",
+      titleColor: AUTO_COLOR,
+    };
+    const next = applyThemePreset(current, dark);
+    expect(next.backgroundColor).toBe("#abcdef");
+    expect(next.buttonTextColor).toBe(AUTO_COLOR);
+    expect(next.pageTextColor).toBe("#123456");
+    expect(next.titleColor).toBe(AUTO_COLOR);
+  });
+
+  it("keeps layout and visibility when force-applying a preset", () => {
+    const next = applyThemePreset(
+      {
+        ...base,
+        layout: "flat",
+        showAvatar: false,
+        showSocial: false,
+        showDescription: true,
+      },
+      maroon,
+      { force: true },
+    );
+    expect(next.layout).toBe("flat");
+    expect(next.showAvatar).toBe(false);
+    expect(next.showSocial).toBe(false);
+    expect(next.showDescription).toBe(true);
   });
 });

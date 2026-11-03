@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AUTO_COLOR,
   BACKGROUND_STYLES,
   BUTTON_STYLES,
   CARD_STYLES,
@@ -24,6 +25,8 @@ import {
 const hexColor = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color, for example #7c3aed.");
+
+const textColor = z.union([hexColor, z.literal(AUTO_COLOR)]);
 
 const optionalHttpsUrl = z
   .string()
@@ -73,6 +76,10 @@ export const appearanceSchema = z.object({
   showBio: z.boolean(),
   showSocial: z.boolean(),
   showDescription: z.boolean(),
+  backgroundColor: hexColor.optional(),
+  buttonTextColor: textColor.optional(),
+  pageTextColor: textColor.optional(),
+  titleColor: textColor.optional(),
 });
 
 export const profileSchema = z.object({

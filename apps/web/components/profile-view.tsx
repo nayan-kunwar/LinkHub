@@ -9,7 +9,7 @@ import type {
   Profile,
 } from "@linkhub/shared";
 import { SITE_URL } from "@linkhub/shared";
-import { themeFor, themeVars } from "@/lib/appearance";
+import { themeFor, themeVars, backgroundIsDark } from "@/lib/appearance";
 import { Avatar } from "./avatar";
 import { BlockRenderer } from "./blocks";
 import { ShareButton } from "./share-button";
@@ -97,6 +97,7 @@ export function ProfileView({
   onLinkClick,
 }: ProfileViewProps) {
   const theme = themeFor(appearance);
+  const darkSurface = theme.dark || backgroundIsDark(appearance, theme);
   const groups = groupLinks(categories, links, appearance.layout);
   const isPage = variant === "page";
   const brand = appearance.button === "brand";
@@ -149,7 +150,7 @@ export function ProfileView({
       {appearance.showSocial ? (
         <SocialIcons
           socials={profile.socials}
-          monochrome={theme.dark}
+          monochrome={darkSurface}
           className={isPage ? "mt-5 gap-4" : "mt-3 gap-3"}
           iconClassName={isPage ? "size-5" : "size-4"}
         />
@@ -202,7 +203,7 @@ export function ProfileView({
                     <BlockRenderer
                       link={link}
                       isPage={isPage}
-                      dark={theme.dark}
+                      dark={darkSurface}
                       brand={brand}
                       showDescription={appearance.showDescription}
                       onLinkClick={onLinkClick}

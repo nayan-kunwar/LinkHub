@@ -1,4 +1,5 @@
 export * from "./constants";
+export * from "./color";
 export * from "./blocks";
 export * from "./defaults";
 export * from "./schemas";

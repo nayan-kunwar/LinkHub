@@ -182,6 +182,22 @@ export const COLOR_PALETTE = [
   "#1e1b4b",
 ] as const;
 
+/**
+ * Sentinel stored in an optional text-colour field. The renderer resolves it
+ * to pure black or white at display time, based on the current surfaces.
+ */
+export const AUTO_COLOR = "auto" as const;
+
+export const APPEARANCE_COLOR_KEYS = [
+  "background",
+  "buttons",
+  "buttonText",
+  "pageText",
+  "title",
+] as const;
+
+export type AppearanceColorKey = (typeof APPEARANCE_COLOR_KEYS)[number];
+
 export const CARD_STYLES = ["rounded", "soft", "minimal", "pill"] as const;
 export const BUTTON_STYLES = ["solid", "outline", "glass", "brand"] as const;
 export const BACKGROUND_STYLES = ["solid", "gradient", "pattern", "blur"] as const;

@@ -33,6 +33,11 @@ export function applyThemePreset(
       font: preset.font ?? DEFAULT_APPEARANCE.font,
       card: preset.card ?? DEFAULT_APPEARANCE.card,
       button: preset.button ?? DEFAULT_APPEARANCE.button,
+      // A forced preset replaces the whole palette, including auto values.
+      backgroundColor: undefined,
+      buttonTextColor: undefined,
+      pageTextColor: undefined,
+      titleColor: undefined,
     };
   }
 

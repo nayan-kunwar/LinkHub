@@ -158,6 +158,15 @@
   animation: toast-in 180ms ease-out;
 }
 
+/* The Appearance page has a mobile save bar plus a preview FAB. Keep its
+   toasts above both instead of covering the actions. */
+@media (max-width: 639px) {
+  [data-sonner-toaster][data-y-position="bottom"]:has(.appearance-toast) {
+    --offset-bottom: calc(8.5rem + env(safe-area-inset-bottom)) !important;
+    --mobile-offset-bottom: calc(8.5rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+
 .float-soft {
   animation: float-soft 6s ease-in-out infinite;
 }

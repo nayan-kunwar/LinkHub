@@ -73,6 +73,7 @@ export interface Link {
 
 export interface AppearanceSettings {
   theme: ThemeId;
+  /** Button / accent colour. Kept for backwards compatibility. */
   color: string;
   background: "solid" | "gradient" | "pattern" | "blur";
   card: CardStyle;
@@ -83,6 +84,17 @@ export interface AppearanceSettings {
   showBio: boolean;
   showSocial: boolean;
   showDescription: boolean;
+  /**
+   * Optional palette overrides. Missing values fall back to the active theme
+   * preset, so profiles saved before the colour editor keep their look.
+   */
+  backgroundColor?: string;
+  /** A hex value or the `auto` sentinel. */
+  buttonTextColor?: string;
+  /** A hex value or the `auto` sentinel. */
+  pageTextColor?: string;
+  /** A hex value or the `auto` sentinel. */
+  titleColor?: string;
 }
 
 export interface SessionSummary {
