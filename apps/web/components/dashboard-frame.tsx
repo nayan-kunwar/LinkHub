@@ -5,10 +5,12 @@ export function DashboardFrame({
   children,
   preview,
   className,
+  previewClassName = "xl:block",
 }: {
   children: ReactNode;
   preview?: ReactNode;
   className?: string;
+  previewClassName?: string;
 }) {
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">
@@ -16,7 +18,13 @@ export function DashboardFrame({
         {children}
       </main>
       {preview ? (
-        <aside className="hidden w-[340px] shrink-0 p-5 pl-0 xl:block" aria-label="Public profile preview">
+        <aside
+          className={cn(
+            "hidden w-[340px] shrink-0 p-5 pl-0",
+            previewClassName,
+          )}
+          aria-label="Public profile preview"
+        >
           {preview}
         </aside>
       ) : null}

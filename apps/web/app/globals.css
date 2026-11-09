@@ -110,6 +110,17 @@
   }
 }
 
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes menu-in {
   from {
     opacity: 0;
@@ -158,12 +169,26 @@
   animation: toast-in 180ms ease-out;
 }
 
-/* The Appearance page has a mobile save bar plus a preview FAB. Keep its
-   toasts above both instead of covering the actions. */
+/* The Appearance live preview becomes a bottom sheet on phones. */
 @media (max-width: 639px) {
-  [data-sonner-toaster][data-y-position="bottom"]:has(.appearance-toast) {
-    --offset-bottom: calc(8.5rem + env(safe-area-inset-bottom)) !important;
-    --mobile-offset-bottom: calc(8.5rem + env(safe-area-inset-bottom)) !important;
+  .appearance-preview-dialog {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    --tw-translate-x: 0;
+    --tw-translate-y: 0;
+    transform: none;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .appearance-preview-dialog[data-state="open"].dialog-content {
+    animation: sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 

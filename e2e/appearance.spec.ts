@@ -76,12 +76,40 @@ function autoSwitch(page: Page, key: string) {
   return colorRow(page, key).getByRole("switch");
 }
 
+function preset(page: Page, id: string) {
+  return page.locator(`[data-preset="${id}"]`);
+}
+
 async function openAppearance(page: Page): Promise<void> {
   await page.goto("/dashboard/appearance");
   await expect(
     page.getByRole("heading", { name: "Appearance", level: 1 }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Palette" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Colors", exact: true }),
+  ).toBeVisible();
+}
+
+async function pickPreset(page: Page, id: string): Promise<void> {
+  await preset(page, id).click();
+}
+
+async function saveAndWait(
+  page: Page,
+  location: "header" | "savebar",
+): Promise<void> {
+  const response = page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes("/api/v1/profile") &&
+      candidate.request().method() === "PATCH",
+  );
+  await page
+    .getByTestId(
+      location === "header" ? "appearance-save" : "appearance-savebar-save",
+    )
+    .click();
+  const result = await response;
+  expect(result.ok()).toBe(true);
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -117,7 +145,8 @@ test("Auto resolves to pure black or white and never warns", async ({
   page,
 }) => {
   await openAppearance(page);
-  await page.locator('[data-preset="ocean"]').click();
+  await pickPreset(page, "ocean");
+  await expect(page.getByTestId("theme-exact")).toHaveText("Ocean selected");
 
   const rows = ["buttonText", "pageText", "title"] as const;
   for (const key of rows) {
@@ -149,9 +178,37 @@ test("Auto resolves to pure black or white and never warns", async ({
 
   // The Ocean button fill is dark enough that Auto must pick pure black.
   await expect(hexInput(page, "buttonText")).toHaveValue("Auto · #000000");
+  await expect(page.locator("[data-auto-all]")).toBeDisabled();
 });
 
-test("custom hex values warn, reject invalid input and reset to the preset", async ({
+test("Auto fields stay editable and typing exits Auto", async ({ page }) => {
+  await openAppearance(page);
+  await pickPreset(page, "ocean");
+  await autoSwitch(page, "pageText").click();
+
+  const field = hexInput(page, "pageText");
+  await expect(field).toHaveValue(/^Auto · #(?:000000|FFFFFF)$/);
+  await expect(autoSwitch(page, "pageText")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  await field.fill("FFFFFF");
+
+  await expect(autoSwitch(page, "pageText")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect(field).toHaveValue("FFFFFF");
+  await expect(
+    colorRow(page, "pageText").getByText("Custom", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    colorRow(page, "pageText").getByText(/Low contrast/),
+  ).toBeVisible();
+});
+
+test("invalid hex is preserved and Save focuses the first invalid field", async ({
   page,
 }) => {
   await openAppearance(page);
@@ -161,32 +218,43 @@ test("custom hex values warn, reject invalid input and reset to the preset", asy
   await field.fill("B0C4DE");
   await expect(row.getByText("Custom", { exact: true })).toBeVisible();
   await expect(row.getByText(/Low contrast \d+\.\d:1/)).toBeVisible();
+  await expect(row.locator("[data-use-auto]")).toBeVisible();
 
   await field.fill("FFFF");
-  await expect(row.getByText("Use 3 or 6 hex characters")).toBeVisible();
+  await expect(field).toHaveValue("FFFF");
+  await expect(row.getByText("Use a 3 or 6 digit hex value.")).toBeVisible();
   await expect(field).toHaveAttribute("aria-invalid", "true");
-  await expect(
-    page.getByRole("button", { name: "Save", exact: true }).first(),
-  ).toBeDisabled();
+  await expect(page.getByTestId("appearance-status-header")).toHaveText(
+    "Fix 1 color",
+  );
+  // Save stays available; it points at the malformed field instead.
+  await expect(page.getByTestId("appearance-save")).toBeEnabled();
+  await page.getByTestId("appearance-save").click();
+  await expect(field).toBeFocused();
 
   await field.fill("#123456");
-  await expect(row.getByText("Use 3 or 6 hex characters")).toHaveCount(0);
+  await expect(row.getByText("Use a 3 or 6 digit hex value.")).toHaveCount(0);
   await expect(field).not.toHaveAttribute("aria-invalid", "true");
   await expect(row.getByText(/Low contrast/)).toHaveCount(0);
 
-  await row.getByRole("button", { name: /Reset page text to Default/ }).click();
+  await row
+    .getByRole("button", { name: /Reset page text to Default/ })
+    .click();
   await expect(row.getByText("Custom", { exact: true })).toHaveCount(0);
   await expect(field).toHaveValue("4C4C6A");
+  await expect(page.getByTestId("appearance-status-header")).toHaveText(
+    "All changes saved",
+  );
 });
 
 test("custom colors gate preset changes with Keep, Replace and Undo", async ({
   page,
 }) => {
   await openAppearance(page);
-  await page.locator('[data-preset="ocean"]').click();
-  await expect(page.locator('[data-preset="ocean"]')).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  await pickPreset(page, "ocean");
+  await expect(page.getByTestId("theme-exact")).toHaveText("Ocean selected");
+  await expect(page.getByTestId("appearance-undo")).toContainText(
+    "Ocean applied.",
   );
 
   await hexInput(page, "buttons").fill("#123456");
@@ -194,7 +262,7 @@ test("custom colors gate preset changes with Keep, Replace and Undo", async ({
     "Custom (based on Ocean)",
   );
 
-  await page.locator('[data-preset="dark"]').click();
+  await pickPreset(page, "dark");
   const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByRole("heading", { name: "Replace your custom colors?" }),
@@ -206,30 +274,25 @@ test("custom colors gate preset changes with Keep, Replace and Undo", async ({
   );
   await expect(hexInput(page, "buttons")).toHaveValue("123456");
 
-  await page.locator('[data-preset="dark"]').click();
+  await pickPreset(page, "dark");
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Replace colors" })
     .click();
-  await expect(page.locator('[data-preset="dark"]')).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(preset(page, "dark")).toHaveAttribute("aria-pressed", "true");
   await expect(hexInput(page, "buttons")).toHaveValue("A78BFA");
-  await expect(page.getByTestId("theme-custom")).toHaveCount(0);
+  await expect(page.getByTestId("theme-exact")).toHaveText("Dark selected");
 
-  await page
-    .locator("[data-sonner-toast]")
-    .filter({ hasText: "Applied Dark." })
-    .getByRole("button", { name: "Undo" })
-    .click();
+  const undo = page.getByTestId("appearance-undo");
+  await expect(undo).toContainText("Dark applied.");
+  await undo.locator("[data-undo]").click();
   await expect(hexInput(page, "buttons")).toHaveValue("123456");
   await expect(page.getByTestId("theme-custom")).toHaveText(
     "Custom (based on Ocean)",
   );
 
   // Clicking the active preset with custom colors asks before resetting.
-  await page.locator('[data-preset="ocean"]').click();
+  await pickPreset(page, "ocean");
   await expect(
     page
       .getByRole("dialog")
@@ -240,91 +303,172 @@ test("custom colors gate preset changes with Keep, Replace and Undo", async ({
     .getByRole("button", { name: "Reset to Ocean" })
     .click();
   await expect(hexInput(page, "buttons")).toHaveValue("0284C7");
-  await expect(page.getByTestId("theme-custom")).toHaveCount(0);
+  await expect(page.getByTestId("theme-exact")).toHaveText("Ocean selected");
 });
 
-test("desktop Cancel discards and Save persists the palette", async ({
+test("reset all appearance settings restores defaults and can be undone", async ({
   page,
 }) => {
   await openAppearance(page);
-  const field = hexInput(page, "buttons");
+  await pickPreset(page, "dark");
+  await expect(page.getByTestId("theme-exact")).toHaveText("Dark selected");
 
-  await field.fill("123456");
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(field).toHaveValue("7C3AED");
-  await expect(page.getByTestId("appearance-savebar")).toBeHidden();
-
-  await field.fill("123456");
-  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await page
+    .getByRole("button", { name: "Reset all appearance settings" })
+    .click();
+  const dialog = page.getByRole("dialog");
   await expect(
-    page.getByText("Colors saved — your preview is up to date."),
+    dialog.getByRole("heading", { name: "Reset all appearance settings?" }),
   ).toBeVisible();
+  await dialog.getByRole("button", { name: "Reset appearance" }).click();
+
+  await expect(page.getByTestId("theme-exact")).toHaveText("Default selected");
+  await expect(preset(page, "default")).toHaveAttribute("aria-pressed", "true");
+  const undo = page.getByTestId("appearance-undo");
+  await expect(undo).toContainText("Default appearance applied.");
+  await undo.locator("[data-undo]").click();
+  await expect(page.getByTestId("theme-exact")).toHaveText("Dark selected");
+});
+
+test("style and content controls update the page and persist", async ({
+  page,
+}) => {
+  await openAppearance(page);
+  const buttonTextRow = colorRow(page, "buttonText");
+
+  await hexInput(page, "buttonText").fill("7C3AED");
+  await expect(
+    buttonTextRow.getByText("Only used by Brand-style buttons"),
+  ).toBeVisible();
+  // The warning is suppressed while the solid button style is active.
+  await expect(buttonTextRow.getByText(/Low contrast/)).toHaveCount(0);
+
+  await page.locator('[data-style-key="button"]').click();
+  await page.locator('[data-option="brand"]').click();
+  await expect(page.locator('[data-style-key="button"]')).toContainText(
+    "Brand",
+  );
+  await expect(buttonTextRow.getByText(/Low contrast 1\.0:1/)).toBeVisible();
+
+  await page.locator('[data-style-key="background"]').click();
+  await page.locator('[data-option="solid"]').click();
+  await expect(page.locator('[data-style-key="background"]')).toContainText(
+    "Solid",
+  );
+
+  const social = page.locator('[data-visible="showSocial"]');
+  await expect(social).toHaveAttribute("aria-checked", "true");
+  await social.click();
+  await expect(social).toHaveAttribute("aria-checked", "false");
+
+  await saveAndWait(page, "header");
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Appearance", level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator('[data-style-key="button"]')).toContainText(
+    "Brand",
+  );
+  await expect(page.locator('[data-style-key="background"]')).toContainText(
+    "Solid",
+  );
+  await expect(page.locator('[data-visible="showSocial"]')).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect(hexInput(page, "buttonText")).toHaveValue("7C3AED");
+});
+
+test("desktop save bar follows scrolling and saves changes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await openAppearance(page);
+
+  const saveBar = page.getByTestId("appearance-savebar");
+  const field = hexInput(page, "buttons");
+  await expect(saveBar).toHaveCount(0);
+
+  await field.fill("123456");
+  await expect(page.getByTestId("appearance-status-header")).toHaveText(
+    "Unsaved changes",
+  );
+  // On desktop the bar stays out of the way until the page scrolls.
+  await expect(saveBar).toBeHidden();
+
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await expect(saveBar).toBeVisible();
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(saveBar).toBeHidden();
+
+  await page.getByTestId("appearance-discard").click();
+  await expect(field).toHaveValue("7C3AED");
+  await expect(saveBar).toHaveCount(0);
+
+  await field.fill("123456");
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await expect(saveBar).toBeVisible();
+  await saveAndWait(page, "savebar");
+  await expect(saveBar).toHaveCount(0);
+  await expect(page.getByTestId("appearance-status-header")).toHaveText(
+    "All changes saved",
+  );
 
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Appearance", level: 1 }),
   ).toBeVisible();
-  await expect(hexInput(page, "buttons")).toHaveValue("123456");
+  await expect(field).toHaveValue("123456");
 });
 
-test("mobile preview FAB and toasts clear the save bar", async ({ page }) => {
+test("mobile save bar opens the preview sheet and saves Auto all text", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openAppearance(page);
 
   const saveBar = page.getByTestId("appearance-savebar");
-  const fab = page.getByTestId("appearance-preview-fab");
-  await expect(saveBar).toBeHidden();
-  await expect(fab).toBeVisible();
+  const mobilePreview = page.getByTestId("appearance-preview-mobile");
+  await expect(saveBar).toHaveCount(0);
+  await expect(mobilePreview).toBeVisible();
+  await expect(page.getByTestId("appearance-save")).toBeHidden();
 
-  await hexInput(page, "pageText").fill("112233");
+  await page.locator("[data-auto-all]").click();
+  for (const key of ["buttonText", "pageText", "title"] as const) {
+    await expect(autoSwitch(page, key)).toHaveAttribute("aria-checked", "true");
+  }
+  await expect(page.locator("[data-auto-all]")).toBeDisabled();
   await expect(saveBar).toBeVisible();
 
-  const saveBox = await saveBar.boundingBox();
-  const fabBox = await fab.boundingBox();
-  expect(saveBox).not.toBeNull();
-  expect(fabBox).not.toBeNull();
-  expect(fabBox!.y + fabBox!.height).toBeLessThanOrEqual(saveBox!.y);
-
-  // The Auto toast appears above both the save bar and the preview FAB.
-  await autoSwitch(page, "pageText").click();
-  const toast = page.locator("[data-sonner-toast].appearance-toast").last();
-  await expect(toast).toContainText("Page text set to Auto");
-  // Wait for the toast enter animation before measuring its resting position.
-  await expect
-    .poll(async () => {
-      const box = await toast.boundingBox();
-      return box ? box.y + box.height : Number.POSITIVE_INFINITY;
-    })
-    .toBeLessThanOrEqual(saveBox!.y);
-  const toastBox = await toast.boundingBox();
-  expect(toastBox).not.toBeNull();
-  expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(saveBox!.y);
-  expect(toastBox!.y + toastBox!.height).toBeLessThanOrEqual(fabBox!.y);
-
-  await fab.click();
+  await page.getByTestId("appearance-preview-savebar").click();
   const preview = page.getByRole("dialog");
   await expect(
     preview.getByRole("heading", { name: "Live preview" }),
   ).toBeVisible();
   await expect(preview.locator(".phone-scroll")).toBeVisible();
-  await preview.getByRole("button", { name: "Close" }).click();
+
+  const box = await preview.boundingBox();
+  expect(box).not.toBeNull();
+  // The phone preview is a full-width bottom sheet.
+  expect(box!.x).toBeLessThanOrEqual(1);
+  expect(box!.width).toBeGreaterThanOrEqual(360);
+  expect(844 - (box!.y + box!.height)).toBeLessThanOrEqual(1);
+
+  await preview.getByRole("button", { name: "Close preview" }).click();
   await expect(preview).toBeHidden();
 
-  await saveBar.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(
-    page.getByText("Colors saved — your preview is up to date."),
-  ).toBeVisible();
-  await expect(saveBar).toBeHidden();
+  await saveAndWait(page, "savebar");
+  await expect(saveBar).toHaveCount(0);
+  await expect(page.getByTestId("appearance-status-mobile")).toHaveText(
+    "All changes saved",
+  );
 
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Appearance", level: 1 }),
   ).toBeVisible();
-  await expect(autoSwitch(page, "pageText")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await expect(hexInput(page, "pageText")).toHaveValue(
-    /^Auto · #(?:000000|FFFFFF)$/,
-  );
+  for (const key of ["buttonText", "pageText", "title"] as const) {
+    await expect(autoSwitch(page, key)).toHaveAttribute("aria-checked", "true");
+  }
 });
