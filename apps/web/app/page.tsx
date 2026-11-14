@@ -12,6 +12,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { DevelopmentBanner } from "@/components/development-banner";
 import { PhoneFrame } from "@/components/phone-frame";
 import { ProfileView } from "@/components/profile-view";
 import { SiteFooter } from "@/components/site-footer";
@@ -33,6 +34,8 @@ const landingMetadata: Metadata = {
 };
 
 const signupEnabled = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true";
+const showDevelopmentBanner =
+  process.env.NEXT_PUBLIC_DEVELOPMENT_BANNER !== "false";
 
 function rootMode(): "profile" | "landing" {
   return process.env.ROOT_MODE === "landing" ? "landing" : "profile";
@@ -367,15 +370,29 @@ function MarketingPage() {
 }
 
 export default async function HomePage() {
+  const banner = showDevelopmentBanner ? <DevelopmentBanner /> : null;
+
   if (rootMode() === "profile") {
     const username = defaultUsername();
     try {
       const data = await getPublicProfile(username);
-      if (data) return <PublicProfile username={username} data={data} />;
+      if (data) {
+        return (
+          <>
+            {banner}
+            <PublicProfile username={username} data={data} />
+          </>
+        );
+      }
     } catch {
       // Fall back to the marketing page if the API is unavailable during a
       // build or revalidation; the next ISR pass will try again.
     }
   }
-  return <MarketingPage />;
+  return (
+    <>
+      {banner}
+      <MarketingPage />
+    </>
+  );
 }

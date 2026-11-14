@@ -495,6 +495,7 @@ domain).
 | `API_BASE_URL` | Render service URL, no trailing slash |
 | `NEXT_PUBLIC_APP_URL` | `https://link.nayankunwar.com` |
 | `NEXT_PUBLIC_ALLOW_SIGNUP` | `true` only when the API also has `ALLOW_SIGNUP=true`; this build-time flag opens `/signup` and the Google entry screen. |
+| `NEXT_PUBLIC_DEVELOPMENT_BANNER` | `true` to show the "in development" notice at the top of the home page. Set to `false` at launch. |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional. Same Web OAuth client ID as Render's `GOOGLE_CLIENT_ID`; leave unset to hide the Google button. |
 | `ALLOW_DEMO_PREVIEW` | `false` |
 | `ROOT_MODE` | `landing` (marketing page at `/`; owner profile stays at `/nayankunwar`). Use `profile` only if `/` should serve the owner profile. |
