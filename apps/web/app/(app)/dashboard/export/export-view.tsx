@@ -340,11 +340,15 @@ export function ExportView() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const previewSeries = overview?.series ?? [];
+  const previewSeries = useMemo(() => overview?.series ?? [], [overview]);
   const isProfileOnly = format === "profile";
-  const effectiveInclude = isProfileOnly
-    ? { profile: true, links: true, categories: false, analytics: false }
-    : include;
+  const effectiveInclude = useMemo(
+    () =>
+      isProfileOnly
+        ? { profile: true, links: true, categories: false, analytics: false }
+        : include,
+    [isProfileOnly, include],
+  );
   const nothingSelected = !Object.values(effectiveInclude).some(Boolean);
 
   const preview = useMemo(() => {
