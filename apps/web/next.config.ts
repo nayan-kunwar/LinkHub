@@ -68,6 +68,9 @@ const tokenPageHeaders = [
 const nextConfig: NextConfig = {
   transpilePackages: ["@linkhub/shared"],
   poweredByHeader: false,
+  experimental: {
+    agentUpgrade: "security",
+  },
   async rewrites() {
     if (!apiBaseUrl) return [];
     return [{ source: "/api/:path*", destination: `${apiBaseUrl}/api/:path*` }];
